@@ -41,7 +41,7 @@ Tool for processing and cataloging band jam session recordings. Splits full iPho
 FastAPI backend serving JSON endpoints and audio streaming:
 
 **Sessions:** `GET /api/sessions` | `GET /api/sessions/{id}` | `GET /api/sessions/{id}/tracks`
-**Tracks:** `POST /api/tracks/{id}/tag` | `DELETE /api/tracks/{id}/tag` | `PUT /api/tracks/{id}/notes` | `GET /api/tracks/{id}/audio`
+**Tracks:** `POST /api/tracks/{id}/tag` | `DELETE /api/tracks/{id}/tag` | `PUT /api/tracks/{id}/notes` | `GET /api/tracks/{id}/audio` | `POST /api/tracks/{id}/merge` | `POST /api/tracks/{id}/split`
 **Songs:** `GET /api/songs` | `GET /api/songs/{id}/tracks`
 
 ### Web Frontend (in progress)
@@ -109,6 +109,7 @@ Audio file (.m4a/.wav)
 | `fingerprint.py` | Chroma FFT analysis, DTW matching, fingerprint hashing, reference DB |
 | `output.py` | Output filename generation, segment export orchestration |
 | `db.py` | SQLite schema, `Database` class with session/track/song CRUD |
+| `track_ops.py` | Merge/split track operations: re-export, fingerprint, renumber |
 | `api.py` | FastAPI app, Pydantic models, REST endpoints, audio streaming |
 
 ### Database Schema
@@ -299,30 +300,12 @@ Phases 4-5 (tagging, song catalog, history, audio player) are complete:
 - [ ] Spreadsheet import (format TBD) to pre-populate tags and session notes
 - [ ] Re-process sessions with different split settings
 
-### Phase 7: Merge/Split Tracks
-
-Fix incorrect automatic splits from the UI. Planned design:
-
-**Merge** — combine two adjacent tracks into one:
-- Merge button between adjacent tracks in session detail view
-- Re-exports from source m4a with widened time range via ffmpeg
-- Keeps first track's song tag and notes, renumbers subsequent tracks
-
-**Split** — divide a track at the current playback position:
-- "Split here (M:SS)" button appears when audio player is paused mid-track
-- Re-exports both halves from source m4a
-- First half keeps tag/notes, second half is blank, renumbers subsequent tracks
-
-**Implementation:**
-- New `track_ops.py` service layer orchestrating merge/split (re-export, fingerprint, DB updates, file renaming)
-- New DB methods: `get_track()`, `delete_track()`, `update_track()`
-- New API endpoints: `POST /api/tracks/{id}/merge`, `POST /api/tracks/{id}/split`
-- AudioPlayer exposes `onPlayStateChange`/`onTimeUpdate` callbacks to parent
-- Progress indicator in UI during re-export (ffmpeg is I/O bound)
-- Old audio files deleted after successful re-export
+Phase 7 (merge/split tracks) is complete:
+- Merge button between adjacent tracks re-exports from source m4a with widened time range
+- Split button appears when paused mid-track, re-exports both halves
+- `track_ops.py` service layer handles re-export, fingerprinting, DB updates, file renaming
+- Progress indicator in UI during operations
 - Both endpoints return full updated track list for single-shot UI refresh
-
-Detailed plan: `.claude/plans/sequential-enchanting-dewdrop.md`
 
 ### Future Ideas
 - Auto-suggest song names based on catalog history

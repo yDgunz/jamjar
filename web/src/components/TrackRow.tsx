@@ -13,13 +13,17 @@ interface Props {
   track: Track;
   songs: Song[];
   onUpdate: () => void;
+  onTracksChanged: (tracks: Track[]) => void;
 }
 
-export default function TrackRow({ track, songs, onUpdate }: Props) {
+export default function TrackRow({ track, songs, onUpdate, onTracksChanged }: Props) {
   const [tagging, setTagging] = useState(false);
   const [tagInput, setTagInput] = useState(track.song_name ?? "");
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesInput, setNotesInput] = useState(track.notes ?? "");
+  const [playerPlaying, setPlayerPlaying] = useState(false);
+  const [playerTime, setPlayerTime] = useState(0);
+  const [operationLoading, setOperationLoading] = useState(false);
 
   const handleTag = async () => {
     if (!tagInput.trim()) return;
@@ -40,6 +44,18 @@ export default function TrackRow({ track, songs, onUpdate }: Props) {
     onUpdate();
   };
 
+  const handleSplit = async () => {
+    setOperationLoading(true);
+    try {
+      const newTracks = await api.splitTrack(track.id, playerTime);
+      onTracksChanged(newTracks);
+    } catch (err) {
+      alert(`Split failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setOperationLoading(false);
+    }
+  };
+
   // Filter songs for autocomplete
   const suggestions = tagInput.trim()
     ? songs.filter(
@@ -49,8 +65,23 @@ export default function TrackRow({ track, songs, onUpdate }: Props) {
       )
     : songs;
 
+  const canSplit = !playerPlaying && playerTime > 1 && playerTime < track.duration_sec - 1;
+
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-3">
+    <div className="relative rounded-lg border border-gray-800 bg-gray-900 px-4 py-3">
+      {/* Loading overlay */}
+      {operationLoading && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-gray-900/80">
+          <div className="flex items-center gap-2 text-sm text-gray-300">
+            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Processing...
+          </div>
+        </div>
+      )}
+
       {/* Header row: track name + info */}
       <div className="mb-2 flex items-center gap-2">
         {tagging ? (
@@ -143,7 +174,27 @@ export default function TrackRow({ track, songs, onUpdate }: Props) {
       </div>
 
       {/* Audio player */}
-      <AudioPlayer src={api.trackAudioUrl(track.id)} />
+      <AudioPlayer
+        src={api.trackAudioUrl(track.id)}
+        onPlayStateChange={(playing, time) => { setPlayerPlaying(playing); setPlayerTime(time); }}
+        onTimeUpdate={(time) => setPlayerTime(time)}
+      />
+
+      {/* Split button — shown when paused mid-track */}
+      {canSplit && (
+        <div className="mt-2">
+          <button
+            onClick={handleSplit}
+            disabled={operationLoading}
+            className="flex items-center gap-1.5 rounded bg-gray-800 px-2.5 py-1 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
+          >
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" d="M12 4v16M4 12h16" />
+            </svg>
+            Split here ({formatTime(playerTime)})
+          </button>
+        </div>
+      )}
 
       {/* Notes */}
       <div className="mt-2">

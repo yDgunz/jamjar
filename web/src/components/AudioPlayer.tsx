@@ -8,9 +8,11 @@ function formatTime(sec: number): string {
 
 interface Props {
   src: string;
+  onPlayStateChange?: (playing: boolean, currentTime: number) => void;
+  onTimeUpdate?: (currentTime: number) => void;
 }
 
-export default function AudioPlayer({ src }: Props) {
+export default function AudioPlayer({ src, onPlayStateChange, onTimeUpdate }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -52,7 +54,10 @@ export default function AudioPlayer({ src }: Props) {
 
   const handleTimeUpdate = () => {
     const audio = audioRef.current;
-    if (audio) setCurrentTime(audio.currentTime);
+    if (audio) {
+      setCurrentTime(audio.currentTime);
+      onTimeUpdate?.(audio.currentTime);
+    }
   };
 
   const handleLoadedMetadata = () => {
@@ -215,8 +220,8 @@ export default function AudioPlayer({ src }: Props) {
         preload="metadata"
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
-        onPlay={() => setPlaying(true)}
-        onPause={() => { if (!previewing) setPlaying(false); }}
+        onPlay={() => { setPlaying(true); onPlayStateChange?.(true, audioRef.current?.currentTime ?? 0); }}
+        onPause={() => { if (!previewing) { setPlaying(false); onPlayStateChange?.(false, audioRef.current?.currentTime ?? 0); } }}
         onEnded={() => { setPlaying(false); stopPreview(); }}
       />
     </div>

@@ -104,7 +104,7 @@ def process(
 
     # Save to database
     db = _get_db()
-    source_file = file.name
+    source_file = str(file.resolve())
     date_str = meta.recording_date.strftime("%Y-%m-%d") if meta.recording_date else None
 
     # Check if session already exists
@@ -138,7 +138,7 @@ def process(
                 track_number=i,
                 start_sec=start,
                 end_sec=end,
-                audio_path=str(audio_path),
+                audio_path=str(audio_path.resolve()),
                 fingerprint=fp,
             )
         click.echo(f"Saved {len(exported)} track(s) to database.")

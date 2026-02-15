@@ -1,6 +1,9 @@
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+
+logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -86,6 +89,14 @@ class NameRequest(BaseModel):
     name: str
 
 
+class MergeRequest(BaseModel):
+    other_track_id: int
+
+
+class SplitRequest(BaseModel):
+    split_at_sec: float
+
+
 # --- Session endpoints ---
 
 
@@ -164,6 +175,33 @@ def update_track_notes(track_id: int, req: NotesRequest):
     return TrackResponse(**track.__dict__)
 
 
+@app.post("/api/tracks/{track_id}/merge", response_model=list[TrackResponse])
+def merge_tracks_endpoint(track_id: int, req: MergeRequest):
+    from jam_session_processor.track_ops import merge_tracks
+    db = get_db()
+    try:
+        tracks = merge_tracks(db, track_id, req.other_track_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Merge failed")
+        raise HTTPException(status_code=500, detail=f"Merge failed: {e}")
+    return [TrackResponse(**t.__dict__) for t in tracks]
+
+
+@app.post("/api/tracks/{track_id}/split", response_model=list[TrackResponse])
+def split_track_endpoint(track_id: int, req: SplitRequest):
+    from jam_session_processor.track_ops import split_track
+    db = get_db()
+    try:
+        tracks = split_track(db, track_id, req.split_at_sec)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Split failed")
+    return [TrackResponse(**t.__dict__) for t in tracks]
+
+
 @app.get("/api/tracks/{track_id}/audio")
 def stream_track_audio(track_id: int):
     db = get_db()
@@ -197,14 +235,4 @@ def get_song_tracks(song_id: int):
 
 def _find_track(db: Database, track_id: int):
     """Find a track by ID across all sessions."""
-    row = db.conn.execute(
-        """SELECT t.*, s.name as song_name
-           FROM tracks t
-           LEFT JOIN songs s ON t.song_id = s.id
-           WHERE t.id = ?""",
-        (track_id,),
-    ).fetchone()
-    if not row:
-        return None
-    from jam_session_processor.db import Track
-    return Track(**row)
+    return db.get_track(track_id)

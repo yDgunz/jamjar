@@ -131,3 +131,58 @@ def test_get_song_tracks(seeded_client):
     assert resp.status_code == 200
     tracks = resp.json()
     assert len(tracks) == 2
+
+
+@pytest.fixture
+def seeded_client_with_source(client, tmp_path):
+    """Client with a session whose source_file is a real path (for merge/split)."""
+    from unittest.mock import patch
+
+    db = api._db
+    source = tmp_path / "source.m4a"
+    source.write_bytes(b"\x00" * 100)
+    sid = db.create_session(str(source), date="2026-02-03")
+
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    for i in range(1, 4):
+        audio = output_dir / f"track{i}.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 100)
+        db.create_track(sid, track_number=i, start_sec=(i - 1) * 300.0,
+                        end_sec=i * 300.0, audio_path=str(audio))
+
+    def mock_export(file_path, output_path, start_sec, end_sec):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"RIFF" + b"\x00" * 100)
+
+    with patch("jam_session_processor.track_ops.export_segment", side_effect=mock_export), \
+         patch("jam_session_processor.track_ops.compute_chroma_fingerprint", return_value="mockfp"):
+        yield client
+
+
+def test_merge_tracks_endpoint(seeded_client_with_source):
+    resp = seeded_client_with_source.post("/api/tracks/1/merge", json={"other_track_id": 2})
+    assert resp.status_code == 200
+    tracks = resp.json()
+    assert len(tracks) == 2
+    assert tracks[0]["start_sec"] == 0.0
+    assert tracks[0]["end_sec"] == 600.0
+
+
+def test_merge_non_adjacent_returns_400(seeded_client_with_source):
+    resp = seeded_client_with_source.post("/api/tracks/1/merge", json={"other_track_id": 3})
+    assert resp.status_code == 400
+
+
+def test_split_track_endpoint(seeded_client_with_source):
+    resp = seeded_client_with_source.post("/api/tracks/1/split", json={"split_at_sec": 150.0})
+    assert resp.status_code == 200
+    tracks = resp.json()
+    assert len(tracks) == 4
+    assert tracks[0]["end_sec"] == 150.0
+    assert tracks[1]["start_sec"] == 150.0
+
+
+def test_split_invalid_position_returns_400(seeded_client_with_source):
+    resp = seeded_client_with_source.post("/api/tracks/1/split", json={"split_at_sec": 0.5})
+    assert resp.status_code == 400

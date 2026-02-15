@@ -142,3 +142,40 @@ def test_update_session_name(db):
     db.update_session_name(sid, "My Custom Name")
     session = db.get_session(sid)
     assert session.name == "My Custom Name"
+
+
+def test_get_track(db):
+    sid = db.create_session("session1.m4a")
+    tid = db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="t.wav")
+    db.tag_track(tid, "Fat Cat")
+
+    track = db.get_track(tid)
+    assert track is not None
+    assert track.id == tid
+    assert track.song_name == "Fat Cat"
+    assert track.start_sec == 0.0
+    assert track.end_sec == 300.0
+
+    assert db.get_track(9999) is None
+
+
+def test_delete_track(db):
+    sid = db.create_session("session1.m4a")
+    tid = db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="t.wav")
+    db.delete_track(tid)
+
+    assert db.get_track(tid) is None
+    assert db.get_tracks_for_session(sid) == []
+
+
+def test_update_track(db):
+    sid = db.create_session("session1.m4a")
+    tid = db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="t.wav")
+
+    db.update_track(tid, track_number=5, audio_path="new.wav", fingerprint="abc123")
+    track = db.get_track(tid)
+    assert track.track_number == 5
+    assert track.audio_path == "new.wav"
+    assert track.fingerprint == "abc123"
+    # Original values unchanged
+    assert track.start_sec == 0.0

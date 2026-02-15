@@ -115,6 +115,36 @@ class Database:
                 name = clean_session_name(row[1])
                 self.conn.execute("UPDATE sessions SET name = ? WHERE id = ?", (name, row[0]))
 
+        # Resolve relative paths to absolute (needed for merge/split re-export)
+        self._migrate_to_absolute_paths()
+
+    def _migrate_to_absolute_paths(self):
+        """Convert relative source_file and audio_path to absolute paths."""
+        cwd = Path.cwd()
+        # Migrate session source_file paths
+        for row in self.conn.execute("SELECT id, source_file FROM sessions").fetchall():
+            p = Path(row[1])
+            if not p.is_absolute():
+                # Try cwd first, then common subdirectories
+                candidates = [cwd / p, cwd / "input" / p]
+                for candidate in candidates:
+                    if candidate.exists():
+                        self.conn.execute(
+                            "UPDATE sessions SET source_file = ? WHERE id = ?",
+                            (str(candidate), row[0]),
+                        )
+                        break
+        # Migrate track audio_path paths
+        for row in self.conn.execute("SELECT id, audio_path FROM tracks").fetchall():
+            p = Path(row[1])
+            if not p.is_absolute():
+                resolved = cwd / p
+                if resolved.exists():
+                    self.conn.execute(
+                        "UPDATE tracks SET audio_path = ? WHERE id = ?",
+                        (str(resolved), row[0]),
+                    )
+
     def close(self):
         self.conn.close()
 
@@ -237,6 +267,37 @@ class Database:
 
     def update_track_notes(self, track_id: int, notes: str):
         self.conn.execute("UPDATE tracks SET notes = ? WHERE id = ?", (notes, track_id))
+        self.conn.commit()
+
+    def get_track(self, track_id: int) -> Track | None:
+        """Fetch a single track by ID."""
+        row = self.conn.execute(
+            """SELECT t.*, s.name as song_name
+               FROM tracks t
+               LEFT JOIN songs s ON t.song_id = s.id
+               WHERE t.id = ?""",
+            (track_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return Track(**row)
+
+    def delete_track(self, track_id: int):
+        """Delete a track by ID."""
+        self.conn.execute("DELETE FROM tracks WHERE id = ?", (track_id,))
+        self.conn.commit()
+
+    def update_track(self, track_id: int, **kwargs):
+        """Update arbitrary columns on a track. Valid keys: track_number, start_sec,
+        end_sec, duration_sec, audio_path, fingerprint, song_id, notes."""
+        allowed = {"track_number", "start_sec", "end_sec", "duration_sec",
+                    "audio_path", "fingerprint", "song_id", "notes"}
+        updates = {k: v for k, v in kwargs.items() if k in allowed}
+        if not updates:
+            return
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [track_id]
+        self.conn.execute(f"UPDATE tracks SET {set_clause} WHERE id = ?", values)
         self.conn.commit()
 
     # --- Songs ---

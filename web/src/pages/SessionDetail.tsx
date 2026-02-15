@@ -4,6 +4,54 @@ import { api } from "../api";
 import type { Session, Track, Song } from "../api";
 import TrackRow from "../components/TrackRow";
 
+function MergeButton({ trackId, nextTrackId, onTracksChanged }: {
+  trackId: number;
+  nextTrackId: number;
+  onTracksChanged: (tracks: Track[]) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  const handleMerge = async () => {
+    setLoading(true);
+    try {
+      const newTracks = await api.mergeTrack(trackId, nextTrackId);
+      onTracksChanged(newTracks);
+    } catch (err) {
+      alert(`Merge failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-center py-0.5">
+      <button
+        onClick={handleMerge}
+        disabled={loading}
+        className="flex items-center gap-1.5 rounded px-2 py-0.5 text-xs text-gray-600 transition hover:bg-gray-800 hover:text-gray-300 disabled:opacity-50"
+        title="Merge with track above"
+      >
+        {loading ? (
+          <>
+            <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Merging...
+          </>
+        ) : (
+          <>
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" d="M7 8l5 4-5 4M17 8l-5 4 5 4" />
+            </svg>
+            Merge
+          </>
+        )}
+      </button>
+    </div>
+  );
+}
+
 export default function SessionDetail() {
   const { id } = useParams<{ id: string }>();
   const [session, setSession] = useState<Session | null>(null);
@@ -34,6 +82,17 @@ export default function SessionDetail() {
 
   const refresh = () => {
     api.getSessionTracks(sessionId).then(setTracks);
+    api.getSession(sessionId).then((s) => {
+      setSession(s);
+      setNameInput(s?.name ?? "");
+      setNotesInput(s?.notes ?? "");
+    });
+    api.listSongs().then(setSongs);
+  };
+
+  const handleTracksChanged = (newTracks: Track[]) => {
+    setTracks(newTracks);
+    // Also refresh session metadata (track count may have changed)
     api.getSession(sessionId).then((s) => {
       setSession(s);
       setNameInput(s?.name ?? "");
@@ -126,9 +185,23 @@ export default function SessionDetail() {
         </div>
       </div>
 
-      <div className="space-y-2">
-        {tracks.map((t) => (
-          <TrackRow key={t.id} track={t} songs={songs} onUpdate={refresh} />
+      <div className="space-y-0">
+        {tracks.map((t, i) => (
+          <div key={t.id}>
+            <TrackRow
+              track={t}
+              songs={songs}
+              onUpdate={refresh}
+              onTracksChanged={handleTracksChanged}
+            />
+            {i < tracks.length - 1 && (
+              <MergeButton
+                trackId={t.id}
+                nextTrackId={tracks[i + 1].id}
+                onTracksChanged={handleTracksChanged}
+              />
+            )}
+          </div>
         ))}
       </div>
     </div>

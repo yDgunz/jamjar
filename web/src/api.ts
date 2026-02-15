@@ -89,6 +89,20 @@ export const api = {
       body: JSON.stringify({ notes }),
     }),
 
+  mergeTrack: (trackId: number, otherTrackId: number) =>
+    fetchJson<Track[]>(`${BASE}/tracks/${trackId}/merge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ other_track_id: otherTrackId }),
+    }),
+
+  splitTrack: (trackId: number, splitAtSec: number) =>
+    fetchJson<Track[]>(`${BASE}/tracks/${trackId}/split`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ split_at_sec: splitAtSec }),
+    }),
+
   trackAudioUrl: (trackId: number) => `${BASE}/tracks/${trackId}/audio`,
 
   listSongs: () => fetchJson<Song[]>(`${BASE}/songs`),
