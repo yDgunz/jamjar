@@ -1,0 +1,121 @@
+import pytest
+
+from jam_session_processor.db import Database
+
+
+@pytest.fixture
+def db(tmp_path):
+    database = Database(tmp_path / "test.db")
+    yield database
+    database.close()
+
+
+def test_create_and_list_sessions(db):
+    db.create_session("session1.m4a", date="2026-02-03")
+    db.create_session("session2.m4a", date="2026-02-10")
+    sessions = db.list_sessions()
+    assert len(sessions) == 2
+    assert sessions[0].date == "2026-02-10"  # Most recent first
+    assert sessions[1].date == "2026-02-03"
+
+
+def test_get_session(db):
+    sid = db.create_session("session1.m4a", date="2026-02-03", notes="Good session")
+    session = db.get_session(sid)
+    assert session.source_file == "session1.m4a"
+    assert session.notes == "Good session"
+    assert session.track_count == 0
+
+
+def test_find_session_by_source(db):
+    db.create_session("session1.m4a", date="2026-02-03")
+    found = db.find_session_by_source("session1.m4a")
+    assert found is not None
+    assert found.source_file == "session1.m4a"
+    assert db.find_session_by_source("nonexistent.m4a") is None
+
+
+def test_create_tracks_and_count(db):
+    sid = db.create_session("session1.m4a", date="2026-02-03")
+    db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="track1.wav")
+    db.create_track(sid, track_number=2, start_sec=320.0, end_sec=600.0, audio_path="track2.wav")
+
+    session = db.get_session(sid)
+    assert session.track_count == 2
+    assert session.tagged_count == 0
+
+    tracks = db.get_tracks_for_session(sid)
+    assert len(tracks) == 2
+    assert tracks[0].track_number == 1
+    assert tracks[0].duration_sec == 300.0
+    assert tracks[1].track_number == 2
+
+
+def test_tag_track(db):
+    sid = db.create_session("session1.m4a")
+    tid = db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="t.wav")
+
+    song_id = db.tag_track(tid, "Fat Cat")
+    tracks = db.get_tracks_for_session(sid)
+    assert tracks[0].song_name == "Fat Cat"
+    assert tracks[0].song_id == song_id
+
+    session = db.get_session(sid)
+    assert session.tagged_count == 1
+
+
+def test_tag_track_reuses_existing_song(db):
+    sid = db.create_session("session1.m4a")
+    tid1 = db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="t1.wav")
+    tid2 = db.create_track(sid, track_number=2, start_sec=300.0, end_sec=600.0, audio_path="t2.wav")
+
+    song_id1 = db.tag_track(tid1, "Fat Cat")
+    song_id2 = db.tag_track(tid2, "Fat Cat")
+    assert song_id1 == song_id2
+
+    songs = db.list_songs()
+    assert len(songs) == 1
+    assert songs[0].take_count == 2
+
+
+def test_untag_track(db):
+    sid = db.create_session("session1.m4a")
+    tid = db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="t.wav")
+    db.tag_track(tid, "Fat Cat")
+    db.untag_track(tid)
+
+    tracks = db.get_tracks_for_session(sid)
+    assert tracks[0].song_name is None
+    assert tracks[0].song_id is None
+
+
+def test_list_songs(db):
+    sid = db.create_session("session1.m4a")
+    tid = db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="t.wav")
+    db.tag_track(tid, "Fat Cat")
+    db.tag_track(db.create_track(sid, 2, 300, 600, "t2.wav"), "Spit Me Out")
+
+    songs = db.list_songs()
+    assert len(songs) == 2
+    assert songs[0].name == "Fat Cat"
+    assert songs[1].name == "Spit Me Out"
+
+
+def test_reset(db):
+    sid = db.create_session("session1.m4a")
+    db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="t.wav")
+    db.reset()
+
+    assert db.list_sessions() == []
+    # Can still create after reset
+    db.create_session("session2.m4a")
+    assert len(db.list_sessions()) == 1
+
+
+def test_track_notes(db):
+    sid = db.create_session("session1.m4a")
+    tid = db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="t.wav")
+    db.update_track_notes(tid, "Great take")
+
+    tracks = db.get_tracks_for_session(sid)
+    assert tracks[0].notes == "Great take"

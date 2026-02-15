@@ -2,7 +2,8 @@ from pathlib import Path
 
 import click
 
-from jam_session_processor.fingerprint import build_reference_db
+from jam_session_processor.db import Database
+from jam_session_processor.fingerprint import build_reference_db, compute_chroma_fingerprint
 from jam_session_processor.metadata import extract_metadata
 from jam_session_processor.output import export_segments
 from jam_session_processor.splitter import (
@@ -10,6 +11,10 @@ from jam_session_processor.splitter import (
     DEFAULT_MIN_SONG_DURATION_SEC,
     detect_songs,
 )
+
+
+def _get_db() -> Database:
+    return Database()
 
 
 @click.group()
@@ -97,6 +102,21 @@ def process(
     if output_dir is None:
         output_dir = Path("output") / file.stem
 
+    # Save to database
+    db = _get_db()
+    source_file = file.name
+    date_str = meta.recording_date.strftime("%Y-%m-%d") if meta.recording_date else None
+
+    # Check if session already exists
+    existing = db.find_session_by_source(source_file)
+    if existing:
+        click.echo(f"Session for '{source_file}' already exists (id={existing.id}). Skipping DB insert.")
+        click.echo("Use 'jam-session reset-db' to clear and re-process.")
+        session_id = existing.id
+    else:
+        session_id = db.create_session(source_file, date=date_str)
+        click.echo(f"Created session id={session_id}")
+
     def on_progress(current, total, name, match_info=""):
         click.echo(f"  [{current}/{total}] {name}{match_info}")
 
@@ -108,7 +128,104 @@ def process(
         match_threshold=match_threshold,
         on_progress=on_progress,
     )
+
+    # Save tracks to database (only if we created a new session)
+    if not existing:
+        for i, ((start, end), audio_path) in enumerate(zip(result.segments, exported), start=1):
+            fp = compute_chroma_fingerprint(file, start_sec=start, duration_sec=end - start)
+            db.create_track(
+                session_id,
+                track_number=i,
+                start_sec=start,
+                end_sec=end,
+                audio_path=str(audio_path),
+                fingerprint=fp,
+            )
+        click.echo(f"Saved {len(exported)} track(s) to database.")
+
+    db.close()
     click.echo(f"Done! {len(exported)} file(s) written to {output_dir}/")
+
+
+@cli.command()
+def sessions():
+    """List all processed sessions."""
+    db = _get_db()
+    session_list = db.list_sessions()
+    if not session_list:
+        click.echo("No sessions in database. Use 'jam-session process <file>' to add one.")
+        db.close()
+        return
+
+    click.echo(f"{'ID':>4}  {'Date':>12}  {'Tracks':>6}  {'Tagged':>6}  Source")
+    click.echo("-" * 70)
+    for s in session_list:
+        date = s.date or "unknown"
+        click.echo(f"{s.id:>4}  {date:>12}  {s.track_count:>6}  {s.tagged_count:>6}  {s.source_file}")
+    db.close()
+
+
+@cli.command("tracks")
+@click.argument("session_id", type=int)
+def tracks(session_id: int):
+    """List tracks for a session."""
+    db = _get_db()
+    session = db.get_session(session_id)
+    if not session:
+        click.echo(f"Session {session_id} not found.")
+        db.close()
+        return
+
+    click.echo(f"Session {session.id}: {session.source_file} ({session.date or 'unknown date'})")
+    click.echo()
+
+    track_list = db.get_tracks_for_session(session_id)
+    if not track_list:
+        click.echo("  No tracks.")
+        db.close()
+        return
+
+    for t in track_list:
+        duration = t.duration_sec
+        song = f" → {t.song_name}" if t.song_name else ""
+        notes = f" [{t.notes}]" if t.notes else ""
+        click.echo(
+            f"  {t.track_number:>2}. {_format_sec(t.start_sec)} - {_format_sec(t.end_sec)}"
+            f"  ({_format_sec(duration)}){song}{notes}"
+        )
+    db.close()
+
+
+@cli.command("reset-db")
+@click.confirmation_option(prompt="This will delete all session data. Continue?")
+def reset_db():
+    """Clear all data from the database."""
+    db = _get_db()
+    db.reset()
+    db.close()
+    click.echo("Database cleared.")
+
+
+@cli.command("process-all")
+@click.argument("directory", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("-t", "--threshold", type=float, default=DEFAULT_ENERGY_THRESHOLD_DB, show_default=True)
+@click.option("-m", "--min-duration", type=int, default=DEFAULT_MIN_SONG_DURATION_SEC, show_default=True)
+def process_all(directory: Path, threshold: float, min_duration: int):
+    """Process all audio files in a directory."""
+    extensions = {".m4a", ".wav", ".mp3", ".flac", ".ogg"}
+    files = sorted(f for f in directory.iterdir() if f.suffix.lower() in extensions)
+    if not files:
+        click.echo(f"No audio files found in {directory}/")
+        return
+
+    click.echo(f"Found {len(files)} audio file(s) in {directory}/")
+    for f in files:
+        click.echo(f"\n{'='*60}")
+        click.echo(f"Processing: {f.name}")
+        click.echo(f"{'='*60}")
+        ctx = click.get_current_context()
+        ctx.invoke(process, file=f, output_dir=None, threshold=threshold,
+                   min_duration=min_duration, references=None, match_threshold=0.04)
 
 
 def _format_sec(sec: float) -> str:

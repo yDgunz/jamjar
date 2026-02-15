@@ -17,6 +17,9 @@ references/
 .vscode/
 *.swp
 
+# Database
+jam_sessions.db
+
 # Test / cache
 .pytest_cache/
 .ruff_cache/
