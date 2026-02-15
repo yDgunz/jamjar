@@ -206,6 +206,21 @@ def reset_db():
     click.echo("Database cleared.")
 
 
+@cli.command()
+@click.option("-p", "--port", type=int, default=8000, show_default=True, help="Port to listen on.")
+@click.option("--reload", "use_reload", is_flag=True, help="Enable auto-reload for development.")
+def serve(port: int, use_reload: bool):
+    """Start the API server."""
+    import uvicorn
+    click.echo(f"Starting server on http://localhost:{port}")
+    uvicorn.run(
+        "jam_session_processor.api:app",
+        host="0.0.0.0",
+        port=port,
+        reload=use_reload,
+    )
+
+
 @cli.command("process-all")
 @click.argument("directory", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("-t", "--threshold", type=float, default=DEFAULT_ENERGY_THRESHOLD_DB, show_default=True)

@@ -12,6 +12,8 @@ dependencies = [
     "numpy>=1.26",
     "pydub>=0.25",
     "mutagen>=1.47",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
 ]
 
 [project.optional-dependencies]
