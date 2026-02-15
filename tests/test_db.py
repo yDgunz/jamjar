@@ -17,6 +17,8 @@ def test_create_and_list_sessions(db):
     assert len(sessions) == 2
     assert sessions[0].date == "2026-02-10"  # Most recent first
     assert sessions[1].date == "2026-02-03"
+    assert sessions[0].name == "session2"
+    assert sessions[1].name == "session1"
 
 
 def test_get_session(db):
@@ -119,3 +121,24 @@ def test_track_notes(db):
 
     tracks = db.get_tracks_for_session(sid)
     assert tracks[0].notes == "Great take"
+
+
+def test_clean_session_name(db):
+    from jam_session_processor.db import clean_session_name
+    assert clean_session_name("5Biz 2-3-26.m4a") == "5Biz"
+    assert clean_session_name("5biz Good band jams 11-11-25 - good jams at 9_30.m4a") == "5biz Good band jams - good jams at 9_30"
+    assert clean_session_name("John-Andy-Eric 10-3-23 - 2 new tunes.m4a") == "John-Andy-Eric - 2 new tunes"
+    assert clean_session_name("Kingstoners 10-11-24.m4a") == "Kingstoners"
+
+
+def test_session_name_auto_generated(db):
+    sid = db.create_session("5Biz 2-3-26.m4a", date="2026-02-03")
+    session = db.get_session(sid)
+    assert session.name == "5Biz"
+
+
+def test_update_session_name(db):
+    sid = db.create_session("session1.m4a")
+    db.update_session_name(sid, "My Custom Name")
+    session = db.get_session(sid)
+    assert session.name == "My Custom Name"

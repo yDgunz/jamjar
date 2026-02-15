@@ -109,6 +109,16 @@ def test_list_songs(seeded_client):
     assert len(songs) == 2
 
 
+def test_update_session_notes(seeded_client):
+    resp = seeded_client.put("/api/sessions/1/notes", json={"notes": "Great rehearsal"})
+    assert resp.status_code == 200
+    assert resp.json()["notes"] == "Great rehearsal"
+
+    # Verify it persisted
+    resp = seeded_client.get("/api/sessions/1")
+    assert resp.json()["notes"] == "Great rehearsal"
+
+
 def test_get_song_tracks(seeded_client):
     seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
     seeded_client.post("/api/tracks/3/tag", json={"song_name": "Fat Cat"})

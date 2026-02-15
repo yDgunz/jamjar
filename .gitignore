@@ -20,6 +20,10 @@ references/
 # Database
 jam_sessions.db
 
+# Web frontend
+web/node_modules/
+web/dist/
+
 # Test / cache
 .pytest_cache/
 .ruff_cache/

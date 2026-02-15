@@ -31,6 +31,7 @@ def get_db() -> Database:
 
 class SessionResponse(BaseModel):
     id: int
+    name: str
     date: str | None
     source_file: str
     notes: str
@@ -56,6 +57,8 @@ class SongResponse(BaseModel):
     id: int
     name: str
     take_count: int
+    first_date: str | None
+    last_date: str | None
 
 
 class SongTrackResponse(BaseModel):
@@ -79,6 +82,10 @@ class NotesRequest(BaseModel):
     notes: str
 
 
+class NameRequest(BaseModel):
+    name: str
+
+
 # --- Session endpoints ---
 
 
@@ -91,6 +98,26 @@ def list_sessions():
 @app.get("/api/sessions/{session_id}", response_model=SessionResponse)
 def get_session(session_id: int):
     db = get_db()
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return SessionResponse(**session.__dict__)
+
+
+@app.put("/api/sessions/{session_id}/name", response_model=SessionResponse)
+def update_session_name(session_id: int, req: NameRequest):
+    db = get_db()
+    db.update_session_name(session_id, req.name)
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return SessionResponse(**session.__dict__)
+
+
+@app.put("/api/sessions/{session_id}/notes", response_model=SessionResponse)
+def update_session_notes(session_id: int, req: NotesRequest):
+    db = get_db()
+    db.update_session_notes(session_id, req.notes)
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")

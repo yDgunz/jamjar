@@ -1,3 +1,4 @@
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,6 +9,7 @@ DEFAULT_DB_PATH = Path("jam_sessions.db")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL DEFAULT '',
     date TEXT,
     source_file TEXT NOT NULL,
     notes TEXT DEFAULT '',
@@ -39,6 +41,7 @@ CREATE TABLE IF NOT EXISTS tracks (
 @dataclass
 class Session:
     id: int
+    name: str
     date: str | None
     source_file: str
     notes: str
@@ -68,6 +71,24 @@ class Song:
     id: int
     name: str
     take_count: int = 0
+    first_date: str | None = None
+    last_date: str | None = None
+
+
+def clean_session_name(source_file: str) -> str:
+    """Generate a clean display name from a source filename.
+
+    Strips file extension and date patterns (M-D-YY, M-D-YYYY, YYYY-MM-DD).
+    """
+    name = Path(source_file).stem
+    # Remove date patterns
+    name = re.sub(r'\b\d{4}-\d{1,2}-\d{1,2}\b', '', name)  # YYYY-MM-DD
+    name = re.sub(r'\b\d{1,2}-\d{1,2}-\d{2,4}\b', '', name)  # M-D-YY or M-D-YYYY
+    # Clean up leftover separators and whitespace
+    name = re.sub(r'\s*-\s*$', '', name)  # trailing dash
+    name = re.sub(r'^\s*-\s*', '', name)  # leading dash
+    name = re.sub(r'\s{2,}', ' ', name)  # collapse multiple spaces
+    return name.strip()
 
 
 class Database:
@@ -80,7 +101,19 @@ class Database:
 
     def _init_schema(self):
         self.conn.executescript(SCHEMA)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self):
+        """Run any needed migrations on existing databases."""
+        # Add 'name' column if missing (pre-existing DBs)
+        cols = [r[1] for r in self.conn.execute("PRAGMA table_info(sessions)").fetchall()]
+        if "name" not in cols:
+            self.conn.execute("ALTER TABLE sessions ADD COLUMN name TEXT NOT NULL DEFAULT ''")
+            # Backfill names from source_file
+            for row in self.conn.execute("SELECT id, source_file FROM sessions").fetchall():
+                name = clean_session_name(row[1])
+                self.conn.execute("UPDATE sessions SET name = ? WHERE id = ?", (name, row[0]))
 
     def close(self):
         self.conn.close()
@@ -97,12 +130,17 @@ class Database:
     # --- Sessions ---
 
     def create_session(self, source_file: str, date: str | None = None, notes: str = "") -> int:
+        name = clean_session_name(source_file)
         cur = self.conn.execute(
-            "INSERT INTO sessions (source_file, date, notes) VALUES (?, ?, ?)",
-            (source_file, date, notes),
+            "INSERT INTO sessions (name, source_file, date, notes) VALUES (?, ?, ?, ?)",
+            (name, source_file, date, notes),
         )
         self.conn.commit()
         return cur.lastrowid
+
+    def update_session_name(self, session_id: int, name: str):
+        self.conn.execute("UPDATE sessions SET name = ? WHERE id = ?", (name, session_id))
+        self.conn.commit()
 
     def get_session(self, session_id: int) -> Session | None:
         row = self.conn.execute(
@@ -145,6 +183,10 @@ class Database:
         if not row:
             return None
         return Session(**row)
+
+    def update_session_notes(self, session_id: int, notes: str):
+        self.conn.execute("UPDATE sessions SET notes = ? WHERE id = ?", (notes, session_id))
+        self.conn.commit()
 
     # --- Tracks ---
 
@@ -209,9 +251,11 @@ class Database:
 
     def list_songs(self) -> list[Song]:
         rows = self.conn.execute(
-            """SELECT s.id, s.name, COUNT(t.id) as take_count
+            """SELECT s.id, s.name, COUNT(t.id) as take_count,
+                      MIN(ses.date) as first_date, MAX(ses.date) as last_date
                FROM songs s
                LEFT JOIN tracks t ON t.song_id = s.id
+               LEFT JOIN sessions ses ON t.session_id = ses.id
                GROUP BY s.id
                ORDER BY s.name"""
         ).fetchall()
@@ -220,7 +264,10 @@ class Database:
     def get_tracks_for_song(self, song_id: int) -> list[dict]:
         """Get all tracks tagged with a song, including session info."""
         rows = self.conn.execute(
-            """SELECT t.*, ses.date as session_date, ses.source_file
+            """SELECT t.id, t.session_id, t.track_number,
+                      t.start_sec, t.end_sec, t.duration_sec,
+                      t.audio_path, t.notes,
+                      ses.date as session_date, ses.source_file
                FROM tracks t
                JOIN sessions ses ON t.session_id = ses.id
                WHERE t.song_id = ?
