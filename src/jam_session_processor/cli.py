@@ -2,6 +2,7 @@ from pathlib import Path
 
 import click
 
+from jam_session_processor.fingerprint import build_reference_db
 from jam_session_processor.metadata import extract_metadata
 from jam_session_processor.output import export_segments
 from jam_session_processor.splitter import (
@@ -46,11 +47,39 @@ def info(file: Path):
     show_default=True,
     help="Minimum song duration in seconds.",
 )
-def process(file: Path, output_dir: Path | None, threshold: float, min_duration: int):
+@click.option(
+    "-r", "--references",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Directory of reference songs for matching.",
+)
+@click.option(
+    "--match-threshold",
+    type=float,
+    default=0.04,
+    show_default=True,
+    help="DTW distance threshold for reference matching (lower = stricter).",
+)
+def process(
+    file: Path,
+    output_dir: Path | None,
+    threshold: float,
+    min_duration: int,
+    references: Path | None,
+    match_threshold: float,
+):
     """Split a jam session recording into individual songs."""
     meta = extract_metadata(file)
     click.echo(meta.summary())
     click.echo()
+
+    # Build reference DB if provided
+    reference_db = None
+    if references:
+        click.echo(f"Loading reference songs from {references}/...")
+        reference_db = build_reference_db(references)
+        click.echo(f"  {len(reference_db)} reference(s) loaded")
+        click.echo()
 
     click.echo("Analyzing energy levels...")
     result = detect_songs(file, energy_threshold_db=threshold, min_song_duration_sec=min_duration)
@@ -68,13 +97,15 @@ def process(file: Path, output_dir: Path | None, threshold: float, min_duration:
     if output_dir is None:
         output_dir = Path("output") / file.stem
 
-    def on_progress(current, total, name):
-        click.echo(f"  [{current}/{total}] {name}")
+    def on_progress(current, total, name, match_info=""):
+        click.echo(f"  [{current}/{total}] {name}{match_info}")
 
-    click.echo("Exporting...")
+    click.echo("Fingerprinting and exporting...")
     exported = export_segments(
         file, result.segments, output_dir,
         session_date=meta.recording_date,
+        reference_db=reference_db,
+        match_threshold=match_threshold,
         on_progress=on_progress,
     )
     click.echo(f"Done! {len(exported)} file(s) written to {output_dir}/")

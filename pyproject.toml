@@ -9,6 +9,7 @@ description = "Split iPhone jam session recordings into individual songs"
 requires-python = ">=3.11"
 dependencies = [
     "click>=8.1",
+    "numpy>=1.26",
     "pydub>=0.25",
     "mutagen>=1.47",
 ]

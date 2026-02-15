@@ -9,6 +9,7 @@ build/
 # Audio files (large)
 input/
 output/
+references/
 
 # IDE / OS
 .DS_Store

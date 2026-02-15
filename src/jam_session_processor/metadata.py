@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -43,6 +44,30 @@ class AudioMetadata:
         return f"{minutes}m {seconds}s"
 
 
+def parse_date_from_filename(stem: str) -> datetime | None:
+    """Try to extract a date from a filename. Supports M-D-YY, M-D-YYYY, YYYY-MM-DD."""
+    # YYYY-MM-DD
+    m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", stem)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            pass
+
+    # M-D-YY or M-D-YYYY (common in casual filenames)
+    m = re.search(r"(\d{1,2})-(\d{1,2})-(\d{2,4})", stem)
+    if m:
+        month, day, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if year < 100:
+            year += 2000
+        try:
+            return datetime(year, month, day)
+        except ValueError:
+            pass
+
+    return None
+
+
 def extract_metadata(file_path: Path) -> AudioMetadata:
     audio = MutagenFile(str(file_path))
     if audio is None:
@@ -63,6 +88,10 @@ def extract_metadata(file_path: Path) -> AudioMetadata:
                 except ValueError:
                     pass
                 break
+
+    # Fall back to parsing date from filename
+    if recording_date is None:
+        recording_date = parse_date_from_filename(file_path.stem)
 
     return AudioMetadata(
         filename=file_path.name,
