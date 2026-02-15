@@ -51,54 +51,10 @@ export default function TrackRow({ track, songs, onUpdate }: Props) {
 
   return (
     <div className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-3">
-      {/* Header row: track info */}
+      {/* Header row: track name + info */}
       <div className="mb-2 flex items-center gap-2">
-        <span className="text-sm font-medium text-gray-300">
-          Track {track.track_number}
-        </span>
-        <span className="text-xs text-gray-500">
-          {formatTime(track.start_sec)} - {formatTime(track.end_sec)}
-        </span>
-        <span className="text-xs text-gray-600">
-          ({formatTime(track.duration_sec)})
-        </span>
-      </div>
-
-      {/* Audio player */}
-      <AudioPlayer src={api.trackAudioUrl(track.id)} />
-
-      {/* Song tag */}
-      <div className="mt-2">
-        {track.song_name && !tagging ? (
-          <div className="flex items-center gap-2">
-            <span className="inline-block rounded bg-indigo-900 px-2 py-0.5 text-xs font-medium text-indigo-300">
-              {track.song_name}
-            </span>
-            <button
-              onClick={() => { setTagging(true); setTagInput(track.song_name ?? ""); }}
-              className="text-xs text-gray-500 hover:text-gray-300"
-            >
-              edit
-            </button>
-            <button
-              onClick={handleUntag}
-              className="text-xs text-gray-500 hover:text-red-400"
-            >
-              remove
-            </button>
-          </div>
-        ) : !tagging ? (
-          <button
-            onClick={() => setTagging(true)}
-            className="text-xs text-gray-500 hover:text-indigo-400"
-          >
-            + tag song
-          </button>
-        ) : null}
-
-        {/* Tag input with autocomplete */}
-        {tagging && (
-          <div className="relative mt-1">
+        {tagging ? (
+          <div className="relative">
             <div className="flex items-center gap-2">
               <input
                 autoFocus
@@ -106,10 +62,11 @@ export default function TrackRow({ track, songs, onUpdate }: Props) {
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleTag();
-                  if (e.key === "Escape") setTagging(false);
+                  if (e.key === "Escape") { setTagging(false); setTagInput(track.song_name ?? ""); }
                 }}
+                onBlur={() => { if (!tagInput.trim() && !track.song_name) setTagging(false); }}
                 placeholder="Song name..."
-                className="w-48 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="w-48 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm font-medium text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
               />
               <button
                 onClick={handleTag}
@@ -117,8 +74,16 @@ export default function TrackRow({ track, songs, onUpdate }: Props) {
               >
                 Save
               </button>
+              {track.song_name && (
+                <button
+                  onClick={handleUntag}
+                  className="text-xs text-gray-500 hover:text-red-400"
+                >
+                  Remove
+                </button>
+              )}
               <button
-                onClick={() => setTagging(false)}
+                onClick={() => { setTagging(false); setTagInput(track.song_name ?? ""); }}
                 className="text-xs text-gray-500 hover:text-gray-300"
               >
                 Cancel
@@ -132,7 +97,6 @@ export default function TrackRow({ track, songs, onUpdate }: Props) {
                     key={s.id}
                     onClick={() => {
                       setTagInput(s.name);
-                      // Auto-save when picking from autocomplete
                       api.tagTrack(track.id, s.name).then(() => {
                         setTagging(false);
                         onUpdate();
@@ -149,8 +113,37 @@ export default function TrackRow({ track, songs, onUpdate }: Props) {
               </div>
             )}
           </div>
+        ) : track.song_name ? (
+          <span
+            onClick={() => { setTagging(true); setTagInput(track.song_name ?? ""); }}
+            className="cursor-pointer text-sm font-medium text-indigo-400 hover:text-indigo-300"
+            title="Click to rename"
+          >
+            {track.song_name}
+          </span>
+        ) : (
+          <button
+            onClick={() => setTagging(true)}
+            className="text-sm font-medium text-gray-500 hover:text-indigo-400"
+          >
+            Track {track.track_number}
+          </button>
+        )}
+
+        {!tagging && (
+          <>
+            <span className="text-xs text-gray-500">
+              {track.song_name ? `Track ${track.track_number} · ` : ""}{formatTime(track.start_sec)} - {formatTime(track.end_sec)}
+            </span>
+            <span className="text-xs text-gray-600">
+              ({formatTime(track.duration_sec)})
+            </span>
+          </>
         )}
       </div>
+
+      {/* Audio player */}
+      <AudioPlayer src={api.trackAudioUrl(track.id)} />
 
       {/* Notes */}
       <div className="mt-2">
