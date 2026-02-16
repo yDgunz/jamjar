@@ -20,6 +20,7 @@ export interface Session {
   notes: string;
   track_count: number;
   tagged_count: number;
+  song_names: string;
 }
 
 export interface Track {

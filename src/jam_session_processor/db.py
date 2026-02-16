@@ -48,6 +48,7 @@ class Session:
     created_at: str
     track_count: int = 0
     tagged_count: int = 0
+    song_names: str = ""
 
 
 @dataclass
@@ -176,7 +177,10 @@ class Database:
         row = self.conn.execute(
             """SELECT s.*,
                       COUNT(t.id) as track_count,
-                      COUNT(t.song_id) as tagged_count
+                      COUNT(t.song_id) as tagged_count,
+                      COALESCE((SELECT GROUP_CONCAT(DISTINCT s2.name)
+                                FROM tracks t2 JOIN songs s2 ON t2.song_id = s2.id
+                                WHERE t2.session_id = s.id), '') as song_names
                FROM sessions s
                LEFT JOIN tracks t ON t.session_id = s.id
                WHERE s.id = ?
@@ -191,7 +195,10 @@ class Database:
         rows = self.conn.execute(
             """SELECT s.*,
                       COUNT(t.id) as track_count,
-                      COUNT(t.song_id) as tagged_count
+                      COUNT(t.song_id) as tagged_count,
+                      COALESCE((SELECT GROUP_CONCAT(DISTINCT s2.name)
+                                FROM tracks t2 JOIN songs s2 ON t2.song_id = s2.id
+                                WHERE t2.session_id = s.id), '') as song_names
                FROM sessions s
                LEFT JOIN tracks t ON t.session_id = s.id
                GROUP BY s.id
@@ -203,7 +210,10 @@ class Database:
         row = self.conn.execute(
             """SELECT s.*,
                       COUNT(t.id) as track_count,
-                      COUNT(t.song_id) as tagged_count
+                      COUNT(t.song_id) as tagged_count,
+                      COALESCE((SELECT GROUP_CONCAT(DISTINCT s2.name)
+                                FROM tracks t2 JOIN songs s2 ON t2.song_id = s2.id
+                                WHERE t2.session_id = s.id), '') as song_names
                FROM sessions s
                LEFT JOIN tracks t ON t.session_id = s.id
                WHERE s.source_file = ?

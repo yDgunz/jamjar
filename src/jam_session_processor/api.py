@@ -40,6 +40,7 @@ class SessionResponse(BaseModel):
     notes: str
     track_count: int
     tagged_count: int
+    song_names: str = ""
 
 
 class TrackResponse(BaseModel):

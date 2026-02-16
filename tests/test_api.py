@@ -41,6 +41,22 @@ def test_list_sessions(seeded_client):
     assert len(sessions) == 1
     assert sessions[0]["source_file"] == "session1.m4a"
     assert sessions[0]["track_count"] == 3
+    assert sessions[0]["song_names"] == ""
+
+
+def test_session_song_names(seeded_client):
+    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+    seeded_client.post("/api/tracks/2/tag", json={"song_name": "Spit Me Out"})
+
+    resp = seeded_client.get("/api/sessions")
+    sessions = resp.json()
+    names = sessions[0]["song_names"].split(",")
+    assert "Fat Cat" in names
+    assert "Spit Me Out" in names
+
+    # Also verify in get_session
+    resp = seeded_client.get("/api/sessions/1")
+    assert "Fat Cat" in resp.json()["song_names"]
 
 
 def test_get_session(seeded_client):

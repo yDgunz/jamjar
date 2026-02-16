@@ -36,9 +36,11 @@ export default function SessionList() {
   }, []);
 
   const filtered = filter.trim()
-    ? sessions.filter((s) =>
-        (s.name || s.source_file).toLowerCase().includes(filter.toLowerCase())
-      )
+    ? sessions.filter((s) => {
+        const q = filter.toLowerCase();
+        return (s.name || s.source_file).toLowerCase().includes(q)
+          || (s.song_names || "").toLowerCase().includes(q);
+      })
     : sessions;
 
   if (loading) return <p className="text-gray-400">Loading sessions...</p>;
@@ -80,6 +82,20 @@ export default function SessionList() {
                     <div className="mt-1 text-sm text-gray-400">
                       {formatDate(s.date)}
                     </div>
+                    {(s.song_names || s.track_count - s.tagged_count > 0) && (
+                      <div className="mt-0.5 text-sm text-gray-500">
+                        {(() => {
+                          const names = s.song_names ? s.song_names.split(",") : [];
+                          const untagged = s.track_count - s.tagged_count;
+                          const shown = names.slice(0, 3);
+                          const extra = names.length - 3;
+                          let text = shown.join(", ");
+                          if (extra > 0) text += `, +${extra + untagged} more`;
+                          else if (untagged > 0) text += (text ? ", " : "") + `${untagged} untagged`;
+                          return text;
+                        })()}
+                      </div>
+                    )}
                   </div>
                   <div className="text-right text-sm text-gray-400">
                     <div>{s.track_count} take{s.track_count !== 1 ? "s" : ""}</div>
