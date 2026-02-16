@@ -90,7 +90,7 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
       {/* Header row: take name + info */}
       <div className="mb-2 flex items-center gap-2">
         {tagging ? (
-          <div className="relative">
+          <div>
             <div className="flex items-center gap-2">
               <input
                 autoFocus
@@ -100,16 +100,9 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
                   if (e.key === "Enter") handleTag();
                   if (e.key === "Escape") { setTagging(false); setTagInput(track.song_name ?? ""); }
                 }}
-                onBlur={() => { if (!tagInput.trim() && !track.song_name) setTagging(false); }}
-                placeholder="Song name..."
+                placeholder="Search or type new song..."
                 className="w-48 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm font-medium text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
               />
-              <button
-                onClick={handleTag}
-                className="rounded bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-500"
-              >
-                Save
-              </button>
               {track.song_name && (
                 <button
                   onClick={handleUntag}
@@ -125,29 +118,34 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
                 Cancel
               </button>
             </div>
-            {/* Autocomplete dropdown */}
-            {suggestions.length > 0 && (
-              <div className="absolute z-10 mt-1 max-h-40 w-48 overflow-y-auto rounded border border-gray-700 bg-gray-800 shadow-lg">
-                {suggestions.slice(0, 8).map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => {
-                      setTagInput(s.name);
-                      api.tagTrack(track.id, s.name).then(() => {
-                        setTagging(false);
-                        onUpdate();
-                      });
-                    }}
-                    className="block w-full px-2 py-1.5 text-left text-sm text-gray-300 hover:bg-gray-700 hover:text-white"
-                  >
-                    {s.name}
-                    <span className="ml-2 text-xs text-gray-500">
-                      {s.take_count} take{s.take_count !== 1 ? "s" : ""}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* Song chips */}
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {suggestions.map((s) => (
+                <button
+                  key={s.id}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    api.tagTrack(track.id, s.name).then(() => {
+                      setTagging(false);
+                      onUpdate();
+                    });
+                  }}
+                  className="rounded-full bg-gray-800 px-2.5 py-1 text-xs text-gray-300 transition hover:bg-indigo-600 hover:text-white"
+                >
+                  {s.name}
+                  <span className="ml-1 text-gray-600">{s.take_count}</span>
+                </button>
+              ))}
+              {tagInput.trim() && !songs.some((s) => s.name.toLowerCase() === tagInput.toLowerCase()) && (
+                <button
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={handleTag}
+                  className="rounded-full border border-dashed border-gray-600 px-2.5 py-1 text-xs text-indigo-400 transition hover:border-indigo-500 hover:bg-indigo-600/20"
+                >
+                  + &ldquo;{tagInput.trim()}&rdquo;
+                </button>
+              )}
+            </div>
           </div>
         ) : track.song_name ? (
           <div className="flex items-center gap-2">
