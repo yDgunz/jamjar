@@ -47,7 +47,7 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
     stopPreview();
   }, [src]);
 
-  const togglePlay = () => {
+  const togglePlay = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
     if (previewing) stopPreview();
@@ -56,7 +56,7 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
     } else {
       audio.play();
     }
-  };
+  }, [playing, previewing, stopPreview]);
 
   const restart = () => {
     const audio = audioRef.current;
@@ -152,10 +152,30 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
     playNextClip();
   };
 
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (e.key === " ") {
+      e.preventDefault();
+      togglePlay();
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      audio.currentTime = Math.max(0, audio.currentTime - 5);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 5);
+    }
+  }, [togglePlay]);
+
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div className="flex items-center gap-3">
+    <div
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      className="flex items-center gap-3 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+    >
       {/* Restart button */}
       <button
         onClick={restart}
