@@ -34,7 +34,7 @@ export default function SongCatalog() {
   if (songs.length === 0) {
     return (
       <p className="text-gray-400">
-        No songs tagged yet. Tag tracks from a{" "}
+        No songs tagged yet. Tag takes from a{" "}
         <Link to="/" className="text-indigo-400 hover:text-indigo-300">session</Link> to build your catalog.
       </p>
     );

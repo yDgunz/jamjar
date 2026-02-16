@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { api } from "../api";
 import type { Track, Song } from "../api";
 import AudioPlayer from "./AudioPlayer";
+import Modal from "./Modal";
 
 function formatTime(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -15,9 +16,10 @@ interface Props {
   songs: Song[];
   onUpdate: () => void;
   onTracksChanged: (tracks: Track[]) => void;
+  onError: (msg: string) => void;
 }
 
-export default function TrackRow({ track, songs, onUpdate, onTracksChanged }: Props) {
+export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onError }: Props) {
   const [tagging, setTagging] = useState(false);
   const [tagInput, setTagInput] = useState(track.song_name ?? "");
   const [editingNotes, setEditingNotes] = useState(false);
@@ -25,6 +27,7 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged }: Pr
   const [playerPlaying, setPlayerPlaying] = useState(false);
   const [playerTime, setPlayerTime] = useState(0);
   const [operationLoading, setOperationLoading] = useState(false);
+  const [confirmingSplit, setConfirmingSplit] = useState(false);
 
   const handleTag = async () => {
     if (!tagInput.trim()) return;
@@ -46,13 +49,13 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged }: Pr
   };
 
   const handleSplit = async () => {
-    if (!confirm(`Split this track at ${formatTime(playerTime)}?`)) return;
+    setConfirmingSplit(false);
     setOperationLoading(true);
     try {
       const newTracks = await api.splitTrack(track.id, playerTime);
       onTracksChanged(newTracks);
     } catch (err) {
-      alert(`Split failed: ${err instanceof Error ? err.message : err}`);
+      onError(`Split failed: ${err instanceof Error ? err.message : err}`);
     } finally {
       setOperationLoading(false);
     }
@@ -84,7 +87,7 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged }: Pr
         </div>
       )}
 
-      {/* Header row: track name + info */}
+      {/* Header row: take name + info */}
       <div className="mb-2 flex items-center gap-2">
         {tagging ? (
           <div className="relative">
@@ -166,14 +169,14 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged }: Pr
             onClick={() => setTagging(true)}
             className="text-sm font-medium text-gray-500 hover:text-indigo-400"
           >
-            Track {track.track_number}
+            Take {track.track_number}
           </button>
         )}
 
         {!tagging && (
           <>
             <span className="text-xs text-gray-500">
-              {track.song_name ? `Track ${track.track_number} · ` : ""}{formatTime(track.start_sec)} - {formatTime(track.end_sec)}
+              {track.song_name ? `Take ${track.track_number} · ` : ""}{formatTime(track.start_sec)} - {formatTime(track.end_sec)}
             </span>
             <span className="text-xs text-gray-600">
               ({formatTime(track.duration_sec)})
@@ -189,11 +192,11 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged }: Pr
         onTimeUpdate={(time) => setPlayerTime(time)}
       />
 
-      {/* Split button — shown when paused mid-track */}
+      {/* Split button — shown when paused mid-take */}
       {canSplit && (
         <div className="mt-2">
           <button
-            onClick={handleSplit}
+            onClick={() => setConfirmingSplit(true)}
             disabled={operationLoading}
             className="flex items-center gap-1.5 rounded bg-gray-800 px-2.5 py-1 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
           >
@@ -204,6 +207,14 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged }: Pr
           </button>
         </div>
       )}
+      <Modal
+        open={confirmingSplit}
+        title="Split take"
+        message={`Split this take into two at ${formatTime(playerTime)}? The first half will keep the current song tag and notes.`}
+        confirmLabel="Split"
+        onConfirm={handleSplit}
+        onCancel={() => setConfirmingSplit(false)}
+      />
 
       {/* Notes */}
       <div className="mt-2">

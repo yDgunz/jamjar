@@ -54,7 +54,7 @@ export default function SessionList() {
               </div>
             </div>
             <div className="text-right text-sm text-gray-400">
-              <div>{s.track_count} track{s.track_count !== 1 ? "s" : ""}</div>
+              <div>{s.track_count} take{s.track_count !== 1 ? "s" : ""}</div>
               <div>
                 {s.tagged_count}/{s.track_count} tagged
               </div>

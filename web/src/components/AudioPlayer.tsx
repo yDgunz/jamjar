@@ -194,7 +194,7 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
             ? "bg-amber-600 text-white hover:bg-amber-500"
             : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
         }`}
-        title="Preview: play short clips from different parts of the track"
+        title="Preview: play short clips from different parts"
       >
         <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 24 24">
           <rect x="2" y="4" width="3" height="16" rx="1" />
@@ -236,7 +236,7 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
           }`}
           style={{ width: `${progress}%` }}
         />
-        {/* Track boundary markers */}
+        {/* Take boundary markers */}
         {markers && duration > 0 && markers.map((m, i) => (
           <div
             key={i}
