@@ -98,6 +98,11 @@ class SplitRequest(BaseModel):
     split_at_sec: float
 
 
+class ReprocessRequest(BaseModel):
+    threshold: float = -30.0
+    min_duration: int = 120
+
+
 # --- Session endpoints ---
 
 
@@ -159,6 +164,89 @@ def get_session_tracks(session_id: int):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return [TrackResponse(**t.__dict__) for t in db.get_tracks_for_session(session_id)]
+
+
+@app.post(
+    "/api/sessions/{session_id}/reprocess",
+    response_model=list[TrackResponse],
+)
+def reprocess_session(session_id: int, req: ReprocessRequest):
+    """Re-run song detection on a session with new parameters."""
+    import os
+
+    from jam_session_processor.fingerprint import compute_chroma_fingerprint
+    from jam_session_processor.metadata import extract_metadata
+    from jam_session_processor.output import export_segments
+    from jam_session_processor.splitter import detect_songs
+
+    db = get_db()
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    source = Path(session.source_file)
+    if not source.exists():
+        raise HTTPException(
+            status_code=404, detail="Source audio file not found on disk"
+        )
+
+    # Determine output dir from existing tracks or default
+    existing_tracks = db.get_tracks_for_session(session_id)
+    if existing_tracks:
+        output_dir = Path(existing_tracks[0].audio_path).parent
+    else:
+        output_dir = Path("output") / source.stem
+
+    # Delete old tracks and their audio files
+    for track in existing_tracks:
+        try:
+            os.remove(track.audio_path)
+        except OSError:
+            pass
+        db.delete_track(track.id)
+
+    # Re-detect songs
+    try:
+        result = detect_songs(
+            source,
+            energy_threshold_db=req.threshold,
+            min_song_duration_sec=req.min_duration,
+        )
+    except Exception as e:
+        logger.exception("Reprocess detection failed")
+        raise HTTPException(
+            status_code=500, detail=f"Detection failed: {e}"
+        )
+
+    if not result.segments:
+        return []
+
+    # Re-export and save new tracks
+    meta = extract_metadata(source)
+    exported = export_segments(
+        source, result.segments, output_dir,
+        session_date=meta.recording_date,
+    )
+
+    for i, ((start, end), audio_path) in enumerate(
+        zip(result.segments, exported), start=1
+    ):
+        fp = compute_chroma_fingerprint(
+            source, start_sec=start, duration_sec=end - start
+        )
+        db.create_track(
+            session_id,
+            track_number=i,
+            start_sec=start,
+            end_sec=end,
+            audio_path=str(audio_path.resolve()),
+            fingerprint=fp,
+        )
+
+    return [
+        TrackResponse(**t.__dict__)
+        for t in db.get_tracks_for_session(session_id)
+    ]
 
 
 # --- Track endpoints ---

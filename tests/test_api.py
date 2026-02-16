@@ -186,3 +186,64 @@ def test_split_track_endpoint(seeded_client_with_source):
 def test_split_invalid_position_returns_400(seeded_client_with_source):
     resp = seeded_client_with_source.post("/api/tracks/1/split", json={"split_at_sec": 0.5})
     assert resp.status_code == 400
+
+
+def test_reprocess_session(client, tmp_path):
+    from unittest.mock import patch, MagicMock
+    from jam_session_processor.splitter import SplitResult
+
+    db = api._db
+    source = tmp_path / "source.m4a"
+    source.write_bytes(b"\x00" * 100)
+    sid = db.create_session(str(source), date="2026-02-03")
+
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    # Create 2 old tracks
+    for i in range(1, 3):
+        audio = output_dir / f"track{i}.wav"
+        audio.write_bytes(b"RIFF" + b"\x00" * 100)
+        db.create_track(sid, track_number=i, start_sec=(i - 1) * 300.0,
+                        end_sec=i * 300.0, audio_path=str(audio))
+
+    new_segments = [(0.0, 200.0), (210.0, 400.0), (420.0, 600.0)]
+    mock_result = SplitResult(segments=new_segments, total_duration_sec=600.0)
+
+    def mock_export(file_path, segments, output_dir, **kwargs):
+        paths = []
+        for i, (s, e) in enumerate(segments, 1):
+            p = output_dir / f"new_track{i}.wav"
+            p.write_bytes(b"RIFF" + b"\x00" * 100)
+            paths.append(p)
+        return paths
+
+    mock_meta = MagicMock()
+    mock_meta.recording_date = None
+
+    with patch("jam_session_processor.splitter.detect_songs", return_value=mock_result), \
+         patch("jam_session_processor.output.export_segments", side_effect=mock_export), \
+         patch("jam_session_processor.fingerprint.compute_chroma_fingerprint", return_value="mockfp"), \
+         patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta):
+        resp = client.post(
+            f"/api/sessions/{sid}/reprocess",
+            json={"threshold": -25.0, "min_duration": 60},
+        )
+
+    assert resp.status_code == 200
+    tracks = resp.json()
+    assert len(tracks) == 3
+    assert tracks[0]["start_sec"] == 0.0
+    assert tracks[0]["end_sec"] == 200.0
+    assert tracks[2]["start_sec"] == 420.0
+
+
+def test_reprocess_source_not_found(client, tmp_path):
+    db = api._db
+    sid = db.create_session("/nonexistent/file.m4a", date="2026-02-03")
+
+    resp = client.post(
+        f"/api/sessions/{sid}/reprocess",
+        json={"threshold": -30.0, "min_duration": 120},
+    )
+    assert resp.status_code == 404
+    assert "not found" in resp.json()["detail"].lower()

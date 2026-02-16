@@ -114,6 +114,13 @@ export const api = {
       body: JSON.stringify({ split_at_sec: splitAtSec }),
     }),
 
+  reprocessSession: (sessionId: number, threshold: number, minDuration: number) =>
+    fetchJson<Track[]>(`${BASE}/sessions/${sessionId}/reprocess`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threshold, min_duration: minDuration }),
+    }),
+
   trackAudioUrl: (trackId: number) => `${BASE}/tracks/${trackId}/audio`,
 
   sessionAudioUrl: (sessionId: number) => `${BASE}/sessions/${sessionId}/audio`,

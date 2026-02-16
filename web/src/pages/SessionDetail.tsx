@@ -79,6 +79,12 @@ export default function SessionDetail() {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesInput, setNotesInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [reprocessOpen, setReprocessOpen] = useState(false);
+  const [threshold, setThreshold] = useState(-30);
+  const [minDuration, setMinDuration] = useState(120);
+  const [reprocessing, setReprocessing] = useState(false);
+  const [confirmReprocess, setConfirmReprocess] = useState(false);
 
   const sessionId = Number(id);
   const showError = useCallback((msg: string) => setErrorMsg(msg), []);
@@ -128,6 +134,21 @@ export default function SessionDetail() {
     await api.updateSessionNotes(sessionId, notesInput.trim());
     setEditingNotes(false);
     refresh();
+  };
+
+  const handleReprocess = async () => {
+    setConfirmReprocess(false);
+    setReprocessing(true);
+    try {
+      const newTracks = await api.reprocessSession(sessionId, threshold, minDuration);
+      handleTracksChanged(newTracks);
+      setReprocessOpen(false);
+      setSuccessMsg(`Reprocessed: ${newTracks.length} take${newTracks.length !== 1 ? "s" : ""} found`);
+    } catch (err) {
+      showError(`Reprocess failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setReprocessing(false);
+    }
   };
 
   if (loading) return <p className="text-gray-400">Loading...</p>;
@@ -201,6 +222,67 @@ export default function SessionDetail() {
           )}
         </div>
 
+        {/* Reprocess panel */}
+        <div className="mt-3">
+          <button
+            onClick={() => setReprocessOpen(!reprocessOpen)}
+            className="flex items-center gap-1.5 text-xs text-gray-500 transition hover:text-gray-300"
+          >
+            <svg
+              className={`h-3 w-3 transition-transform ${reprocessOpen ? "rotate-90" : ""}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            Reprocess with different settings
+          </button>
+          {reprocessOpen && (
+            <div className="mt-2 rounded-lg border border-gray-700 bg-gray-800/50 px-4 py-3">
+              <p className="mb-3 text-xs text-gray-500">
+                Higher threshold = fewer songs detected. Higher min duration = skip shorter segments.
+              </p>
+              <div className="flex flex-wrap items-end gap-4">
+                <label className="block">
+                  <span className="text-xs text-gray-400">Threshold (dB)</span>
+                  <input
+                    type="number"
+                    value={threshold}
+                    onChange={(e) => setThreshold(Number(e.target.value))}
+                    step={1}
+                    className="mt-1 block w-24 rounded border border-gray-700 bg-gray-900 px-2 py-1 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs text-gray-400">Min duration (sec)</span>
+                  <input
+                    type="number"
+                    value={minDuration}
+                    onChange={(e) => setMinDuration(Number(e.target.value))}
+                    step={10}
+                    min={10}
+                    className="mt-1 block w-24 rounded border border-gray-700 bg-gray-900 px-2 py-1 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  />
+                </label>
+                <button
+                  onClick={() => setConfirmReprocess(true)}
+                  disabled={reprocessing}
+                  className="flex items-center gap-1.5 rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                >
+                  {reprocessing ? (
+                    <>
+                      <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Reprocessing...
+                    </>
+                  ) : "Reprocess"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Full session audio */}
         <div className="mt-4 rounded-lg border border-gray-700 bg-gray-800/50 px-4 py-3">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">Full Recording</p>
@@ -241,8 +323,20 @@ export default function SessionDetail() {
           </div>
         ))}
       </div>
+      <Modal
+        open={confirmReprocess}
+        title="Reprocess session"
+        message={`This will re-detect songs with threshold ${threshold} dB and min duration ${minDuration}s. All existing takes and their tags will be replaced.`}
+        confirmLabel="Reprocess"
+        variant="danger"
+        onConfirm={handleReprocess}
+        onCancel={() => setConfirmReprocess(false)}
+      />
       {errorMsg && (
         <Toast message={errorMsg} variant="error" onClose={() => setErrorMsg(null)} />
+      )}
+      {successMsg && (
+        <Toast message={successMsg} variant="success" onClose={() => setSuccessMsg(null)} />
       )}
     </div>
   );
