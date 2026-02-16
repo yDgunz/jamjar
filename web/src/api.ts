@@ -40,6 +40,9 @@ export interface Track {
 export interface Song {
   id: number;
   name: string;
+  chart: string;
+  lyrics: string;
+  notes: string;
   take_count: number;
   first_date: string | null;
   last_date: string | null;
@@ -147,6 +150,18 @@ export const api = {
   sessionAudioUrl: (sessionId: number) => `${BASE}/sessions/${sessionId}/audio`,
 
   listSongs: () => fetchJson<Song[]>(`${BASE}/songs`),
+
+  getSong: (songId: number) => fetchJson<Song>(`${BASE}/songs/${songId}`),
+
+  updateSongDetails: (
+    songId: number,
+    details: { chart: string; lyrics: string; notes: string },
+  ) =>
+    fetchJson<Song>(`${BASE}/songs/${songId}/details`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(details),
+    }),
 
   renameSong: (songId: number, name: string) =>
     fetchJson<Song>(`${BASE}/songs/${songId}/name`, {

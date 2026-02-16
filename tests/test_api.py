@@ -291,6 +291,54 @@ def test_rename_song_endpoint(seeded_client):
     assert resp.json()[0]["song_name"] == "Fat Cat Blues"
 
 
+def test_get_song_endpoint(seeded_client):
+    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+
+    songs = seeded_client.get("/api/songs").json()
+    song_id = songs[0]["id"]
+
+    resp = seeded_client.get(f"/api/songs/{song_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"] == "Fat Cat"
+    assert data["chart"] == ""
+    assert data["lyrics"] == ""
+    assert data["notes"] == ""
+    assert data["take_count"] == 1
+
+
+def test_get_song_not_found(client):
+    resp = client.get("/api/songs/9999")
+    assert resp.status_code == 404
+
+
+def test_update_song_details_endpoint(seeded_client):
+    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+
+    songs = seeded_client.get("/api/songs").json()
+    song_id = songs[0]["id"]
+
+    resp = seeded_client.put(f"/api/songs/{song_id}/details", json={
+        "chart": "Intro: Am | G | F | E\nVerse: C | G",
+        "lyrics": "Some lyrics here",
+        "notes": "Play slow",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["chart"] == "Intro: Am | G | F | E\nVerse: C | G"
+    assert data["lyrics"] == "Some lyrics here"
+    assert data["notes"] == "Play slow"
+
+    # Verify persistence via GET
+    resp = seeded_client.get(f"/api/songs/{song_id}")
+    assert resp.json()["chart"] == "Intro: Am | G | F | E\nVerse: C | G"
+
+
+def test_update_song_details_not_found(client):
+    resp = client.put("/api/songs/9999/details", json={"chart": "C"})
+    assert resp.status_code == 404
+
+
 def test_rename_song_collision_returns_400(seeded_client):
     seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
     seeded_client.post("/api/tracks/2/tag", json={"song_name": "Spit Me Out"})

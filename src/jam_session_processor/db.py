@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS songs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
+    chart TEXT NOT NULL DEFAULT '',
+    lyrics TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -71,6 +74,9 @@ class Track:
 class Song:
     id: int
     name: str
+    chart: str = ""
+    lyrics: str = ""
+    notes: str = ""
     take_count: int = 0
     first_date: str | None = None
     last_date: str | None = None
@@ -115,6 +121,12 @@ class Database:
             for row in self.conn.execute("SELECT id, source_file FROM sessions").fetchall():
                 name = clean_session_name(row[1])
                 self.conn.execute("UPDATE sessions SET name = ? WHERE id = ?", (name, row[0]))
+
+        # Add song metadata columns if missing
+        song_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(songs)").fetchall()]
+        for col in ("chart", "lyrics", "notes"):
+            if col not in song_cols:
+                self.conn.execute(f"ALTER TABLE songs ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
 
         # Resolve relative paths to absolute (needed for merge/split re-export)
         self._migrate_to_absolute_paths()
@@ -338,7 +350,8 @@ class Database:
 
     def list_songs(self) -> list[Song]:
         rows = self.conn.execute(
-            """SELECT s.id, s.name, COUNT(t.id) as take_count,
+            """SELECT s.id, s.name, s.chart, s.lyrics, s.notes,
+                      COUNT(t.id) as take_count,
                       MIN(ses.date) as first_date, MAX(ses.date) as last_date
                FROM songs s
                LEFT JOIN tracks t ON t.song_id = s.id
@@ -347,6 +360,29 @@ class Database:
                ORDER BY s.name"""
         ).fetchall()
         return [Song(**row) for row in rows]
+
+    def get_song(self, song_id: int) -> Song | None:
+        row = self.conn.execute(
+            """SELECT s.id, s.name, s.chart, s.lyrics, s.notes,
+                      COUNT(t.id) as take_count,
+                      MIN(ses.date) as first_date, MAX(ses.date) as last_date
+               FROM songs s
+               LEFT JOIN tracks t ON t.song_id = s.id
+               LEFT JOIN sessions ses ON t.session_id = ses.id
+               WHERE s.id = ?
+               GROUP BY s.id""",
+            (song_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return Song(**row)
+
+    def update_song_details(self, song_id: int, chart: str, lyrics: str, notes: str):
+        self.conn.execute(
+            "UPDATE songs SET chart = ?, lyrics = ?, notes = ? WHERE id = ?",
+            (chart, lyrics, notes, song_id),
+        )
+        self.conn.commit()
 
     def get_tracks_for_song(self, song_id: int) -> list[dict]:
         """Get all tracks tagged with a song, including session info."""

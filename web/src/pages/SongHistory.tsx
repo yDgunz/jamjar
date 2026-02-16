@@ -11,6 +11,180 @@ function formatTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+// Standard bass tuning EADG — maps each note to its lowest fret position
+const BASS_POSITIONS: Record<string, { string: string; fret: number }> = {
+  E:  { string: "E", fret: 0 },
+  F:  { string: "E", fret: 1 },
+  "F#": { string: "E", fret: 2 }, Gb: { string: "E", fret: 2 },
+  G:  { string: "E", fret: 3 },
+  "G#": { string: "E", fret: 4 }, Ab: { string: "E", fret: 4 },
+  A:  { string: "A", fret: 0 },
+  "A#": { string: "A", fret: 1 }, Bb: { string: "A", fret: 1 },
+  B:  { string: "A", fret: 2 },
+  C:  { string: "A", fret: 3 },
+  "C#": { string: "A", fret: 4 }, Db: { string: "A", fret: 4 },
+  D:  { string: "D", fret: 0 },
+  "D#": { string: "D", fret: 1 }, Eb: { string: "D", fret: 1 },
+};
+
+interface ChartSection {
+  label: string;
+  chords: { name: string; root: string; string: string; fret: number }[];
+}
+
+function parseChartSections(chart: string): ChartSection[] {
+  const sections: ChartSection[] = [];
+  for (const line of chart.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    // Split "Label: chords" or just "chords"
+    const colonIdx = trimmed.indexOf(":");
+    const label = colonIdx >= 0 ? trimmed.slice(0, colonIdx).trim() : "";
+    const chordsStr = colonIdx >= 0 ? trimmed.slice(colonIdx + 1) : trimmed;
+    // Extract chords separated by | or whitespace
+    const chordMatches = chordsStr.match(/\b([A-G][#b]?[^|\s]*)/g);
+    if (!chordMatches || chordMatches.length === 0) continue;
+    const chords = chordMatches.map((name) => {
+      const rootMatch = name.match(/^([A-G][#b]?)/);
+      const root = rootMatch ? rootMatch[1] : name;
+      const pos = BASS_POSITIONS[root];
+      return { name, root, string: pos?.string ?? "", fret: pos?.fret ?? -1 };
+    }).filter((c) => c.fret >= 0);
+    if (chords.length > 0) sections.push({ label, chords });
+  }
+  return sections;
+}
+
+function renderSectionTab(section: ChartSection): string {
+  const { chords } = section;
+  const strings = ["G", "D", "A", "E"];
+  const colW = Math.max(...chords.map((c) => c.name.length), 2) + 1;
+
+  const lines = strings.map((s) => {
+    const cells = chords.map((c) => {
+      const val = c.string === s ? String(c.fret) : "–";
+      return val.padStart(colW);
+    });
+    return `${s}|${cells.join("")}`;
+  });
+  const legend = "  " + chords.map((c) => c.name.padStart(colW)).join("");
+  return lines.join("\n") + "\n" + legend;
+}
+
+function RootNoteTabs({ chart }: { chart: string }) {
+  const [open, setOpen] = useState(false);
+  const sections = parseChartSections(chart);
+  if (sections.length === 0) return null;
+
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-xs font-medium text-gray-500 uppercase tracking-wide hover:text-gray-300"
+      >
+        <span className={`inline-block transition-transform ${open ? "rotate-90" : ""}`}>&#9654;</span>
+        Root note tabs
+      </button>
+      {open && (
+        <div className="mt-2 space-y-3">
+          {sections.map((s, i) => (
+            <div key={i}>
+              {s.label && <div className="text-xs font-medium text-gray-500 mb-0.5">{s.label}</div>}
+              <pre className="font-mono text-sm text-gray-400 leading-relaxed">{renderSectionTab(s)}</pre>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EditableField({
+  label,
+  value,
+  placeholder,
+  mono,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  mono?: boolean;
+  onSave: (val: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [input, setInput] = useState(value);
+
+  useEffect(() => {
+    setInput(value);
+  }, [value]);
+
+  const handleSave = () => {
+    setEditing(false);
+    if (input.trim() !== value) {
+      onSave(input.trim());
+    }
+  };
+
+  const handleCancel = () => {
+    setEditing(false);
+    setInput(value);
+  };
+
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
+        {label}
+      </label>
+      {editing ? (
+        <div>
+          <textarea
+            autoFocus
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && e.metaKey) { e.preventDefault(); handleSave(); }
+              if (e.key === "Escape") handleCancel();
+            }}
+            rows={3}
+            className={`w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none ${mono ? "font-mono" : ""}`}
+            placeholder={placeholder}
+          />
+          <div className="mt-1 flex items-center gap-2">
+            <button
+              onMouseDown={(e) => { e.preventDefault(); handleSave(); }}
+              className="rounded bg-indigo-600 px-2 py-0.5 text-xs text-white hover:bg-indigo-500"
+            >
+              Save
+            </button>
+            <button
+              onMouseDown={(e) => { e.preventDefault(); handleCancel(); }}
+              className="rounded px-2 py-0.5 text-xs text-gray-400 hover:text-white"
+            >
+              Cancel
+            </button>
+            <span className="text-xs text-gray-600">⌘Enter to save · Esc to cancel</span>
+          </div>
+        </div>
+      ) : value ? (
+        <button
+          onClick={() => setEditing(true)}
+          className={`text-left text-sm whitespace-pre-wrap text-gray-300 hover:text-white ${mono ? "font-mono" : ""}`}
+        >
+          {value}
+        </button>
+      ) : (
+        <button
+          onClick={() => setEditing(true)}
+          className="text-sm text-gray-600 hover:text-gray-400"
+        >
+          + {placeholder.toLowerCase()}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function TakeRow({ take, onUpdate }: { take: SongTrack; onUpdate: () => void }) {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesInput, setNotesInput] = useState(take.notes ?? "");
@@ -76,7 +250,7 @@ function TakeRow({ take, onUpdate }: { take: SongTrack; onUpdate: () => void }) 
 export default function SongHistory() {
   const { id } = useParams<{ id: string }>();
   const songId = Number(id);
-  const [songs, setSongs] = useState<Song[]>([]);
+  const [song, setSong] = useState<Song | null>(null);
   const [takes, setTakes] = useState<SongTrack[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingName, setEditingName] = useState(false);
@@ -84,12 +258,11 @@ export default function SongHistory() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.listSongs(), api.getSongTracks(songId)]).then(
-      ([allSongs, trackData]) => {
-        setSongs(allSongs);
+    Promise.all([api.getSong(songId), api.getSongTracks(songId)]).then(
+      ([songData, trackData]) => {
+        setSong(songData);
+        setNameInput(songData.name);
         setTakes(trackData);
-        const s = allSongs.find((s) => s.id === songId);
-        setNameInput(s?.name ?? "");
         setLoading(false);
       }
     );
@@ -97,10 +270,9 @@ export default function SongHistory() {
 
   const refresh = () => {
     api.getSongTracks(songId).then(setTakes);
-    api.listSongs().then((allSongs) => {
-      setSongs(allSongs);
-      const s = allSongs.find((s) => s.id === songId);
-      setNameInput(s?.name ?? "");
+    api.getSong(songId).then((s) => {
+      setSong(s);
+      setNameInput(s.name);
     });
   };
 
@@ -122,7 +294,19 @@ export default function SongHistory() {
     }
   };
 
-  const song = songs.find((s) => s.id === songId);
+  const handleSaveField = async (field: string, value: string) => {
+    if (!song) return;
+    try {
+      const updated = await api.updateSongDetails(songId, {
+        chart: field === "chart" ? value : song.chart,
+        lyrics: field === "lyrics" ? value : song.lyrics,
+        notes: field === "notes" ? value : song.notes,
+      });
+      setSong(updated);
+    } catch (err) {
+      setErrorMsg(`Save failed: ${err instanceof Error ? err.message : err}`);
+    }
+  };
 
   if (loading) return <p className="text-gray-400">Loading...</p>;
 
@@ -165,6 +349,34 @@ export default function SongHistory() {
             </span>
           )}
         </p>
+      </div>
+
+      {/* Song metadata */}
+      <div className="mb-6 space-y-4 rounded-lg border border-gray-800 bg-gray-900 p-4">
+        <div>
+          <EditableField
+            label="Chart"
+            value={song?.chart ?? ""}
+            placeholder="Add chart (e.g. Intro: Am | G | F | E)"
+            mono
+            onSave={(v) => handleSaveField("chart", v)}
+          />
+          {song?.chart && <RootNoteTabs chart={song.chart} />}
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <EditableField
+            label="Lyrics"
+            value={song?.lyrics ?? ""}
+            placeholder="Add lyrics"
+            onSave={(v) => handleSaveField("lyrics", v)}
+          />
+          <EditableField
+            label="Notes"
+            value={song?.notes ?? ""}
+            placeholder="Add notes"
+            onSave={(v) => handleSaveField("notes", v)}
+          />
+        </div>
       </div>
 
       {takes.length === 0 ? (

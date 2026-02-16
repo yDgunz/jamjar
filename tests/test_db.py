@@ -179,3 +179,50 @@ def test_update_track(db):
     assert track.fingerprint == "abc123"
     # Original values unchanged
     assert track.start_sec == 0.0
+
+
+def test_update_song_details(db):
+    sid = db.create_session("session1.m4a")
+    tid = db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="t.wav")
+    db.tag_track(tid, "Fat Cat")
+
+    songs = db.list_songs()
+    song_id = songs[0].id
+
+    db.update_song_details(song_id, chart="Intro: Am | G\nVerse: C | G",
+                           lyrics="Some lyrics", notes="Play it slow")
+
+    song = db.get_song(song_id)
+    assert song.chart == "Intro: Am | G\nVerse: C | G"
+    assert song.lyrics == "Some lyrics"
+    assert song.notes == "Play it slow"
+    assert song.name == "Fat Cat"
+    assert song.take_count == 1
+
+
+def test_get_song(db):
+    sid = db.create_session("session1.m4a")
+    tid = db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="t.wav")
+    db.tag_track(tid, "Fat Cat")
+
+    songs = db.list_songs()
+    song = db.get_song(songs[0].id)
+    assert song is not None
+    assert song.name == "Fat Cat"
+    assert song.chart == ""
+    assert song.take_count == 1
+
+    assert db.get_song(9999) is None
+
+
+def test_list_songs_includes_metadata(db):
+    sid = db.create_session("session1.m4a")
+    tid = db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="t.wav")
+    db.tag_track(tid, "Fat Cat")
+
+    songs = db.list_songs()
+    song_id = songs[0].id
+    db.update_song_details(song_id, chart="Am G", lyrics="", notes="")
+
+    songs = db.list_songs()
+    assert songs[0].chart == "Am G"

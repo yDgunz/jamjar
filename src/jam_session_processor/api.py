@@ -60,6 +60,9 @@ class TrackResponse(BaseModel):
 class SongResponse(BaseModel):
     id: int
     name: str
+    chart: str = ""
+    lyrics: str = ""
+    notes: str = ""
     take_count: int
     first_date: str | None
     last_date: str | None
@@ -97,6 +100,12 @@ class MergeRequest(BaseModel):
 
 class SplitRequest(BaseModel):
     split_at_sec: float
+
+
+class SongDetailsRequest(BaseModel):
+    chart: str = ""
+    lyrics: str = ""
+    notes: str = ""
 
 
 class DateRequest(BaseModel):
@@ -445,6 +454,26 @@ def list_songs():
     return [SongResponse(**s.__dict__) for s in db.list_songs()]
 
 
+@app.get("/api/songs/{song_id}", response_model=SongResponse)
+def get_song(song_id: int):
+    db = get_db()
+    song = db.get_song(song_id)
+    if not song:
+        raise HTTPException(status_code=404, detail="Song not found")
+    return SongResponse(**song.__dict__)
+
+
+@app.put("/api/songs/{song_id}/details", response_model=SongResponse)
+def update_song_details(song_id: int, req: SongDetailsRequest):
+    db = get_db()
+    song = db.get_song(song_id)
+    if not song:
+        raise HTTPException(status_code=404, detail="Song not found")
+    db.update_song_details(song_id, req.chart, req.lyrics, req.notes)
+    song = db.get_song(song_id)
+    return SongResponse(**song.__dict__)
+
+
 @app.put("/api/songs/{song_id}/name", response_model=SongResponse)
 def rename_song(song_id: int, req: NameRequest):
     db = get_db()
@@ -452,8 +481,7 @@ def rename_song(song_id: int, req: NameRequest):
         db.rename_song(song_id, req.name.strip())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    songs = db.list_songs()
-    song = next((s for s in songs if s.id == song_id), None)
+    song = db.get_song(song_id)
     if not song:
         raise HTTPException(status_code=404, detail="Song not found")
     return SongResponse(**song.__dict__)
