@@ -1,13 +1,15 @@
 const BASE = "/api";
 
-/** Format a YYYY-MM-DD date string as M/d/yy. Returns the input if unparseable. */
+/** Format a YYYY-MM-DD date string as "Thu 2/13/26". Returns the input if unparseable. */
 export function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "Unknown date";
   const parts = dateStr.split("-");
   if (parts.length !== 3) return dateStr;
   const [y, m, d] = parts;
+  const date = new Date(Number(y), Number(m) - 1, Number(d));
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const shortYear = y.slice(-2);
-  return `${parseInt(m)}/${parseInt(d)}/${shortYear}`;
+  return `${days[date.getDay()]} ${Number(m)}/${Number(d)}/${shortYear}`;
 }
 
 export interface Session {
