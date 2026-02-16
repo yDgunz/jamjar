@@ -328,7 +328,8 @@ class Database:
             """SELECT t.id, t.session_id, t.track_number,
                       t.start_sec, t.end_sec, t.duration_sec,
                       t.audio_path, t.notes,
-                      ses.date as session_date, ses.source_file
+                      ses.date as session_date, ses.source_file,
+                      ses.name as session_name
                FROM tracks t
                JOIN sessions ses ON t.session_id = ses.id
                WHERE t.song_id = ?

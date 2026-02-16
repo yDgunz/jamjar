@@ -1,11 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { api } from "../api";
+import { api, formatDate } from "../api";
 import type { Song } from "../api";
+
+type SortKey = "name" | "last_played" | "takes";
 
 export default function SongCatalog() {
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sortBy, setSortBy] = useState<SortKey>("name");
 
   useEffect(() => {
     api.listSongs().then((data) => {
@@ -13,6 +16,18 @@ export default function SongCatalog() {
       setLoading(false);
     });
   }, []);
+
+  const sorted = useMemo(() => {
+    const copy = [...songs];
+    switch (sortBy) {
+      case "name":
+        return copy.sort((a, b) => a.name.localeCompare(b.name));
+      case "last_played":
+        return copy.sort((a, b) => (b.last_date ?? "").localeCompare(a.last_date ?? ""));
+      case "takes":
+        return copy.sort((a, b) => b.take_count - a.take_count);
+    }
+  }, [songs, sortBy]);
 
   if (loading) return <p className="text-gray-400">Loading songs...</p>;
 
@@ -25,11 +40,34 @@ export default function SongCatalog() {
     );
   }
 
+  const sortOptions: { key: SortKey; label: string }[] = [
+    { key: "name", label: "Name" },
+    { key: "last_played", label: "Last played" },
+    { key: "takes", label: "Most takes" },
+  ];
+
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold">Song Catalog</h1>
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Song Catalog</h1>
+        <div className="flex items-center gap-1">
+          {sortOptions.map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => setSortBy(opt.key)}
+              className={`rounded px-2.5 py-1 text-xs transition ${
+                sortBy === opt.key
+                  ? "bg-indigo-600 text-white"
+                  : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="space-y-3">
-        {songs.map((song) => (
+        {sorted.map((song) => (
           <Link
             key={song.id}
             to={`/songs/${song.id}`}
@@ -39,7 +77,7 @@ export default function SongCatalog() {
               <div className="font-medium text-white">{song.name}</div>
               <div className="mt-1 text-sm text-gray-400">
                 {song.last_date
-                  ? `Last played ${song.last_date}`
+                  ? `Last played ${formatDate(song.last_date)}`
                   : "No date info"}
               </div>
             </div>

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router";
-import { api } from "../api";
+import { api, formatDate } from "../api";
 import type { Session, Track, Song } from "../api";
+import AudioPlayer from "../components/AudioPlayer";
+import type { Marker } from "../components/AudioPlayer";
 import TrackRow from "../components/TrackRow";
 
 function MergeButton({ trackId, nextTrackId, onTracksChanged }: {
@@ -12,6 +14,7 @@ function MergeButton({ trackId, nextTrackId, onTracksChanged }: {
   const [loading, setLoading] = useState(false);
 
   const handleMerge = async () => {
+    if (!confirm("Merge these two tracks into one?")) return;
     setLoading(true);
     try {
       const newTracks = await api.mergeTrack(trackId, nextTrackId);
@@ -92,7 +95,6 @@ export default function SessionDetail() {
 
   const handleTracksChanged = (newTracks: Track[]) => {
     setTracks(newTracks);
-    // Also refresh session metadata (track count may have changed)
     api.getSession(sessionId).then((s) => {
       setSession(s);
       setNameInput(s?.name ?? "");
@@ -147,30 +149,30 @@ export default function SessionDetail() {
         )}
 
         <p className="mt-1 text-gray-400">
-          {session.date ?? "Unknown date"} &middot; {session.track_count} tracks &middot;{" "}
+          {formatDate(session.date)} &middot; {session.track_count} tracks &middot;{" "}
           {session.tagged_count} tagged
         </p>
-        <p className="text-xs text-gray-600">{session.source_file}</p>
 
         {/* Session notes */}
         <div className="mt-2">
           {editingNotes ? (
-            <input
+            <textarea
               autoFocus
               value={notesInput}
               onChange={(e) => setNotesInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleSaveSessionNotes();
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveSessionNotes(); }
                 if (e.key === "Escape") { setEditingNotes(false); setNotesInput(session.notes ?? ""); }
               }}
               onBlur={handleSaveSessionNotes}
               placeholder="Add session notes..."
+              rows={3}
               className="w-full max-w-md rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
             />
           ) : session.notes ? (
             <button
               onClick={() => setEditingNotes(true)}
-              className="text-sm text-gray-400 italic hover:text-gray-300"
+              className="text-left text-sm whitespace-pre-wrap text-gray-400 italic hover:text-gray-300"
             >
               {session.notes}
             </button>
@@ -182,6 +184,18 @@ export default function SessionDetail() {
               + add session notes
             </button>
           )}
+        </div>
+
+        {/* Full session audio */}
+        <div className="mt-4">
+          <p className="mb-1 text-xs text-gray-500">Full recording</p>
+          <AudioPlayer
+            src={api.sessionAudioUrl(sessionId)}
+            markers={tracks.flatMap((t): Marker[] => [
+              { timeSec: t.start_sec, label: `Track ${t.track_number} start` },
+              { timeSec: t.end_sec, label: `Track ${t.track_number} end` },
+            ])}
+          />
         </div>
       </div>
 

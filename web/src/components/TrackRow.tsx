@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 import { api } from "../api";
 import type { Track, Song } from "../api";
 import AudioPlayer from "./AudioPlayer";
@@ -45,6 +46,7 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged }: Pr
   };
 
   const handleSplit = async () => {
+    if (!confirm(`Split this track at ${formatTime(playerTime)}?`)) return;
     setOperationLoading(true);
     try {
       const newTracks = await api.splitTrack(track.id, playerTime);
@@ -145,13 +147,20 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged }: Pr
             )}
           </div>
         ) : track.song_name ? (
-          <span
-            onClick={() => { setTagging(true); setTagInput(track.song_name ?? ""); }}
-            className="cursor-pointer text-sm font-medium text-indigo-400 hover:text-indigo-300"
-            title="Click to rename"
-          >
-            {track.song_name}
-          </span>
+          <div className="flex items-center gap-2">
+            <Link
+              to={`/songs/${track.song_id}`}
+              className="text-sm font-medium text-indigo-400 hover:text-indigo-300"
+            >
+              {track.song_name}
+            </Link>
+            <button
+              onClick={() => { setTagging(true); setTagInput(track.song_name ?? ""); }}
+              className="text-xs text-gray-600 hover:text-gray-300"
+            >
+              edit
+            </button>
+          </div>
         ) : (
           <button
             onClick={() => setTagging(true)}
@@ -199,24 +208,23 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged }: Pr
       {/* Notes */}
       <div className="mt-2">
         {editingNotes ? (
-          <div className="flex items-center gap-2">
-            <input
-              autoFocus
-              value={notesInput}
-              onChange={(e) => setNotesInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSaveNotes();
-                if (e.key === "Escape") { setEditingNotes(false); setNotesInput(track.notes ?? ""); }
-              }}
-              onBlur={handleSaveNotes}
-              placeholder="Add notes..."
-              className="flex-1 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
-            />
-          </div>
+          <textarea
+            autoFocus
+            value={notesInput}
+            onChange={(e) => setNotesInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveNotes(); }
+              if (e.key === "Escape") { setEditingNotes(false); setNotesInput(track.notes ?? ""); }
+            }}
+            onBlur={handleSaveNotes}
+            placeholder="Add notes..."
+            rows={2}
+            className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+          />
         ) : track.notes ? (
           <button
             onClick={() => setEditingNotes(true)}
-            className="text-xs text-gray-400 italic hover:text-gray-300"
+            className="text-left text-xs whitespace-pre-wrap text-gray-400 italic hover:text-gray-300"
           >
             {track.notes}
           </button>

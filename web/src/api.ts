@@ -1,5 +1,15 @@
 const BASE = "/api";
 
+/** Format a YYYY-MM-DD date string as M/d/yy. Returns the input if unparseable. */
+export function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "Unknown date";
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return dateStr;
+  const [y, m, d] = parts;
+  const shortYear = y.slice(-2);
+  return `${parseInt(m)}/${parseInt(d)}/${shortYear}`;
+}
+
 export interface Session {
   id: number;
   name: string;
@@ -43,6 +53,7 @@ export interface SongTrack {
   notes: string;
   session_date: string | null;
   source_file: string;
+  session_name: string;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -104,6 +115,8 @@ export const api = {
     }),
 
   trackAudioUrl: (trackId: number) => `${BASE}/tracks/${trackId}/audio`,
+
+  sessionAudioUrl: (sessionId: number) => `${BASE}/sessions/${sessionId}/audio`,
 
   listSongs: () => fetchJson<Song[]>(`${BASE}/songs`),
 

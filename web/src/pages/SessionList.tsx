@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { api } from "../api";
+import { api, formatDate } from "../api";
 import type { Session } from "../api";
 
 export default function SessionList() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("");
 
   useEffect(() => {
     api.listSessions().then((data) => {
@@ -13,6 +14,12 @@ export default function SessionList() {
       setLoading(false);
     });
   }, []);
+
+  const filtered = filter.trim()
+    ? sessions.filter((s) =>
+        (s.name || s.source_file).toLowerCase().includes(filter.toLowerCase())
+      )
+    : sessions;
 
   if (loading) return <p className="text-gray-400">Loading sessions...</p>;
 
@@ -26,9 +33,15 @@ export default function SessionList() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold">Sessions</h1>
+      <h1 className="mb-4 text-2xl font-bold">Sessions</h1>
+      <input
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        placeholder="Filter sessions..."
+        className="mb-4 w-full max-w-sm rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+      />
       <div className="space-y-3">
-        {sessions.map((s) => (
+        {filtered.map((s) => (
           <Link
             key={s.id}
             to={`/sessions/${s.id}`}
@@ -37,7 +50,7 @@ export default function SessionList() {
             <div>
               <div className="font-medium text-white">{s.name || s.source_file}</div>
               <div className="mt-1 text-sm text-gray-400">
-                {s.date ?? "Unknown date"}
+                {formatDate(s.date)}
               </div>
             </div>
             <div className="text-right text-sm text-gray-400">

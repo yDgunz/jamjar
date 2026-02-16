@@ -75,6 +75,7 @@ class SongTrackResponse(BaseModel):
     notes: str
     session_date: str | None
     source_file: str
+    session_name: str
 
 
 class TagRequest(BaseModel):
@@ -133,6 +134,22 @@ def update_session_notes(session_id: int, req: NotesRequest):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return SessionResponse(**session.__dict__)
+
+
+@app.get("/api/sessions/{session_id}/audio")
+def stream_session_audio(session_id: int):
+    db = get_db()
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    audio_path = Path(session.source_file)
+    if not audio_path.exists():
+        raise HTTPException(status_code=404, detail="Source audio file not found")
+    # Determine media type from extension
+    suffix = audio_path.suffix.lower()
+    media_types = {".m4a": "audio/mp4", ".wav": "audio/wav", ".mp3": "audio/mpeg"}
+    media_type = media_types.get(suffix, "application/octet-stream")
+    return FileResponse(audio_path, media_type=media_type)
 
 
 @app.get("/api/sessions/{session_id}/tracks", response_model=list[TrackResponse])

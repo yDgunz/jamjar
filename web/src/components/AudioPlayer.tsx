@@ -6,13 +6,19 @@ function formatTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+export interface Marker {
+  timeSec: number;
+  label?: string;
+}
+
 interface Props {
   src: string;
+  markers?: Marker[];
   onPlayStateChange?: (playing: boolean, currentTime: number) => void;
   onTimeUpdate?: (currentTime: number) => void;
 }
 
-export default function AudioPlayer({ src, onPlayStateChange, onTimeUpdate }: Props) {
+export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpdate }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -50,6 +56,13 @@ export default function AudioPlayer({ src, onPlayStateChange, onTimeUpdate }: Pr
     } else {
       audio.play();
     }
+  };
+
+  const restart = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (previewing) stopPreview();
+    audio.currentTime = 0;
   };
 
   const handleTimeUpdate = () => {
@@ -143,6 +156,18 @@ export default function AudioPlayer({ src, onPlayStateChange, onTimeUpdate }: Pr
 
   return (
     <div className="flex items-center gap-3">
+      {/* Restart button */}
+      <button
+        onClick={restart}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-800 text-gray-400 transition hover:bg-gray-700 hover:text-white"
+        title="Back to start"
+      >
+        <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
+          <rect x="4" y="4" width="3" height="16" />
+          <polygon points="20,4 9,12 20,20" />
+        </svg>
+      </button>
+
       {/* Play/Pause button */}
       <button
         onClick={togglePlay}
@@ -211,6 +236,15 @@ export default function AudioPlayer({ src, onPlayStateChange, onTimeUpdate }: Pr
           }`}
           style={{ width: `${progress}%` }}
         />
+        {/* Track boundary markers */}
+        {markers && duration > 0 && markers.map((m, i) => (
+          <div
+            key={i}
+            className="absolute top-0 h-full w-0.5 bg-gray-500/60"
+            style={{ left: `${(m.timeSec / duration) * 100}%` }}
+            title={m.label ?? `${formatTime(m.timeSec)}`}
+          />
+        ))}
       </div>
 
       {/* Hidden audio element */}
