@@ -170,6 +170,9 @@ export const api = {
       body: JSON.stringify({ name }),
     }),
 
+  deleteSong: (songId: number) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/songs/${songId}`, { method: "DELETE" }),
+
   getSongTracks: (songId: number) =>
     fetchJson<SongTrack[]>(`${BASE}/songs/${songId}/tracks`),
 

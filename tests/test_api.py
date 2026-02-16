@@ -339,6 +339,30 @@ def test_update_song_details_not_found(client):
     assert resp.status_code == 404
 
 
+def test_delete_song_endpoint(seeded_client):
+    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+
+    songs = seeded_client.get("/api/songs").json()
+    song_id = songs[0]["id"]
+
+    resp = seeded_client.delete(f"/api/songs/{song_id}")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+    # Song should be gone
+    assert seeded_client.get(f"/api/songs/{song_id}").status_code == 404
+    assert seeded_client.get("/api/songs").json() == []
+
+    # Track should be untagged
+    tracks = seeded_client.get("/api/sessions/1/tracks").json()
+    assert tracks[0]["song_id"] is None
+
+
+def test_delete_song_not_found(client):
+    resp = client.delete("/api/songs/9999")
+    assert resp.status_code == 404
+
+
 def test_rename_song_collision_returns_400(seeded_client):
     seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
     seeded_client.post("/api/tracks/2/tag", json={"song_name": "Spit Me Out"})

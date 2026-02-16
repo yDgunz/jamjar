@@ -474,6 +474,16 @@ def update_song_details(song_id: int, req: SongDetailsRequest):
     return SongResponse(**song.__dict__)
 
 
+@app.delete("/api/songs/{song_id}")
+def delete_song(song_id: int):
+    db = get_db()
+    song = db.get_song(song_id)
+    if not song:
+        raise HTTPException(status_code=404, detail="Song not found")
+    db.delete_song(song_id)
+    return {"ok": True}
+
+
 @app.put("/api/songs/{song_id}/name", response_model=SongResponse)
 def rename_song(song_id: int, req: NameRequest):
     db = get_db()

@@ -226,3 +226,20 @@ def test_list_songs_includes_metadata(db):
 
     songs = db.list_songs()
     assert songs[0].chart == "Am G"
+
+
+def test_delete_song(db):
+    sid = db.create_session("session1.m4a")
+    tid = db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="t.wav")
+    db.tag_track(tid, "Fat Cat")
+
+    songs = db.list_songs()
+    assert len(songs) == 1
+
+    db.delete_song(songs[0].id)
+    assert db.list_songs() == []
+
+    # Track should be untagged (ON DELETE SET NULL)
+    track = db.get_track(tid)
+    assert track.song_id is None
+    assert track.song_name is None

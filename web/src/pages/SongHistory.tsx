@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router";
+import { useParams, Link, useNavigate } from "react-router";
 import { api, formatDate } from "../api";
 import type { Song, SongTrack } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
-import { Toast } from "../components/Modal";
+import Modal, { Toast } from "../components/Modal";
 
 function formatTime(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -249,6 +249,7 @@ function TakeRow({ take, onUpdate }: { take: SongTrack; onUpdate: () => void }) 
 
 export default function SongHistory() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const songId = Number(id);
   const [song, setSong] = useState<Song | null>(null);
   const [takes, setTakes] = useState<SongTrack[]>([]);
@@ -256,6 +257,7 @@ export default function SongHistory() {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showDelete, setShowDelete] = useState(false);
 
   useEffect(() => {
     Promise.all([api.getSong(songId), api.getSongTracks(songId)]).then(
@@ -308,6 +310,16 @@ export default function SongHistory() {
     }
   };
 
+  const handleDelete = async () => {
+    try {
+      await api.deleteSong(songId);
+      navigate("/songs");
+    } catch (err) {
+      setErrorMsg(`Delete failed: ${err instanceof Error ? err.message : err}`);
+      setShowDelete(false);
+    }
+  };
+
   if (loading) return <p className="text-gray-400">Loading...</p>;
 
   return (
@@ -317,27 +329,36 @@ export default function SongHistory() {
       </Link>
 
       <div className="mt-4 mb-6">
-        {editingName ? (
-          <input
-            autoFocus
-            value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleSaveName();
-              if (e.key === "Escape") { setEditingName(false); setNameInput(song?.name ?? ""); }
-            }}
-            onBlur={handleSaveName}
-            className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-2xl font-bold text-white focus:border-indigo-500 focus:outline-none"
-          />
-        ) : (
-          <h1
-            onClick={() => setEditingName(true)}
-            className="cursor-pointer text-2xl font-bold hover:text-indigo-400"
-            title="Click to rename"
+        <div className="flex items-center gap-3">
+          {editingName ? (
+            <input
+              autoFocus
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSaveName();
+                if (e.key === "Escape") { setEditingName(false); setNameInput(song?.name ?? ""); }
+              }}
+              onBlur={handleSaveName}
+              className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-2xl font-bold text-white focus:border-indigo-500 focus:outline-none"
+            />
+          ) : (
+            <h1
+              onClick={() => setEditingName(true)}
+              className="cursor-pointer text-2xl font-bold hover:text-indigo-400"
+              title="Click to rename"
+            >
+              {song?.name ?? "Unknown Song"}
+            </h1>
+          )}
+          <button
+            onClick={() => setShowDelete(true)}
+            className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-red-950 hover:text-red-400"
+            title="Delete song"
           >
-            {song?.name ?? "Unknown Song"}
-          </h1>
-        )}
+            Delete
+          </button>
+        </div>
         <p className="mt-1 text-gray-400">
           {takes.length} take{takes.length !== 1 ? "s" : ""}
           {song?.first_date && song?.last_date && (
@@ -388,6 +409,15 @@ export default function SongHistory() {
           ))}
         </div>
       )}
+      <Modal
+        open={showDelete}
+        title="Delete song"
+        message={`Delete "${song?.name}"? ${takes.length > 0 ? `${takes.length} take${takes.length !== 1 ? "s" : ""} will be untagged.` : "This song has no takes."}`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDelete(false)}
+      />
       {errorMsg && (
         <Toast message={errorMsg} variant="error" onClose={() => setErrorMsg(null)} />
       )}

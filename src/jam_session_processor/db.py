@@ -400,6 +400,11 @@ class Database:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def delete_song(self, song_id: int):
+        """Delete a song. Tracks referencing it will have song_id set to NULL."""
+        self.conn.execute("DELETE FROM songs WHERE id = ?", (song_id,))
+        self.conn.commit()
+
     def rename_song(self, song_id: int, new_name: str):
         """Rename a song. Raises ValueError if new_name already exists."""
         existing = self.conn.execute(
