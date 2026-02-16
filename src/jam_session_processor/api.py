@@ -142,6 +142,20 @@ def update_session_notes(session_id: int, req: NotesRequest):
     return SessionResponse(**session.__dict__)
 
 
+class DeleteSessionRequest(BaseModel):
+    delete_files: bool = False
+
+
+@app.delete("/api/sessions/{session_id}")
+def delete_session(session_id: int, req: DeleteSessionRequest | None = None):
+    db = get_db()
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    db.delete_session(session_id, delete_files=req.delete_files if req else False)
+    return {"ok": True}
+
+
 @app.get("/api/sessions/{session_id}/audio")
 def stream_session_audio(session_id: int):
     db = get_db()
@@ -327,6 +341,20 @@ def stream_track_audio(track_id: int):
 def list_songs():
     db = get_db()
     return [SongResponse(**s.__dict__) for s in db.list_songs()]
+
+
+@app.put("/api/songs/{song_id}/name", response_model=SongResponse)
+def rename_song(song_id: int, req: NameRequest):
+    db = get_db()
+    try:
+        db.rename_song(song_id, req.name.strip())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    songs = db.list_songs()
+    song = next((s for s in songs if s.id == song_id), None)
+    if not song:
+        raise HTTPException(status_code=404, detail="Song not found")
+    return SongResponse(**song.__dict__)
 
 
 @app.get("/api/songs/{song_id}/tracks", response_model=list[SongTrackResponse])

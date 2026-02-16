@@ -263,3 +263,40 @@ def test_reprocess_source_not_found(client, tmp_path):
     )
     assert resp.status_code == 404
     assert "not found" in resp.json()["detail"].lower()
+
+
+def test_delete_session_endpoint(seeded_client):
+    resp = seeded_client.request("DELETE", "/api/sessions/1",
+                                json={"delete_files": False})
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+    # Session should be gone
+    resp = seeded_client.get("/api/sessions/1")
+    assert resp.status_code == 404
+
+
+def test_rename_song_endpoint(seeded_client):
+    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+
+    songs = seeded_client.get("/api/songs").json()
+    song_id = songs[0]["id"]
+
+    resp = seeded_client.put(f"/api/songs/{song_id}/name", json={"name": "Fat Cat Blues"})
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Fat Cat Blues"
+
+    # Verify tracks still tagged
+    resp = seeded_client.get("/api/sessions/1/tracks")
+    assert resp.json()[0]["song_name"] == "Fat Cat Blues"
+
+
+def test_rename_song_collision_returns_400(seeded_client):
+    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+    seeded_client.post("/api/tracks/2/tag", json={"song_name": "Spit Me Out"})
+
+    songs = seeded_client.get("/api/songs").json()
+    fat_cat_id = next(s["id"] for s in songs if s["name"] == "Fat Cat")
+
+    resp = seeded_client.put(f"/api/songs/{fat_cat_id}/name", json={"name": "Spit Me Out"})
+    assert resp.status_code == 400

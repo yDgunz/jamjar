@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams, Link } from "react-router";
+import { useParams, Link, useNavigate } from "react-router";
 import { api, formatDate } from "../api";
 import type { Session, Track, Song } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
@@ -85,6 +85,8 @@ export default function SessionDetail() {
   const [minDuration, setMinDuration] = useState(120);
   const [reprocessing, setReprocessing] = useState(false);
   const [confirmReprocess, setConfirmReprocess] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const navigate = useNavigate();
 
   const sessionId = Number(id);
   const showError = useCallback((msg: string) => setErrorMsg(msg), []);
@@ -148,6 +150,16 @@ export default function SessionDetail() {
       showError(`Reprocess failed: ${err instanceof Error ? err.message : err}`);
     } finally {
       setReprocessing(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setConfirmDelete(false);
+    try {
+      await api.deleteSession(sessionId, true);
+      navigate("/");
+    } catch (err) {
+      showError(`Delete failed: ${err instanceof Error ? err.message : err}`);
     }
   };
 
@@ -283,6 +295,16 @@ export default function SessionDetail() {
           )}
         </div>
 
+        {/* Delete session */}
+        <div className="mt-2">
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="text-xs text-gray-600 transition hover:text-red-400"
+          >
+            Delete session
+          </button>
+        </div>
+
         {/* Full session audio */}
         <div className="mt-4 rounded-lg border border-gray-700 bg-gray-800/50 px-4 py-3">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">Full Recording</p>
@@ -331,6 +353,15 @@ export default function SessionDetail() {
         variant="danger"
         onConfirm={handleReprocess}
         onCancel={() => setConfirmReprocess(false)}
+      />
+      <Modal
+        open={confirmDelete}
+        title="Delete session"
+        message="Delete this session and all its takes? This cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmDelete(false)}
       />
       {errorMsg && (
         <Toast message={errorMsg} variant="error" onClose={() => setErrorMsg(null)} />

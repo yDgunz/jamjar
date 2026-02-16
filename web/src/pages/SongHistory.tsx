@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router";
 import { api, formatDate } from "../api";
 import type { Song, SongTrack } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
+import { Toast } from "../components/Modal";
 
 function formatTime(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -78,12 +79,17 @@ export default function SongHistory() {
   const [songs, setSongs] = useState<Song[]>([]);
   const [takes, setTakes] = useState<SongTrack[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([api.listSongs(), api.getSongTracks(songId)]).then(
       ([allSongs, trackData]) => {
         setSongs(allSongs);
         setTakes(trackData);
+        const s = allSongs.find((s) => s.id === songId);
+        setNameInput(s?.name ?? "");
         setLoading(false);
       }
     );
@@ -91,6 +97,29 @@ export default function SongHistory() {
 
   const refresh = () => {
     api.getSongTracks(songId).then(setTakes);
+    api.listSongs().then((allSongs) => {
+      setSongs(allSongs);
+      const s = allSongs.find((s) => s.id === songId);
+      setNameInput(s?.name ?? "");
+    });
+  };
+
+  const handleSaveName = async () => {
+    const trimmed = nameInput.trim();
+    if (!trimmed || trimmed === song?.name) {
+      setEditingName(false);
+      setNameInput(song?.name ?? "");
+      return;
+    }
+    try {
+      await api.renameSong(songId, trimmed);
+      setEditingName(false);
+      refresh();
+    } catch (err) {
+      setErrorMsg(`Rename failed: ${err instanceof Error ? err.message : err}`);
+      setNameInput(song?.name ?? "");
+      setEditingName(false);
+    }
   };
 
   const song = songs.find((s) => s.id === songId);
@@ -104,7 +133,27 @@ export default function SongHistory() {
       </Link>
 
       <div className="mt-4 mb-6">
-        <h1 className="text-2xl font-bold">{song?.name ?? "Unknown Song"}</h1>
+        {editingName ? (
+          <input
+            autoFocus
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSaveName();
+              if (e.key === "Escape") { setEditingName(false); setNameInput(song?.name ?? ""); }
+            }}
+            onBlur={handleSaveName}
+            className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-2xl font-bold text-white focus:border-indigo-500 focus:outline-none"
+          />
+        ) : (
+          <h1
+            onClick={() => setEditingName(true)}
+            className="cursor-pointer text-2xl font-bold hover:text-indigo-400"
+            title="Click to rename"
+          >
+            {song?.name ?? "Unknown Song"}
+          </h1>
+        )}
         <p className="mt-1 text-gray-400">
           {takes.length} take{takes.length !== 1 ? "s" : ""}
           {song?.first_date && song?.last_date && (
@@ -126,6 +175,9 @@ export default function SongHistory() {
             <TakeRow key={take.id} take={take} onUpdate={refresh} />
           ))}
         </div>
+      )}
+      {errorMsg && (
+        <Toast message={errorMsg} variant="error" onClose={() => setErrorMsg(null)} />
       )}
     </div>
   );

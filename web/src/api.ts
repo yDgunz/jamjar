@@ -124,11 +124,25 @@ export const api = {
       body: JSON.stringify({ threshold, min_duration: minDuration }),
     }),
 
+  deleteSession: (id: number, deleteFiles = false) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/sessions/${id}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ delete_files: deleteFiles }),
+    }),
+
   trackAudioUrl: (trackId: number) => `${BASE}/tracks/${trackId}/audio`,
 
   sessionAudioUrl: (sessionId: number) => `${BASE}/sessions/${sessionId}/audio`,
 
   listSongs: () => fetchJson<Song[]>(`${BASE}/songs`),
+
+  renameSong: (songId: number, name: string) =>
+    fetchJson<Song>(`${BASE}/songs/${songId}/name`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
 
   getSongTracks: (songId: number) =>
     fetchJson<SongTrack[]>(`${BASE}/songs/${songId}/tracks`),

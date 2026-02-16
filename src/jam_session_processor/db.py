@@ -224,6 +224,18 @@ class Database:
             return None
         return Session(**row)
 
+    def delete_session(self, session_id: int, delete_files: bool = False):
+        """Delete a session and its tracks. Optionally delete audio files."""
+        if delete_files:
+            tracks = self.get_tracks_for_session(session_id)
+            for t in tracks:
+                try:
+                    Path(t.audio_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+        self.conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        self.conn.commit()
+
     def update_session_notes(self, session_id: int, notes: str):
         self.conn.execute("UPDATE sessions SET notes = ? WHERE id = ?", (notes, session_id))
         self.conn.commit()
@@ -347,3 +359,13 @@ class Database:
             (song_id,),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def rename_song(self, song_id: int, new_name: str):
+        """Rename a song. Raises ValueError if new_name already exists."""
+        existing = self.conn.execute(
+            "SELECT id FROM songs WHERE name = ? AND id != ?", (new_name, song_id)
+        ).fetchone()
+        if existing:
+            raise ValueError(f"Song '{new_name}' already exists")
+        self.conn.execute("UPDATE songs SET name = ? WHERE id = ?", (new_name, song_id))
+        self.conn.commit()
