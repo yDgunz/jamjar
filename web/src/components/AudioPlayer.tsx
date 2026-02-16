@@ -47,6 +47,15 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
     stopPreview();
   }, [src]);
 
+  const stopPreview = useCallback(() => {
+    if (previewTimerRef.current !== null) {
+      clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+    setPreviewing(false);
+    previewIndexRef.current = 0;
+  }, []);
+
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -87,15 +96,6 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
     audio.currentTime = fraction * duration;
     if (!playing) audio.play();
   };
-
-  const stopPreview = useCallback(() => {
-    if (previewTimerRef.current !== null) {
-      clearTimeout(previewTimerRef.current);
-      previewTimerRef.current = null;
-    }
-    setPreviewing(false);
-    previewIndexRef.current = 0;
-  }, []);
 
   const playNextClip = useCallback(() => {
     const audio = audioRef.current;

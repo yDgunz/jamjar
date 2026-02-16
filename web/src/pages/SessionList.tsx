@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { api, formatDate } from "../api";
 import type { Session } from "../api";
 
@@ -27,6 +27,10 @@ export default function SessionList() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     api.listSessions().then((data) => {
@@ -34,6 +38,22 @@ export default function SessionList() {
       setLoading(false);
     });
   }, []);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const session = await api.uploadSession(file);
+      navigate(`/sessions/${session.id}`);
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const filtered = filter.trim()
     ? sessions.filter((s) => {
@@ -57,7 +77,28 @@ export default function SessionList() {
 
   return (
     <div>
-      <h1 className="mb-4 text-2xl font-bold">Sessions</h1>
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Sessions</h1>
+        <div className="flex items-center gap-3">
+          {uploadError && (
+            <span className="text-sm text-red-400">{uploadError}</span>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".m4a,.wav,.mp3,.flac,.ogg"
+            onChange={handleUpload}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+          >
+            {uploading ? "Processing..." : "Upload Session"}
+          </button>
+        </div>
+      </div>
       <input
         value={filter}
         onChange={(e) => setFilter(e.target.value)}

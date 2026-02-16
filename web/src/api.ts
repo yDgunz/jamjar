@@ -61,7 +61,11 @@ export interface SongTrack {
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(url, init);
-  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => null);
+    const detail = body?.detail;
+    throw new Error(detail || `${resp.status} ${resp.statusText}`);
+  }
   return resp.json();
 }
 
@@ -84,6 +88,13 @@ export const api = {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ notes }),
+    }),
+
+  updateSessionDate: (id: number, date: string | null) =>
+    fetchJson<Session>(`${BASE}/sessions/${id}/date`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date }),
     }),
 
   tagTrack: (trackId: number, songName: string) =>
@@ -146,4 +157,10 @@ export const api = {
 
   getSongTracks: (songId: number) =>
     fetchJson<SongTrack[]>(`${BASE}/songs/${songId}/tracks`),
+
+  uploadSession: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return fetchJson<Session>(`${BASE}/sessions/upload`, { method: "POST", body: form });
+  },
 };

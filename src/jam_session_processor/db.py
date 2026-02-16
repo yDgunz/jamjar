@@ -236,6 +236,10 @@ class Database:
         self.conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
         self.conn.commit()
 
+    def update_session_date(self, session_id: int, date: str | None):
+        self.conn.execute("UPDATE sessions SET date = ? WHERE id = ?", (date, session_id))
+        self.conn.commit()
+
     def update_session_notes(self, session_id: int, notes: str):
         self.conn.execute("UPDATE sessions SET notes = ? WHERE id = ?", (notes, session_id))
         self.conn.commit()

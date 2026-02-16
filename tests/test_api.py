@@ -300,3 +300,86 @@ def test_rename_song_collision_returns_400(seeded_client):
 
     resp = seeded_client.put(f"/api/songs/{fat_cat_id}/name", json={"name": "Spit Me Out"})
     assert resp.status_code == 400
+
+
+# --- Upload endpoint tests ---
+
+
+def test_upload_session(client, tmp_path, monkeypatch):
+    from io import BytesIO
+    from unittest.mock import MagicMock, patch
+
+    from jam_session_processor.splitter import SplitResult
+
+    # Point input/ to tmp_path so files are saved there
+    monkeypatch.chdir(tmp_path)
+
+    segments = [(0.0, 200.0), (210.0, 400.0)]
+    mock_result = SplitResult(segments=segments, total_duration_sec=400.0)
+
+    mock_meta = MagicMock()
+    mock_meta.recording_date = None
+
+    def mock_export(file_path, segments, output_dir, **kwargs):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        paths = []
+        for i, (s, e) in enumerate(segments, 1):
+            p = output_dir / f"track{i}.wav"
+            p.write_bytes(b"RIFF" + b"\x00" * 100)
+            paths.append(p)
+        return paths
+
+    with patch("jam_session_processor.splitter.detect_songs", return_value=mock_result), \
+         patch("jam_session_processor.output.export_segments", side_effect=mock_export), \
+         patch("jam_session_processor.fingerprint.compute_chroma_fingerprint", return_value="mockfp"), \
+         patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta):
+        resp = client.post(
+            "/api/sessions/upload",
+            files={"file": ("test-session.m4a", BytesIO(b"\x00" * 100), "audio/mp4")},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["track_count"] == 2
+    assert "test-session" in data["source_file"]
+
+
+def test_upload_invalid_type(client, tmp_path, monkeypatch):
+    from io import BytesIO
+
+    monkeypatch.chdir(tmp_path)
+
+    resp = client.post(
+        "/api/sessions/upload",
+        files={"file": ("notes.txt", BytesIO(b"hello"), "text/plain")},
+    )
+    assert resp.status_code == 400
+    assert "Invalid file type" in resp.json()["detail"]
+
+
+def test_upload_duplicate(client, tmp_path, monkeypatch):
+    from io import BytesIO
+    from unittest.mock import MagicMock, patch
+
+    from jam_session_processor.splitter import SplitResult
+
+    monkeypatch.chdir(tmp_path)
+
+    mock_result = SplitResult(segments=[], total_duration_sec=100.0)
+    mock_meta = MagicMock()
+    mock_meta.recording_date = None
+
+    with patch("jam_session_processor.splitter.detect_songs", return_value=mock_result), \
+         patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta):
+        resp = client.post(
+            "/api/sessions/upload",
+            files={"file": ("dup.m4a", BytesIO(b"\x00" * 50), "audio/mp4")},
+        )
+    assert resp.status_code == 200
+
+    # Second upload of same filename should 409
+    resp = client.post(
+        "/api/sessions/upload",
+        files={"file": ("dup.m4a", BytesIO(b"\x00" * 50), "audio/mp4")},
+    )
+    assert resp.status_code == 409

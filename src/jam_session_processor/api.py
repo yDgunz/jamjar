@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile
 
 logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
@@ -99,6 +99,10 @@ class SplitRequest(BaseModel):
     split_at_sec: float
 
 
+class DateRequest(BaseModel):
+    date: str | None
+
+
 class ReprocessRequest(BaseModel):
     threshold: float = -30.0
     min_duration: int = 120
@@ -136,6 +140,16 @@ def update_session_name(session_id: int, req: NameRequest):
 def update_session_notes(session_id: int, req: NotesRequest):
     db = get_db()
     db.update_session_notes(session_id, req.notes)
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return SessionResponse(**session.__dict__)
+
+
+@app.put("/api/sessions/{session_id}/date", response_model=SessionResponse)
+def update_session_date(session_id: int, req: DateRequest):
+    db = get_db()
+    db.update_session_date(session_id, req.date)
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -262,6 +276,94 @@ def reprocess_session(session_id: int, req: ReprocessRequest):
         TrackResponse(**t.__dict__)
         for t in db.get_tracks_for_session(session_id)
     ]
+
+
+ALLOWED_EXTENSIONS = {".m4a", ".wav", ".mp3", ".flac", ".ogg"}
+
+
+@app.post("/api/sessions/upload", response_model=SessionResponse)
+async def upload_session(file: UploadFile):
+    """Upload an audio file and run the full processing pipeline."""
+    from jam_session_processor.fingerprint import compute_chroma_fingerprint
+    from jam_session_processor.metadata import extract_metadata
+    from jam_session_processor.output import export_segments
+    from jam_session_processor.splitter import detect_songs
+
+    # Validate extension
+    ext = Path(file.filename).suffix.lower() if file.filename else ""
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type '{ext}'. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+        )
+
+    # Save to input/ directory
+    input_dir = Path("input")
+    input_dir.mkdir(exist_ok=True)
+    dest = input_dir / file.filename
+    if dest.exists():
+        raise HTTPException(
+            status_code=409,
+            detail=f"File '{file.filename}' already exists in input/",
+        )
+
+    try:
+        content = await file.read()
+        dest.write_bytes(content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
+
+    source = dest.resolve()
+
+    # Run processing pipeline
+    try:
+        meta = extract_metadata(source)
+        result = detect_songs(source)
+    except Exception as e:
+        logger.exception("Upload processing failed")
+        raise HTTPException(status_code=500, detail=f"Processing failed: {e}")
+
+    date_str = meta.recording_date.strftime("%Y-%m-%d") if meta.recording_date else None
+
+    db = get_db()
+
+    # Check for duplicate session
+    existing = db.find_session_by_source(str(source))
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Session for this file already exists (id={existing.id})",
+        )
+
+    session_id = db.create_session(str(source), date=date_str)
+
+    if result.segments:
+        output_dir = Path("output") / source.stem
+        try:
+            exported = export_segments(
+                source, result.segments, output_dir,
+                session_date=meta.recording_date,
+            )
+            for i, ((start, end), audio_path) in enumerate(
+                zip(result.segments, exported), start=1
+            ):
+                fp = compute_chroma_fingerprint(
+                    source, start_sec=start, duration_sec=end - start
+                )
+                db.create_track(
+                    session_id,
+                    track_number=i,
+                    start_sec=start,
+                    end_sec=end,
+                    audio_path=str(audio_path.resolve()),
+                    fingerprint=fp,
+                )
+        except Exception as e:
+            logger.exception("Upload export/fingerprint failed")
+            raise HTTPException(status_code=500, detail=f"Export failed: {e}")
+
+    session = db.get_session(session_id)
+    return SessionResponse(**session.__dict__)
 
 
 # --- Track endpoints ---

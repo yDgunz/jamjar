@@ -76,6 +76,8 @@ export default function SessionDetail() {
   const [loading, setLoading] = useState(true);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [editingDate, setEditingDate] = useState(false);
+  const [dateInput, setDateInput] = useState("");
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesInput, setNotesInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -101,6 +103,7 @@ export default function SessionDetail() {
       setTracks(t);
       setSongs(allSongs);
       setNameInput(s?.name ?? "");
+      setDateInput(s?.date ?? "");
       setNotesInput(s?.notes ?? "");
       setLoading(false);
     });
@@ -111,6 +114,7 @@ export default function SessionDetail() {
     api.getSession(sessionId).then((s) => {
       setSession(s);
       setNameInput(s?.name ?? "");
+      setDateInput(s?.date ?? "");
       setNotesInput(s?.notes ?? "");
     });
     api.listSongs().then(setSongs);
@@ -121,6 +125,7 @@ export default function SessionDetail() {
     api.getSession(sessionId).then((s) => {
       setSession(s);
       setNameInput(s?.name ?? "");
+      setDateInput(s?.date ?? "");
       setNotesInput(s?.notes ?? "");
     });
     api.listSongs().then(setSongs);
@@ -129,6 +134,12 @@ export default function SessionDetail() {
   const handleSaveName = async () => {
     await api.updateSessionName(sessionId, nameInput.trim());
     setEditingName(false);
+    refresh();
+  };
+
+  const handleSaveDate = async () => {
+    await api.updateSessionDate(sessionId, dateInput || null);
+    setEditingDate(false);
     refresh();
   };
 
@@ -197,7 +208,29 @@ export default function SessionDetail() {
         )}
 
         <p className="mt-1 text-gray-400">
-          {formatDate(session.date)} &middot; {session.track_count} take{session.track_count !== 1 ? "s" : ""} &middot;{" "}
+          {editingDate ? (
+            <input
+              type="date"
+              autoFocus
+              value={dateInput}
+              onChange={(e) => setDateInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSaveDate();
+                if (e.key === "Escape") { setEditingDate(false); setDateInput(session.date ?? ""); }
+              }}
+              onBlur={handleSaveDate}
+              className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+            />
+          ) : (
+            <button
+              onClick={() => setEditingDate(true)}
+              className="hover:text-indigo-400"
+              title="Click to change date"
+            >
+              {formatDate(session.date)}
+            </button>
+          )}
+          {" "}&middot; {session.track_count} take{session.track_count !== 1 ? "s" : ""} &middot;{" "}
           {session.tagged_count} tagged
         </p>
 

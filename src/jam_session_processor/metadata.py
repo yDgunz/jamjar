@@ -93,6 +93,10 @@ def extract_metadata(file_path: Path) -> AudioMetadata:
     if recording_date is None:
         recording_date = parse_date_from_filename(file_path.stem)
 
+    # Fall back to file modification time
+    if recording_date is None:
+        recording_date = datetime.fromtimestamp(file_path.stat().st_mtime)
+
     return AudioMetadata(
         filename=file_path.name,
         duration_seconds=info.length,
