@@ -35,7 +35,7 @@ function MergeButton({ trackId, nextTrackId, onTracksChanged, onError }: {
         <button
           onClick={() => setConfirming(true)}
           disabled={loading}
-          className="flex items-center gap-1.5 rounded px-2 py-0.5 text-xs text-gray-600 transition hover:bg-gray-800 hover:text-gray-300 disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded px-3 py-2 text-xs text-gray-600 transition hover:bg-gray-800 hover:text-gray-300 disabled:opacity-50"
           title="Merge with take above"
         >
           {loading ? (
@@ -219,7 +219,7 @@ export default function SessionDetail() {
                 if (e.key === "Escape") { setEditingDate(false); setDateInput(session.date ?? ""); }
               }}
               onBlur={handleSaveDate}
-              className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
             />
           ) : (
             <button
@@ -248,7 +248,7 @@ export default function SessionDetail() {
               onBlur={handleSaveSessionNotes}
               placeholder="Add session notes..."
               rows={3}
-              className="w-full max-w-md rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+              className="w-full max-w-md rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
             />
           ) : session.notes ? (
             <button
@@ -294,7 +294,7 @@ export default function SessionDetail() {
                     value={threshold}
                     onChange={(e) => setThreshold(Number(e.target.value))}
                     step={1}
-                    className="mt-1 block w-24 rounded border border-gray-700 bg-gray-900 px-2 py-1 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    className="mt-1 block w-24 rounded border border-gray-700 bg-gray-900 px-2 py-1 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
                   />
                 </label>
                 <label className="block">
@@ -305,7 +305,7 @@ export default function SessionDetail() {
                     onChange={(e) => setMinDuration(Number(e.target.value))}
                     step={10}
                     min={10}
-                    className="mt-1 block w-24 rounded border border-gray-700 bg-gray-900 px-2 py-1 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    className="mt-1 block w-24 rounded border border-gray-700 bg-gray-900 px-2 py-1 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
                   />
                 </label>
                 <button
@@ -332,7 +332,7 @@ export default function SessionDetail() {
         <div className="mt-2">
           <button
             onClick={() => setConfirmDelete(true)}
-            className="text-xs text-gray-600 transition hover:text-red-400"
+            className="rounded py-1.5 px-2 text-xs text-gray-600 transition hover:text-red-400"
           >
             Delete session
           </button>

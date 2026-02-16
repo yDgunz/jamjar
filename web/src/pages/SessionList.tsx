@@ -103,7 +103,7 @@ export default function SessionList() {
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
         placeholder="Filter sessions..."
-        className="mb-4 w-full max-w-sm rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+        className="mb-4 w-full max-w-sm rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
       />
       <div className="space-y-6">
         {monthGroups.map(([month, group]) => (

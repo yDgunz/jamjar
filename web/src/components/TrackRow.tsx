@@ -101,19 +101,19 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
                   if (e.key === "Escape") { setTagging(false); setTagInput(track.song_name ?? ""); }
                 }}
                 placeholder="Search or type new song..."
-                className="w-48 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm font-medium text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm font-medium text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
               />
               {track.song_name && (
                 <button
                   onClick={handleUntag}
-                  className="text-xs text-gray-500 hover:text-red-400"
+                  className="rounded py-1.5 px-2 text-xs text-gray-500 hover:text-red-400"
                 >
                   Remove
                 </button>
               )}
               <button
                 onClick={() => { setTagging(false); setTagInput(track.song_name ?? ""); }}
-                className="text-xs text-gray-500 hover:text-gray-300"
+                className="rounded py-1.5 px-2 text-xs text-gray-500 hover:text-gray-300"
               >
                 Cancel
               </button>
@@ -130,7 +130,7 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
                       onUpdate();
                     });
                   }}
-                  className="rounded-full bg-gray-800 px-2.5 py-1 text-xs text-gray-300 transition hover:bg-indigo-600 hover:text-white"
+                  className="rounded-full bg-gray-800 px-3 py-2 text-xs text-gray-300 transition hover:bg-indigo-600 hover:text-white"
                 >
                   {s.name}
                   <span className="ml-1 text-gray-600">{s.take_count}</span>
@@ -140,7 +140,7 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
                 <button
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={handleTag}
-                  className="rounded-full border border-dashed border-gray-600 px-2.5 py-1 text-xs text-indigo-400 transition hover:border-indigo-500 hover:bg-indigo-600/20"
+                  className="rounded-full border border-dashed border-gray-600 px-3 py-2 text-xs text-indigo-400 transition hover:border-indigo-500 hover:bg-indigo-600/20"
                 >
                   + &ldquo;{tagInput.trim()}&rdquo;
                 </button>
@@ -157,7 +157,7 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
             </Link>
             <button
               onClick={() => { setTagging(true); setTagInput(track.song_name ?? ""); }}
-              className="text-xs text-gray-600 hover:text-gray-300"
+              className="rounded py-1.5 px-2 text-xs text-gray-600 hover:text-gray-300"
             >
               edit
             </button>
@@ -196,7 +196,7 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
           <button
             onClick={() => setConfirmingSplit(true)}
             disabled={operationLoading}
-            className="flex items-center gap-1.5 rounded bg-gray-800 px-2.5 py-1 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded bg-gray-800 px-3 py-2 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
           >
             <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
               <path strokeLinecap="round" d="M12 4v16M4 12h16" />
@@ -228,7 +228,7 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
             onBlur={handleSaveNotes}
             placeholder="Add notes..."
             rows={2}
-            className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+            className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-xs text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
           />
         ) : track.notes ? (
           <button

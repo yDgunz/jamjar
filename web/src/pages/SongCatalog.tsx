@@ -55,7 +55,7 @@ export default function SongCatalog() {
             <button
               key={opt.key}
               onClick={() => setSortBy(opt.key)}
-              className={`rounded px-2.5 py-1 text-xs transition ${
+              className={`rounded px-3 py-2 text-xs transition ${
                 sortBy === opt.key
                   ? "bg-indigo-600 text-white"
                   : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"

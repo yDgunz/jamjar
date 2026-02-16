@@ -6,6 +6,14 @@ function formatTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+// Global coordination: when one player starts, all others pause
+const playingAudios = new Set<HTMLAudioElement>();
+const pauseAllExcept = (active: HTMLAudioElement) => {
+  for (const audio of playingAudios) {
+    if (audio !== active) audio.pause();
+  }
+};
+
 export interface Marker {
   timeSec: number;
   label?: string;
@@ -18,25 +26,20 @@ interface Props {
   onTimeUpdate?: (currentTime: number) => void;
 }
 
+const SKIP_SECONDS = 30;
+
 export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpdate }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [previewing, setPreviewing] = useState(false);
-  const previewTimerRef = useRef<number | null>(null);
-  const previewIndexRef = useRef(0);
 
-  const PREVIEW_CLIP_DURATION = 4;
-  const PREVIEW_NUM_CLIPS = 5;
-
+  // Register/unregister audio element
   useEffect(() => {
-    return () => {
-      if (previewTimerRef.current !== null) {
-        clearTimeout(previewTimerRef.current);
-      }
-    };
+    const audio = audioRef.current;
+    if (audio) playingAudios.add(audio);
+    return () => { if (audio) playingAudios.delete(audio); };
   }, []);
 
   // Reset state when src changes
@@ -44,34 +47,28 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
     setPlaying(false);
     setCurrentTime(0);
     setDuration(0);
-    stopPreview();
   }, [src]);
-
-  const stopPreview = useCallback(() => {
-    if (previewTimerRef.current !== null) {
-      clearTimeout(previewTimerRef.current);
-      previewTimerRef.current = null;
-    }
-    setPreviewing(false);
-    previewIndexRef.current = 0;
-  }, []);
 
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    if (previewing) stopPreview();
     if (playing) {
       audio.pause();
     } else {
       audio.play();
     }
-  }, [playing, previewing, stopPreview]);
+  }, [playing]);
 
   const restart = () => {
     const audio = audioRef.current;
     if (!audio) return;
-    if (previewing) stopPreview();
     audio.currentTime = 0;
+  };
+
+  const skipAhead = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + SKIP_SECONDS);
   };
 
   const handleTimeUpdate = () => {
@@ -97,61 +94,6 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
     if (!playing) audio.play();
   };
 
-  const playNextClip = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const idx = previewIndexRef.current;
-    if (idx >= PREVIEW_NUM_CLIPS) {
-      audio.pause();
-      stopPreview();
-      return;
-    }
-
-    const dur = audio.duration;
-    if (!dur) return;
-
-    // Evenly space clips, avoiding the very start/end
-    const padding = Math.min(dur * 0.05, 3);
-    const usable = dur - 2 * padding;
-    const step = usable / PREVIEW_NUM_CLIPS;
-    const startTime = padding + idx * step;
-
-    audio.currentTime = startTime;
-    audio.play();
-
-    previewIndexRef.current = idx + 1;
-    previewTimerRef.current = window.setTimeout(() => {
-      playNextClip();
-    }, PREVIEW_CLIP_DURATION * 1000);
-  }, [stopPreview]);
-
-  const startPreview = () => {
-    const audio = audioRef.current;
-    if (!audio || !duration) return;
-
-    if (previewing) {
-      stopPreview();
-      audio.pause();
-      return;
-    }
-
-    if (playing) audio.pause();
-    setPreviewing(true);
-    previewIndexRef.current = 0;
-    playNextClip();
-  };
-
-  const skipToNextClip = () => {
-    if (!previewing) return;
-    // Clear the current timer and immediately play next clip
-    if (previewTimerRef.current !== null) {
-      clearTimeout(previewTimerRef.current);
-      previewTimerRef.current = null;
-    }
-    playNextClip();
-  };
-
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -174,15 +116,15 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
     <div
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      className="flex items-center gap-3 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+      className="flex flex-wrap items-center gap-3 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
     >
       {/* Restart button */}
       <button
         onClick={restart}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-800 text-gray-400 transition hover:bg-gray-700 hover:text-white"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-800 text-gray-400 transition hover:bg-gray-700 hover:text-white"
         title="Back to start"
       >
-        <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
+        <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
           <rect x="4" y="4" width="3" height="16" />
           <polygon points="20,4 9,12 20,20" />
         </svg>
@@ -191,51 +133,33 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
       {/* Play/Pause button */}
       <button
         onClick={togglePlay}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white transition hover:bg-indigo-500"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white transition hover:bg-indigo-500"
         title={playing ? "Pause" : "Play"}
       >
         {playing ? (
-          <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
+          <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
             <rect x="6" y="4" width="4" height="16" />
             <rect x="14" y="4" width="4" height="16" />
           </svg>
         ) : (
-          <svg className="ml-0.5 h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
+          <svg className="ml-0.5 h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
             <polygon points="5,3 19,12 5,21" />
           </svg>
         )}
       </button>
 
-      {/* Preview button */}
-      <button
-        onClick={startPreview}
-        className={`flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition ${
-          previewing
-            ? "bg-amber-600 text-white hover:bg-amber-500"
-            : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
-        }`}
-        title="Preview: play short clips from different parts"
-      >
-        <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 24 24">
-          <rect x="2" y="4" width="3" height="16" rx="1" />
-          <rect x="7" y="7" width="3" height="10" rx="1" />
-          <rect x="12" y="4" width="3" height="16" rx="1" />
-          <rect x="17" y="7" width="3" height="10" rx="1" />
-        </svg>
-        <span>{previewing ? "Stop" : "Preview"}</span>
-      </button>
-
-      {/* Skip button (only during preview) */}
-      {previewing && (
+      {/* Skip ahead button (visible while playing) */}
+      {playing && (
         <button
-          onClick={skipToNextClip}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-600 text-white transition hover:bg-amber-500"
-          title="Skip to next clip"
+          onClick={skipAhead}
+          className="flex h-11 shrink-0 items-center gap-1 rounded-full bg-gray-800 px-3 text-xs font-medium text-gray-400 transition hover:bg-gray-700 hover:text-white"
+          title={`Skip ahead ${SKIP_SECONDS}s`}
         >
-          <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
+          <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
             <polygon points="4,3 14,12 4,21" />
             <rect x="16" y="3" width="3" height="18" />
           </svg>
+          <span>{SKIP_SECONDS}s</span>
         </button>
       )}
 
@@ -244,27 +168,27 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
         {formatTime(currentTime)} / {formatTime(duration)}
       </span>
 
-      {/* Progress bar */}
+      {/* Progress bar — hidden on mobile */}
       <div
         ref={progressRef}
         onClick={handleSeek}
-        className="relative h-2 flex-1 cursor-pointer rounded-full bg-gray-800"
+        className="relative hidden flex-1 cursor-pointer py-3 sm:block"
       >
-        <div
-          className={`absolute top-0 left-0 h-full rounded-full transition-[width] duration-100 ${
-            previewing ? "bg-amber-500" : "bg-indigo-500"
-          }`}
-          style={{ width: `${progress}%` }}
-        />
-        {/* Take boundary markers */}
-        {markers && duration > 0 && markers.map((m, i) => (
+        <div className="relative h-2 rounded-full bg-gray-800">
           <div
-            key={i}
-            className="absolute top-0 h-full w-0.5 bg-gray-500/60"
-            style={{ left: `${(m.timeSec / duration) * 100}%` }}
-            title={m.label ?? `${formatTime(m.timeSec)}`}
+            className="absolute top-0 left-0 h-full rounded-full bg-indigo-500 transition-[width] duration-100"
+            style={{ width: `${progress}%` }}
           />
-        ))}
+          {/* Take boundary markers */}
+          {markers && duration > 0 && markers.map((m, i) => (
+            <div
+              key={i}
+              className="absolute top-0 h-full w-0.5 bg-gray-500/60"
+              style={{ left: `${(m.timeSec / duration) * 100}%` }}
+              title={m.label ?? `${formatTime(m.timeSec)}`}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Hidden audio element */}
@@ -274,9 +198,9 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
         preload="metadata"
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
-        onPlay={() => { setPlaying(true); onPlayStateChange?.(true, audioRef.current?.currentTime ?? 0); }}
-        onPause={() => { if (!previewing) { setPlaying(false); onPlayStateChange?.(false, audioRef.current?.currentTime ?? 0); } }}
-        onEnded={() => { setPlaying(false); stopPreview(); }}
+        onPlay={() => { pauseAllExcept(audioRef.current!); setPlaying(true); onPlayStateChange?.(true, audioRef.current?.currentTime ?? 0); }}
+        onPause={() => { setPlaying(false); onPlayStateChange?.(false, audioRef.current?.currentTime ?? 0); }}
+        onEnded={() => { setPlaying(false); }}
       />
     </div>
   );

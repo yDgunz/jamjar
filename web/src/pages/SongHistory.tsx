@@ -90,7 +90,7 @@ function RootNoteTabs({ chart }: { chart: string }) {
           {sections.map((s, i) => (
             <div key={i}>
               {s.label && <div className="text-xs font-medium text-gray-500 mb-0.5">{s.label}</div>}
-              <pre className="font-mono text-sm text-gray-400 leading-relaxed">{renderSectionTab(s)}</pre>
+              <div className="overflow-x-auto"><pre className="font-mono text-sm text-gray-400 leading-relaxed">{renderSectionTab(s)}</pre></div>
             </div>
           ))}
         </div>
@@ -147,23 +147,23 @@ function EditableField({
               if (e.key === "Escape") handleCancel();
             }}
             rows={3}
-            className={`w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none ${mono ? "font-mono" : ""}`}
+            className={`w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none ${mono ? "font-mono" : ""}`}
             placeholder={placeholder}
           />
           <div className="mt-1 flex items-center gap-2">
             <button
               onMouseDown={(e) => { e.preventDefault(); handleSave(); }}
-              className="rounded bg-indigo-600 px-2 py-0.5 text-xs text-white hover:bg-indigo-500"
+              className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500"
             >
               Save
             </button>
             <button
               onMouseDown={(e) => { e.preventDefault(); handleCancel(); }}
-              className="rounded px-2 py-0.5 text-xs text-gray-400 hover:text-white"
+              className="rounded px-3 py-1.5 text-xs text-gray-400 hover:text-white"
             >
               Cancel
             </button>
-            <span className="text-xs text-gray-600">⌘Enter to save · Esc to cancel</span>
+            <span className="hidden text-xs text-gray-600 sm:inline">⌘Enter to save · Esc to cancel</span>
           </div>
         </div>
       ) : value ? (
@@ -225,7 +225,7 @@ function TakeRow({ take, onUpdate }: { take: SongTrack; onUpdate: () => void }) 
             onBlur={handleSaveNotes}
             placeholder="Add notes..."
             rows={2}
-            className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+            className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-xs text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
           />
         ) : take.notes ? (
           <button
@@ -353,7 +353,7 @@ export default function SongHistory() {
           )}
           <button
             onClick={() => setShowDelete(true)}
-            className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-red-950 hover:text-red-400"
+            className="rounded px-3 py-1.5 text-xs text-gray-600 hover:bg-red-950 hover:text-red-400"
             title="Delete song"
           >
             Delete

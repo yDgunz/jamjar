@@ -8,17 +8,18 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="min-h-screen bg-gray-950 text-gray-100">
-        <header className="border-b border-gray-800 px-6 py-4">
+        <header className="border-b border-gray-800 px-4 py-3">
           <div className="mx-auto flex max-w-5xl items-center gap-8">
             <span className="text-xl font-bold text-white">
-              Jam Session Processor
+              <span className="sm:hidden">Jam Sessions</span>
+              <span className="hidden sm:inline">Jam Session Processor</span>
             </span>
             <nav className="flex gap-4 text-sm">
               <NavLink
                 to="/"
                 end
                 className={({ isActive }) =>
-                  isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"
+                  `py-2 px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
                 }
               >
                 Sessions
@@ -26,7 +27,7 @@ export default function App() {
               <NavLink
                 to="/songs"
                 className={({ isActive }) =>
-                  isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"
+                  `py-2 px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
                 }
               >
                 Songs
@@ -34,7 +35,7 @@ export default function App() {
             </nav>
           </div>
         </header>
-        <main className="mx-auto max-w-5xl px-6 py-8">
+        <main className="mx-auto max-w-5xl px-4 py-4 sm:px-6 sm:py-8">
           <Routes>
             <Route path="/" element={<SessionList />} />
             <Route path="/sessions/:id" element={<SessionDetail />} />
