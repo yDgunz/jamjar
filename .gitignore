@@ -20,6 +20,9 @@ references/
 # Database
 jam_sessions.db
 
+# Environment
+.env
+
 # Web frontend
 web/node_modules/
 web/dist/

@@ -1,10 +1,7 @@
 import re
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-
-DEFAULT_DB_PATH = Path("jam_sessions.db")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -99,7 +96,10 @@ def clean_session_name(source_file: str) -> str:
 
 
 class Database:
-    def __init__(self, db_path: Path = DEFAULT_DB_PATH):
+    def __init__(self, db_path: Path | None = None):
+        if db_path is None:
+            from jam_session_processor.config import get_config
+            db_path = get_config().db_path
         self.db_path = db_path
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self.conn.execute("PRAGMA foreign_keys = ON")
@@ -128,35 +128,10 @@ class Database:
             if col not in song_cols:
                 self.conn.execute(f"ALTER TABLE songs ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
 
-        # Resolve relative paths to absolute (needed for merge/split re-export)
-        self._migrate_to_absolute_paths()
-
-    def _migrate_to_absolute_paths(self):
-        """Convert relative source_file and audio_path to absolute paths."""
-        cwd = Path.cwd()
-        # Migrate session source_file paths
-        for row in self.conn.execute("SELECT id, source_file FROM sessions").fetchall():
-            p = Path(row[1])
-            if not p.is_absolute():
-                # Try cwd first, then common subdirectories
-                candidates = [cwd / p, cwd / "input" / p]
-                for candidate in candidates:
-                    if candidate.exists():
-                        self.conn.execute(
-                            "UPDATE sessions SET source_file = ? WHERE id = ?",
-                            (str(candidate), row[0]),
-                        )
-                        break
-        # Migrate track audio_path paths
-        for row in self.conn.execute("SELECT id, audio_path FROM tracks").fetchall():
-            p = Path(row[1])
-            if not p.is_absolute():
-                resolved = cwd / p
-                if resolved.exists():
-                    self.conn.execute(
-                        "UPDATE tracks SET audio_path = ? WHERE id = ?",
-                        (str(resolved), row[0]),
-                    )
+        # Drop waveform_peaks column if present (unused)
+        track_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(tracks)").fetchall()]
+        if "waveform_peaks" in track_cols:
+            self.conn.execute("ALTER TABLE tracks DROP COLUMN waveform_peaks")
 
     def close(self):
         self.conn.close()
@@ -239,10 +214,12 @@ class Database:
     def delete_session(self, session_id: int, delete_files: bool = False):
         """Delete a session and its tracks. Optionally delete audio files."""
         if delete_files:
+            from jam_session_processor.config import get_config
+            cfg = get_config()
             tracks = self.get_tracks_for_session(session_id)
             for t in tracks:
                 try:
-                    Path(t.audio_path).unlink(missing_ok=True)
+                    cfg.resolve_path(t.audio_path).unlink(missing_ok=True)
                 except OSError:
                     pass
         self.conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))

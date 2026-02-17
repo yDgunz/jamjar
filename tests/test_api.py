@@ -2,16 +2,20 @@ import pytest
 from fastapi.testclient import TestClient
 
 from jam_session_processor import api
+from jam_session_processor.config import reset_config
 from jam_session_processor.db import Database
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("JAM_DATA_DIR", str(tmp_path))
+    reset_config()
     db = Database(tmp_path / "test.db")
     api._db = db
     yield TestClient(api.app)
     db.close()
     api._db = None
+    reset_config()
 
 
 @pytest.fixture
@@ -109,6 +113,18 @@ def test_stream_audio(seeded_client):
     assert resp.headers["content-type"] == "audio/wav"
 
 
+def test_stream_audio_ogg(client, tmp_path):
+    db = api._db
+    sid = db.create_session("session1.m4a", date="2026-02-03")
+    audio = tmp_path / "track1.ogg"
+    audio.write_bytes(b"OggS" + b"\x00" * 100)
+    db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path=str(audio))
+
+    resp = client.get("/api/tracks/1/audio")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "audio/ogg"
+
+
 def test_stream_audio_not_found(client):
     resp = client.get("/api/tracks/999/audio")
     assert resp.status_code == 404
@@ -167,7 +183,7 @@ def seeded_client_with_source(client, tmp_path):
         db.create_track(sid, track_number=i, start_sec=(i - 1) * 300.0,
                         end_sec=i * 300.0, audio_path=str(audio))
 
-    def mock_export(file_path, output_path, start_sec, end_sec):
+    def mock_export(file_path, output_path, start_sec, end_sec, **kwargs):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"RIFF" + b"\x00" * 100)
 
@@ -377,14 +393,11 @@ def test_rename_song_collision_returns_400(seeded_client):
 # --- Upload endpoint tests ---
 
 
-def test_upload_session(client, tmp_path, monkeypatch):
+def test_upload_session(client, tmp_path):
     from io import BytesIO
     from unittest.mock import MagicMock, patch
 
     from jam_session_processor.splitter import SplitResult
-
-    # Point input/ to tmp_path so files are saved there
-    monkeypatch.chdir(tmp_path)
 
     segments = [(0.0, 200.0), (210.0, 400.0)]
     mock_result = SplitResult(segments=segments, total_duration_sec=400.0)
@@ -416,10 +429,8 @@ def test_upload_session(client, tmp_path, monkeypatch):
     assert "test-session" in data["source_file"]
 
 
-def test_upload_invalid_type(client, tmp_path, monkeypatch):
+def test_upload_invalid_type(client, tmp_path):
     from io import BytesIO
-
-    monkeypatch.chdir(tmp_path)
 
     resp = client.post(
         "/api/sessions/upload",
@@ -429,13 +440,11 @@ def test_upload_invalid_type(client, tmp_path, monkeypatch):
     assert "Invalid file type" in resp.json()["detail"]
 
 
-def test_upload_duplicate(client, tmp_path, monkeypatch):
+def test_upload_duplicate(client, tmp_path):
     from io import BytesIO
     from unittest.mock import MagicMock, patch
 
     from jam_session_processor.splitter import SplitResult
-
-    monkeypatch.chdir(tmp_path)
 
     mock_result = SplitResult(segments=[], total_duration_sec=100.0)
     mock_meta = MagicMock()

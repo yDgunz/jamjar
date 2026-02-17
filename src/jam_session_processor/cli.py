@@ -2,15 +2,21 @@ from pathlib import Path
 
 import click
 
+from jam_session_processor.config import get_config
 from jam_session_processor.db import Database
 from jam_session_processor.fingerprint import build_reference_db, compute_chroma_fingerprint
 from jam_session_processor.metadata import extract_metadata
 from jam_session_processor.output import export_segments
 from jam_session_processor.splitter import (
+    AAC,
     DEFAULT_ENERGY_THRESHOLD_DB,
     DEFAULT_MIN_SONG_DURATION_SEC,
+    OPUS,
+    WAV,
     detect_songs,
 )
+
+FORMAT_CHOICES = {"opus": OPUS, "aac": AAC, "wav": WAV}
 
 
 def _get_db() -> Database:
@@ -65,6 +71,14 @@ def info(file: Path):
     show_default=True,
     help="DTW distance threshold for reference matching (lower = stricter).",
 )
+@click.option(
+    "-f", "--format",
+    "audio_format_name",
+    type=click.Choice(["opus", "aac", "wav"], case_sensitive=False),
+    default="opus",
+    show_default=True,
+    help="Output audio format.",
+)
 def process(
     file: Path,
     output_dir: Path | None,
@@ -72,8 +86,10 @@ def process(
     min_duration: int,
     references: Path | None,
     match_threshold: float,
+    audio_format_name: str,
 ):
     """Split a jam session recording into individual songs."""
+    audio_format = FORMAT_CHOICES[audio_format_name]
     meta = extract_metadata(file)
     click.echo(meta.summary())
     click.echo()
@@ -99,12 +115,13 @@ def process(
         click.echo(f"  {i}. {_format_sec(start)} - {_format_sec(end)}  ({_format_sec(duration)})")
     click.echo()
 
+    cfg = get_config()
     if output_dir is None:
-        output_dir = Path("output") / file.stem
+        output_dir = cfg.output_dir_for_source(file.stem)
 
     # Save to database
     db = _get_db()
-    source_file = str(file.resolve())
+    source_file = cfg.make_relative(file.resolve())
     date_str = meta.recording_date.strftime("%Y-%m-%d") if meta.recording_date else None
 
     # Check if session already exists
@@ -127,6 +144,7 @@ def process(
         reference_db=reference_db,
         match_threshold=match_threshold,
         on_progress=on_progress,
+        audio_format=audio_format,
     )
 
     # Save tracks to database (only if we created a new session)
@@ -138,7 +156,7 @@ def process(
                 track_number=i,
                 start_sec=start,
                 end_sec=end,
-                audio_path=str(audio_path.resolve()),
+                audio_path=cfg.make_relative(audio_path.resolve()),
                 fingerprint=fp,
             )
         click.echo(f"Saved {len(exported)} track(s) to database.")
@@ -207,11 +225,13 @@ def reset_db():
 
 
 @cli.command()
-@click.option("-p", "--port", type=int, default=8000, show_default=True, help="Port to listen on.")
+@click.option("-p", "--port", type=int, default=None, help="Port to listen on (default: JAM_PORT or 8000).")
 @click.option("--reload", "use_reload", is_flag=True, help="Enable auto-reload for development.")
-def serve(port: int, use_reload: bool):
+def serve(port: int | None, use_reload: bool):
     """Start the API server."""
     import uvicorn
+    if port is None:
+        port = get_config().port
     click.echo(f"Starting server on http://localhost:{port}")
     uvicorn.run(
         "jam_session_processor.api:app",
@@ -225,7 +245,15 @@ def serve(port: int, use_reload: bool):
 @click.argument("directory", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("-t", "--threshold", type=float, default=DEFAULT_ENERGY_THRESHOLD_DB, show_default=True)
 @click.option("-m", "--min-duration", type=int, default=DEFAULT_MIN_SONG_DURATION_SEC, show_default=True)
-def process_all(directory: Path, threshold: float, min_duration: int):
+@click.option(
+    "-f", "--format",
+    "audio_format_name",
+    type=click.Choice(["opus", "aac", "wav"], case_sensitive=False),
+    default="opus",
+    show_default=True,
+    help="Output audio format.",
+)
+def process_all(directory: Path, threshold: float, min_duration: int, audio_format_name: str):
     """Process all audio files in a directory."""
     extensions = {".m4a", ".wav", ".mp3", ".flac", ".ogg"}
     files = sorted(f for f in directory.iterdir() if f.suffix.lower() in extensions)
@@ -240,7 +268,8 @@ def process_all(directory: Path, threshold: float, min_duration: int):
         click.echo(f"{'='*60}")
         ctx = click.get_current_context()
         ctx.invoke(process, file=f, output_dir=None, threshold=threshold,
-                   min_duration=min_duration, references=None, match_threshold=0.04)
+                   min_duration=min_duration, references=None, match_threshold=0.04,
+                   audio_format_name=audio_format_name)
 
 
 def _format_sec(sec: float) -> str:

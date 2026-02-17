@@ -8,13 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from jam_session_processor.config import get_config
 from jam_session_processor.db import Database
 
 app = FastAPI(title="Jam Session Processor", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=get_config().cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -185,7 +186,8 @@ def stream_session_audio(session_id: int):
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    audio_path = Path(session.source_file)
+    cfg = get_config()
+    audio_path = cfg.resolve_path(session.source_file)
     if not audio_path.exists():
         raise HTTPException(status_code=404, detail="Source audio file not found")
     # Determine media type from extension
@@ -218,11 +220,12 @@ def reprocess_session(session_id: int, req: ReprocessRequest):
     from jam_session_processor.splitter import detect_songs
 
     db = get_db()
+    cfg = get_config()
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    source = Path(session.source_file)
+    source = cfg.resolve_path(session.source_file)
     if not source.exists():
         raise HTTPException(
             status_code=404, detail="Source audio file not found on disk"
@@ -231,14 +234,14 @@ def reprocess_session(session_id: int, req: ReprocessRequest):
     # Determine output dir from existing tracks or default
     existing_tracks = db.get_tracks_for_session(session_id)
     if existing_tracks:
-        output_dir = Path(existing_tracks[0].audio_path).parent
+        output_dir = cfg.resolve_path(existing_tracks[0].audio_path).parent
     else:
-        output_dir = Path("output") / source.stem
+        output_dir = cfg.output_dir_for_source(source.stem)
 
     # Delete old tracks and their audio files
     for track in existing_tracks:
         try:
-            os.remove(track.audio_path)
+            os.remove(str(cfg.resolve_path(track.audio_path)))
         except OSError:
             pass
         db.delete_track(track.id)
@@ -277,7 +280,7 @@ def reprocess_session(session_id: int, req: ReprocessRequest):
             track_number=i,
             start_sec=start,
             end_sec=end,
-            audio_path=str(audio_path.resolve()),
+            audio_path=cfg.make_relative(audio_path.resolve()),
             fingerprint=fp,
         )
 
@@ -306,10 +309,11 @@ async def upload_session(file: UploadFile):
             detail=f"Invalid file type '{ext}'. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
 
-    # Save to input/ directory
-    input_dir = Path("input")
-    input_dir.mkdir(exist_ok=True)
-    dest = input_dir / file.filename
+    cfg = get_config()
+
+    # Save to input directory
+    cfg.input_dir.mkdir(parents=True, exist_ok=True)
+    dest = cfg.input_dir / file.filename
     if dest.exists():
         raise HTTPException(
             status_code=409,
@@ -335,19 +339,20 @@ async def upload_session(file: UploadFile):
     date_str = meta.recording_date.strftime("%Y-%m-%d") if meta.recording_date else None
 
     db = get_db()
+    source_rel = cfg.make_relative(source)
 
     # Check for duplicate session
-    existing = db.find_session_by_source(str(source))
+    existing = db.find_session_by_source(source_rel)
     if existing:
         raise HTTPException(
             status_code=409,
             detail=f"Session for this file already exists (id={existing.id})",
         )
 
-    session_id = db.create_session(str(source), date=date_str)
+    session_id = db.create_session(source_rel, date=date_str)
 
     if result.segments:
-        output_dir = Path("output") / source.stem
+        output_dir = cfg.output_dir_for_source(source.stem)
         try:
             exported = export_segments(
                 source, result.segments, output_dir,
@@ -364,7 +369,7 @@ async def upload_session(file: UploadFile):
                     track_number=i,
                     start_sec=start,
                     end_sec=end,
-                    audio_path=str(audio_path.resolve()),
+                    audio_path=cfg.make_relative(audio_path.resolve()),
                     fingerprint=fp,
                 )
         except Exception as e:
@@ -439,10 +444,13 @@ def stream_track_audio(track_id: int):
     track = _find_track(db, track_id)
     if not track:
         raise HTTPException(status_code=404, detail="Track not found")
-    audio_path = Path(track.audio_path)
+    cfg = get_config()
+    audio_path = cfg.resolve_path(track.audio_path)
     if not audio_path.exists():
         raise HTTPException(status_code=404, detail="Audio file not found")
-    return FileResponse(audio_path, media_type="audio/wav")
+    media_types = {".ogg": "audio/ogg", ".m4a": "audio/mp4", ".wav": "audio/wav"}
+    media_type = media_types.get(audio_path.suffix.lower(), "application/octet-stream")
+    return FileResponse(audio_path, media_type=media_type)
 
 
 # --- Song endpoints ---

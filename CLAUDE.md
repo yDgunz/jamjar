@@ -25,7 +25,7 @@ Tool for processing and cataloging band jam session recordings. Splits full iPho
 1. **Metadata extraction** — reads `.m4a` and `.wav` files using mutagen. Recording date comes from iPhone `©day` tag, then filename parsing (`M-D-YY`, `M-D-YYYY`, `YYYY-MM-DD`).
 2. **Song detection** — decodes to 8 kHz mono PCM via ffmpeg, computes per-second RMS energy, applies 15-second rolling average, finds sustained high-energy regions (default: 2+ minutes above -30 dB).
 3. **Fingerprinting** — computes chroma-based fingerprint (FFT → pitch class binning → 32-bin summary → SHA256 hash). Optionally matches against reference songs using DTW distance.
-4. **Export** — ffmpeg seek+split extracts each song to WAV. No full-file loading.
+4. **Export** — ffmpeg seek+split extracts each song to Opus (OGG container, 192kbps). WAV and AAC available via `--format` flag. No full-file loading.
 5. **Database** — creates session and track records in SQLite with fingerprints and file paths.
 
 ### `process` CLI Options
@@ -35,6 +35,7 @@ Tool for processing and cataloging band jam session recordings. Splits full iPho
 - `-o, --output-dir` — output directory (default: `./output/<input_stem>/`)
 - `-r, --references` — directory of reference songs for chroma fingerprint matching
 - `--match-threshold` — DTW distance threshold for reference matching (default: 0.04)
+- `-f, --format` — output audio format: `opus`, `aac`, or `wav` (default: `opus`)
 
 ### REST API
 
@@ -103,6 +104,7 @@ Audio file (.m4a/.wav)
 
 | Module | Responsibility |
 |--------|---------------|
+| `config.py` | Environment-based config singleton (`get_config()`), path resolution |
 | `cli.py` | Click CLI entry points, wires together the full pipeline |
 | `metadata.py` | `AudioMetadata` dataclass, `extract_metadata()`, `parse_date_from_filename()` |
 | `splitter.py` | `compute_rms_profile()`, `smooth_profile()`, `detect_songs()`, `export_segment()` |
@@ -268,9 +270,24 @@ cd web && npm run dev
 - **FFmpeg** — installed via `brew install ffmpeg`
 - **Node.js** — required for the web frontend (Vite + React)
 
+## Environment Variables
+
+All configuration is via `JAM_*` environment variables. Defaults match pre-config behavior — nothing breaks without a `.env` file.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JAM_DATA_DIR` | `.` (cwd) | Root for input/, output/, jam_sessions.db |
+| `JAM_DB_PATH` | `jam_sessions.db` | SQLite path (relative to DATA_DIR or absolute) |
+| `JAM_INPUT_DIR` | `input` | Upload destination (relative to DATA_DIR or absolute) |
+| `JAM_OUTPUT_DIR` | `output` | Exported tracks base dir (relative to DATA_DIR or absolute) |
+| `JAM_CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins |
+| `JAM_PORT` | `8000` | API server port |
+
+Path values stored in the DB are relative to `JAM_DATA_DIR`. The `config.resolve_path()` method resolves them to absolute at runtime. Already-absolute paths (from old DBs) pass through unchanged.
+
 ## Design Decisions
 
-- **Output format:** `.wav` (PCM 16-bit)
+- **Output format:** Opus in OGG container at 192kbps (default). WAV and AAC available via `-f/--format` CLI option.
 - **Song detection:** Energy-based, not silence-based. A 15-second smoothing window and minimum duration filter distinguish actual songs from brief noodling between them.
 - **Default threshold:** -30 dB with 120s minimum duration. For louder rooms or more noodling, raise the threshold (e.g., -25). For quieter recordings, lower it (e.g., -35).
 - **Performance:** ffmpeg handles all decoding and segment export at the C level. A 1.5hr session processes in ~10 seconds.
@@ -279,6 +296,41 @@ cd web && npm run dev
 - **Frontend:** React + TypeScript + Tailwind via Vite — clean separation from backend
 - **Song tagging:** Manual via web UI. Auto-matching (chroma fingerprinting) is available but not reliable enough for same-band recordings to be the primary workflow.
 
+## Test Coverage
+
+### Current State
+
+Backend tests live in `tests/` and run via `pytest`. Frontend has **no tests and no test framework**.
+
+### Backend Coverage Map
+
+| Module | Test File | Coverage |
+|--------|-----------|----------|
+| `api.py` | `test_api.py` | Good — but missing `PUT /sessions/{id}/name`, `PUT /sessions/{id}/date`, `GET /sessions/{id}/audio`; no error-path tests |
+| `db.py` | `test_db.py` | Good — but missing `_migrate()` backfill logic, schema creation, PRAGMA settings |
+| `track_ops.py` | `test_track_ops.py` | Good — core merge/split covered |
+| `fingerprint.py` | `test_fingerprint.py` | Partial — public API tested but no direct tests for `_compute_chromagram()`, `_dtw_distance()`, `_trim_edges()`, ffmpeg decode failures |
+| `output.py` | `test_output.py` | Partial — filename generation tested, `export_segments()` only checks file existence (no progress callback, error handling, or format tests) |
+| `metadata.py` | `test_metadata.py` | Partial — date parsing tested but no M4A tag extraction, no `©day` fallback chain, no file-mtime fallback |
+| `splitter.py` | `test_splitter.py` | Minimal (32 lines) — 3 happy-path `detect_songs()` tests only; `compute_rms_profile()`, `smooth_profile()`, `export_segment()` untested |
+| `cli.py` | **none** | **0% — all commands untested** |
+| `config.py` | **none** | **0% — path resolution, env var parsing, singleton untested** |
+
+### Frontend Coverage Map
+
+No test framework installed. No test files exist. All 2,100+ lines are untested.
+
+| File | Lines | Untested Logic |
+|------|-------|----------------|
+| `SongHistory.tsx` | 426 | Chart parsing, bass tab rendering (chord-to-fret mapping), metadata editing |
+| `SessionDetail.tsx` | 407 | Reprocess panel, editable fields, delete with file cleanup, track merge flow |
+| `TrackRow.tsx` | 251 | Song autocomplete/tagging, split at playback time, notes editing |
+| `AudioPlayer.tsx` | 207 | Keyboard shortcuts, global player coordination, seek/skip, markers |
+| `api.ts` | 185 | `fetchJson` error extraction, `formatDate`, 20+ typed API methods |
+| `SessionList.tsx` | 155 | Month grouping, name/song filtering, file upload |
+| `Modal.tsx` | 103 | Escape key handling, danger variant, toast auto-dismiss |
+| `SongCatalog.tsx` | 92 | 3-way sorting (name, last played, takes) |
+
 ## Test Data
 
 - `input/` — 40 recordings spanning 2021-10 through 2026-02, various lineup combos
@@ -286,26 +338,96 @@ cd web && npm run dev
 
 ## Roadmap
 
-Phases 1-3 (database, API, session browser) are complete and documented above.
+### Performance Mode
+- [x] Full-screen read-only view of chart + lyrics per song (`/songs/:id/perform`)
+- [x] Responsive layout: two-column (chart + lyrics) on desktop, stacked on mobile
+- [x] Adjustable font size with `+`/`-` buttons, persisted in `localStorage`
+- [x] Screen Wake Lock to prevent dimming during rehearsal
+- [x] No editing controls, no nav chrome — clean music-stand view
+- [ ] Auto-scroll at configurable tempo
+- [ ] Chord transposition (shift chart up/down by semitones)
+- [ ] Setlist mode (queue multiple songs, swipe between them)
 
-Phases 4-5 (tagging, song catalog, history, audio player) are complete:
-- Song tagging with autocomplete from existing catalog
-- Song catalog page with take counts and date ranges
-- Song history page with A/B comparison playback
-- Audio player with progress bar, seek, and quick preview mode (5-second clips)
-- Inline notes editing on tracks and sessions
+### CLI as API Client
+- [ ] Add `jam-session upload <file>` command that POSTs to the server's upload endpoint
+- [ ] Add `--server` option (or `JAM_SERVER_URL` env var / config file) for the remote API base URL
+- [ ] Expand the upload API endpoint to accept CLI options (threshold, min-duration, format, references)
+- [ ] Stream progress back to CLI (poll session `processing_status` or stream SSE)
+- [ ] Keep `jam-session process` as a local-only mode for offline use
+- [ ] Add `jam-session sessions` / `jam-session tracks` remote mode — fetch from API when `--server` is set
 
-### Phase 6: Import & Bulk Operations
-- [x] Bulk import from a directory of recordings (`process-all`)
+### Background Job Processing
+- [ ] Add task queue (Celery + Redis, ARQ, or SQLite-backed worker)
+- [ ] Add `processing_status` field on sessions (`pending`, `processing`, `ready`, `failed`)
+- [ ] Move upload processing (`POST /sessions/upload`) to async worker
+- [ ] Move reprocess (`POST /sessions/{id}/reprocess`) to async worker
+- [ ] SSE or polling endpoint for frontend to track processing progress
+- [ ] Update frontend upload UX with progress/status indicators
+
+### Auth & Multi-Tenancy
+- [ ] Choose auth strategy: email/password (bcrypt) + JWT, or OAuth, or magic links
+- [ ] `users` table (id, email, password_hash, created_at)
+- [ ] Session token middleware (JWT or httponly cookies) on all API endpoints
+- [ ] Auth UI: login, signup/invite acceptance, password reset
+- [ ] Gate audio streaming endpoints behind auth (currently any track ID is publicly accessible)
+- [ ] Strip `source_file` and other local paths from API responses in production
+
+### Groups
+- [ ] Add `groups` table (id, name, created_at) and `sessions.group_id` foreign key
+- [ ] Add `group_members` join table (user_id, group_id, role)
+- [ ] API middleware that scopes all DB queries to the authenticated user's group
+- [ ] API endpoints for group CRUD and membership
+- [ ] Scope sessions, songs, and catalog views per group in the frontend
+- [ ] Group switcher in the nav UI
+
+### Database Migrations
+- [ ] Adopt Alembic for schema versioning (replace ad-hoc `ALTER TABLE` checks in `db.py`)
+- [ ] Generate initial migration from current schema
+- [ ] Evaluate SQLite with WAL mode vs. Postgres for concurrent multi-user writes
+
+### R2 Integration for Audio Storage
+- [ ] Configure Cloudflare R2 bucket with S3-compatible credentials
+- [ ] Upload compressed tracks to R2 after processing (keep local copy optional)
+- [ ] Store R2 object keys in `tracks.audio_path` (e.g., `r2://bucket/group/session/track.opus`)
+- [ ] Update `/api/tracks/{id}/audio` to generate presigned R2 URLs (redirect) instead of serving local files
+- [ ] Migration script to upload existing local tracks to R2
+- [ ] Cloudflare CDN caching for audio delivery
+
+### Deployment
+- [ ] Dockerize the app (FastAPI + built React frontend in a single image)
+- [ ] Provision VPS (Hetzner CX22 or similar)
+- [ ] Set up reverse proxy (Caddy or nginx) with HTTPS via Let's Encrypt
+- [ ] Configure Cloudflare DNS and CDN in front of the VPS
+- [ ] CI/CD pipeline: push to main → build Docker image → deploy to VPS
+- [ ] SQLite backup strategy (scheduled copies to R2 or off-site)
+- [ ] `GET /health` endpoint for load balancer checks
+
+### Frontend Resilience
+- [ ] Add TanStack Query (or similar) for data fetching with caching, retry, and loading states
+- [ ] Global error boundaries so a failed API call doesn't break the page
+- [ ] Skeleton/loading states for slow connections (mobile at rehearsal spaces)
+- [ ] Optimistic updates for tagging and notes editing
+
+### Observability
+- [ ] Structured logging (`structlog` or stdlib) with request IDs
+- [ ] Error tracking (Sentry or similar)
+- [ ] Basic usage metrics: sessions processed, tracks stored, storage used per group
+
+### Security Hardening
+- [ ] Rate limiting on upload and reprocess endpoints (resource-intensive)
+- [ ] File size limits on upload
+- [ ] Input length limits on text fields (notes, lyrics, chart)
+- [ ] CSRF protection
+
+### Data Export & Portability
+- [ ] Export session catalog as CSV/JSON
+- [ ] Download all audio for a song or session as a zip
+- [ ] Account/group data deletion flow
+
+### Import & Bulk Operations
 - [ ] Spreadsheet import (format TBD) to pre-populate tags and session notes
 - [ ] Re-process sessions with different split settings
-
-Phase 7 (merge/split tracks) is complete:
-- Merge button between adjacent tracks re-exports from source m4a with widened time range
-- Split button appears when paused mid-track, re-exports both halves
-- `track_ops.py` service layer handles re-export, fingerprinting, DB updates, file renaming
-- Progress indicator in UI during operations
-- Both endpoints return full updated track list for single-shot UI refresh
+- [ ] Migration script to re-encode existing WAV tracks to compressed format
 
 ### Future Ideas
 - Auto-suggest song names based on catalog history

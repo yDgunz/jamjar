@@ -8,13 +8,17 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from jam_session_processor.config import get_config
 from jam_session_processor.db import Database, Track
 from jam_session_processor.fingerprint import compute_chroma_fingerprint
 from jam_session_processor.output import generate_output_name
-from jam_session_processor.splitter import export_segment
+from jam_session_processor.splitter import DEFAULT_FORMAT, AudioFormat, export_segment
 
 
-def merge_tracks(db: Database, track_id_1: int, track_id_2: int) -> list[Track]:
+def merge_tracks(
+    db: Database, track_id_1: int, track_id_2: int,
+    audio_format: AudioFormat = DEFAULT_FORMAT,
+) -> list[Track]:
     """Merge two adjacent tracks into one.
 
     Re-exports from the original source file with widened time range.
@@ -34,10 +38,11 @@ def merge_tracks(db: Database, track_id_1: int, track_id_2: int) -> list[Track]:
     if t2.track_number - t1.track_number != 1:
         raise ValueError("Tracks must be adjacent")
 
+    cfg = get_config()
     session = db.get_session(t1.session_id)
-    source_file = Path(session.source_file)
+    source_file = cfg.resolve_path(session.source_file)
     session_date = _parse_date(session.date)
-    output_dir = Path(t1.audio_path).parent
+    output_dir = cfg.resolve_path(t1.audio_path).parent
 
     # New time range spans both tracks
     new_start = t1.start_sec
@@ -47,10 +52,10 @@ def merge_tracks(db: Database, track_id_1: int, track_id_2: int) -> list[Track]:
     total_tracks = len(db.get_tracks_for_session(session.id)) - 1
     filename = generate_output_name(
         session_date, t1.track_number, max(total_tracks, 1),
-        new_start, new_end,
+        new_start, new_end, extension=audio_format.extension,
     )
     new_path = output_dir / filename
-    export_segment(source_file, new_path, new_start, new_end)
+    export_segment(source_file, new_path, new_start, new_end, audio_format=audio_format)
 
     # Compute fingerprint for new file
     fp = compute_chroma_fingerprint(source_file, start_sec=new_start, duration_sec=new_end - new_start)
@@ -60,8 +65,8 @@ def merge_tracks(db: Database, track_id_1: int, track_id_2: int) -> list[Track]:
     notes = t1.notes
 
     # Remove old audio files
-    _safe_remove(t1.audio_path)
-    _safe_remove(t2.audio_path)
+    _safe_remove(str(cfg.resolve_path(t1.audio_path)))
+    _safe_remove(str(cfg.resolve_path(t2.audio_path)))
 
     # Delete both old tracks, create merged track
     db.delete_track(t1.id)
@@ -71,7 +76,7 @@ def merge_tracks(db: Database, track_id_1: int, track_id_2: int) -> list[Track]:
         track_number=t1.track_number,
         start_sec=new_start,
         end_sec=new_end,
-        audio_path=str(new_path),
+        audio_path=cfg.make_relative(new_path),
         fingerprint=fp,
     )
 
@@ -83,12 +88,15 @@ def merge_tracks(db: Database, track_id_1: int, track_id_2: int) -> list[Track]:
         db.update_track_notes(new_track_id, notes)
 
     # Renumber all tracks in the session
-    _renumber_tracks(db, session.id, session_date, output_dir)
+    _renumber_tracks(db, session.id, session_date, output_dir, audio_format=audio_format)
 
     return db.get_tracks_for_session(session.id)
 
 
-def split_track(db: Database, track_id: int, split_at_sec: float) -> list[Track]:
+def split_track(
+    db: Database, track_id: int, split_at_sec: float,
+    audio_format: AudioFormat = DEFAULT_FORMAT,
+) -> list[Track]:
     """Split a track at the given position (relative to track start).
 
     Re-exports both halves from the original source file. First half keeps
@@ -104,20 +112,21 @@ def split_track(db: Database, track_id: int, split_at_sec: float) -> list[Track]
     # Convert relative position to absolute position in source file
     absolute_split = track.start_sec + split_at_sec
 
+    cfg = get_config()
     session = db.get_session(track.session_id)
-    source_file = Path(session.source_file)
+    source_file = cfg.resolve_path(session.source_file)
     session_date = _parse_date(session.date)
-    output_dir = Path(track.audio_path).parent
+    output_dir = cfg.resolve_path(track.audio_path).parent
 
     total_tracks = len(db.get_tracks_for_session(session.id)) + 1
 
     # Export first half
     filename_1 = generate_output_name(
         session_date, track.track_number, total_tracks,
-        track.start_sec, absolute_split,
+        track.start_sec, absolute_split, extension=audio_format.extension,
     )
     path_1 = output_dir / filename_1
-    export_segment(source_file, path_1, track.start_sec, absolute_split)
+    export_segment(source_file, path_1, track.start_sec, absolute_split, audio_format=audio_format)
     fp_1 = compute_chroma_fingerprint(
         source_file, start_sec=track.start_sec, duration_sec=split_at_sec,
     )
@@ -125,10 +134,10 @@ def split_track(db: Database, track_id: int, split_at_sec: float) -> list[Track]
     # Export second half
     filename_2 = generate_output_name(
         session_date, track.track_number + 1, total_tracks,
-        absolute_split, track.end_sec,
+        absolute_split, track.end_sec, extension=audio_format.extension,
     )
     path_2 = output_dir / filename_2
-    export_segment(source_file, path_2, absolute_split, track.end_sec)
+    export_segment(source_file, path_2, absolute_split, track.end_sec, audio_format=audio_format)
     fp_2 = compute_chroma_fingerprint(
         source_file, start_sec=absolute_split, duration_sec=track.end_sec - absolute_split,
     )
@@ -138,7 +147,7 @@ def split_track(db: Database, track_id: int, split_at_sec: float) -> list[Track]
     notes = track.notes
 
     # Remove old audio file and DB row
-    _safe_remove(track.audio_path)
+    _safe_remove(str(cfg.resolve_path(track.audio_path)))
     db.delete_track(track.id)
 
     # Create first half (keeps metadata)
@@ -147,7 +156,7 @@ def split_track(db: Database, track_id: int, split_at_sec: float) -> list[Track]
         track_number=track.track_number,
         start_sec=track.start_sec,
         end_sec=absolute_split,
-        audio_path=str(path_1),
+        audio_path=cfg.make_relative(path_1),
         fingerprint=fp_1,
     )
     if song_id:
@@ -162,17 +171,20 @@ def split_track(db: Database, track_id: int, split_at_sec: float) -> list[Track]
         track_number=track.track_number + 1,
         start_sec=absolute_split,
         end_sec=track.end_sec,
-        audio_path=str(path_2),
+        audio_path=cfg.make_relative(path_2),
         fingerprint=fp_2,
     )
 
     # Renumber all tracks in the session
-    _renumber_tracks(db, session.id, session_date, output_dir)
+    _renumber_tracks(db, session.id, session_date, output_dir, audio_format=audio_format)
 
     return db.get_tracks_for_session(session.id)
 
 
-def _renumber_tracks(db: Database, session_id: int, session_date: datetime | None, output_dir: Path):
+def _renumber_tracks(
+    db: Database, session_id: int, session_date: datetime | None,
+    output_dir: Path, audio_format: AudioFormat = DEFAULT_FORMAT,
+):
     """Renumber all tracks in a session sequentially by start_sec.
 
     Updates track_number and renames audio files on disk to match.
@@ -182,18 +194,21 @@ def _renumber_tracks(db: Database, session_id: int, session_date: datetime | Non
     tracks.sort(key=lambda t: t.start_sec)
     total = len(tracks)
 
+    cfg = get_config()
     for i, track in enumerate(tracks, start=1):
         expected_num = i
         if track.track_number != expected_num:
             new_name = generate_output_name(
                 session_date, expected_num, total,
                 track.start_sec, track.end_sec,
+                extension=audio_format.extension,
             )
             new_path = output_dir / new_name
-            old_path = Path(track.audio_path)
+            old_path = cfg.resolve_path(track.audio_path)
             if old_path.exists() and old_path != new_path:
                 old_path.rename(new_path)
-            db.update_track(track.id, track_number=expected_num, audio_path=str(new_path))
+            db.update_track(track.id, track_number=expected_num,
+                            audio_path=cfg.make_relative(new_path))
 
 
 def _parse_date(date_str: str | None) -> datetime | None:
