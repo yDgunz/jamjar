@@ -65,14 +65,6 @@ export default function SessionList() {
 
   if (loading) return <p className="text-gray-400">Loading sessions...</p>;
 
-  if (sessions.length === 0) {
-    return (
-      <p className="text-gray-400">
-        No sessions found. Run <code className="text-indigo-400">jam-session process-all input/</code> to get started.
-      </p>
-    );
-  }
-
   const monthGroups = groupByMonth(filtered);
 
   return (
@@ -99,6 +91,11 @@ export default function SessionList() {
           </button>
         </div>
       </div>
+      {sessions.length === 0 && (
+        <p className="text-gray-400">
+          No sessions yet. Upload a recording to get started.
+        </p>
+      )}
       <input
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
