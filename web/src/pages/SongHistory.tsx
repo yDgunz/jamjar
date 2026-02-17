@@ -351,6 +351,14 @@ export default function SongHistory() {
               {song?.name ?? "Unknown Song"}
             </h1>
           )}
+          {(song?.chart || song?.lyrics) && (
+            <Link
+              to={`/songs/${songId}/perform`}
+              className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500"
+            >
+              Perform
+            </Link>
+          )}
           <button
             onClick={() => setShowDelete(true)}
             className="rounded px-3 py-1.5 text-xs text-gray-600 hover:bg-red-950 hover:text-red-400"
