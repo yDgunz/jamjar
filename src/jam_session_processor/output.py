@@ -8,7 +8,7 @@ from jam_session_processor.fingerprint import (
     compute_chromagram_for_file,
     match_against_references,
 )
-from jam_session_processor.splitter import export_segment
+from jam_session_processor.splitter import DEFAULT_FORMAT, AudioFormat, export_segment
 
 
 def _format_timestamp(sec: float) -> str:
@@ -25,6 +25,7 @@ def generate_output_name(
     end_sec: float | None = None,
     fingerprint: str = "",
     song_name: str = "",
+    extension: str = ".ogg",
 ) -> str:
     date_str = session_date.strftime("%Y-%m-%d") if session_date else "unknown-date"
     width = len(str(total_tracks))
@@ -35,7 +36,7 @@ def generate_output_name(
         name += f"_{song_name}"
     elif fingerprint:
         name += f"_{fingerprint}"
-    return name + ".wav"
+    return name + extension
 
 
 def export_segments(
@@ -46,6 +47,7 @@ def export_segments(
     reference_db: dict[str, np.ndarray] | None = None,
     match_threshold: float = 0.04,
     on_progress: callable = None,
+    audio_format: AudioFormat = DEFAULT_FORMAT,
 ) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     exported = []
@@ -66,9 +68,10 @@ def export_segments(
         name = generate_output_name(
             session_date, i, len(segments), start, end,
             fingerprint=fp, song_name=song_name,
+            extension=audio_format.extension,
         )
         out_path = output_dir / name
-        export_segment(file_path, out_path, start, end)
+        export_segment(file_path, out_path, start, end, audio_format=audio_format)
         exported.append(out_path)
 
         if on_progress:

@@ -11,6 +11,19 @@ WINDOW_SEC = 1
 SMOOTHING_WINDOW_SEC = 15
 
 
+@dataclass(frozen=True)
+class AudioFormat:
+    extension: str  # ".ogg", ".m4a", ".wav"
+    codec: str  # "libopus", "aac", "pcm_s16le"
+    bitrate: str | None  # "192k", None for WAV
+
+
+OPUS = AudioFormat(".ogg", "libopus", "192k")
+AAC = AudioFormat(".m4a", "aac", "192k")
+WAV = AudioFormat(".wav", "pcm_s16le", None)
+DEFAULT_FORMAT = OPUS
+
+
 @dataclass
 class SplitResult:
     segments: list[tuple[float, float]]  # list of (start_sec, end_sec)
@@ -108,15 +121,18 @@ def export_segment(
     output_path: Path,
     start_sec: float,
     end_sec: float,
+    audio_format: AudioFormat = DEFAULT_FORMAT,
 ) -> None:
-    """Use ffmpeg to extract a segment directly to .wav without loading the full file."""
+    """Use ffmpeg to extract a segment to the specified format."""
     duration = end_sec - start_sec
     cmd = [
         "ffmpeg", "-y",
         "-ss", str(start_sec),
         "-i", str(file_path),
         "-t", str(duration),
-        "-acodec", "pcm_s16le",
-        output_path.as_posix(),
+        "-c:a", audio_format.codec,
     ]
+    if audio_format.bitrate:
+        cmd += ["-b:a", audio_format.bitrate]
+    cmd.append(output_path.as_posix())
     subprocess.run(cmd, capture_output=True, check=True)

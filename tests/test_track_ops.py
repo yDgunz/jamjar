@@ -35,7 +35,7 @@ def session_with_tracks(db, tmp_path):
     return sid, tracks, output_dir
 
 
-def _mock_export(file_path, output_path, start_sec, end_sec):
+def _mock_export(file_path, output_path, start_sec, end_sec, **kwargs):
     """Mock export_segment: just create an empty file."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(b"RIFF" + b"\x00" * 100)
