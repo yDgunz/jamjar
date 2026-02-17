@@ -16,6 +16,7 @@ class Config:
     output_dir: Path
     cors_origins: list[str]
     port: int
+    max_upload_mb: int
 
     def resolve_path(self, stored: str) -> Path:
         """Resolve a stored path to absolute.
@@ -64,6 +65,7 @@ def _build_config() -> Config:
             if o.strip()
         ],
         port=int(os.environ.get("JAM_PORT", "8000")),
+        max_upload_mb=int(os.environ.get("JAM_MAX_UPLOAD_MB", "500")),
     )
 
 

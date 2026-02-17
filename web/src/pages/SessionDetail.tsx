@@ -173,7 +173,31 @@ export default function SessionDetail() {
     }
   };
 
-  if (loading) return <p className="text-gray-400">Loading...</p>;
+  if (loading) return (
+    <div>
+      <div className="h-4 w-24 animate-pulse rounded bg-gray-800" />
+      <div className="mt-4 mb-6 space-y-2">
+        <div className="h-8 w-64 animate-pulse rounded bg-gray-800" />
+        <div className="h-4 w-48 animate-pulse rounded bg-gray-800" />
+      </div>
+      <div className="mb-6 flex items-center gap-3">
+        <div className="h-px flex-1 bg-gray-700" />
+        <div className="h-4 w-12 animate-pulse rounded bg-gray-800" />
+        <div className="h-px flex-1 bg-gray-700" />
+      </div>
+      <div className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="h-5 w-32 animate-pulse rounded bg-gray-800" />
+              <div className="h-4 w-20 animate-pulse rounded bg-gray-800" />
+            </div>
+            <div className="h-10 w-full animate-pulse rounded bg-gray-800" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
   if (!session) return <p className="text-red-400">Session not found.</p>;
 
   return (

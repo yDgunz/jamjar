@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir .
 
 # Stage 3: Final image
 FROM python:3.12-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed Python packages
@@ -24,6 +24,9 @@ COPY --from=backend /usr/local/bin/jam-session /usr/local/bin/jam-session
 
 # Copy built frontend
 COPY --from=frontend /web/dist /app/static
+
+# Copy scripts
+COPY scripts/ /app/scripts/
 
 ENV JAM_DATA_DIR=/data
 ENV JAM_STATIC_DIR=/app/static

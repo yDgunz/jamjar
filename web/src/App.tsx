@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router";
+import ErrorBoundary from "./components/ErrorBoundary";
 import SessionList from "./pages/SessionList";
 import SessionDetail from "./pages/SessionDetail";
 import SongCatalog from "./pages/SongCatalog";
@@ -44,6 +45,7 @@ function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <BrowserRouter>
       <Routes>
         {/* Full-screen route — no app chrome */}
@@ -62,5 +64,6 @@ export default function App() {
         } />
       </Routes>
     </BrowserRouter>
+    </ErrorBoundary>
   );
 }

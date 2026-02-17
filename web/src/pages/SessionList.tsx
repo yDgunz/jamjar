@@ -67,7 +67,29 @@ export default function SessionList() {
       })
     : sessions;
 
-  if (loading) return <p className="text-gray-400">Loading sessions...</p>;
+  if (loading) return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <div className="h-8 w-32 animate-pulse rounded bg-gray-800" />
+        <div className="h-10 w-36 animate-pulse rounded bg-gray-800" />
+      </div>
+      <div className="mb-4 h-9 w-64 animate-pulse rounded bg-gray-800" />
+      <div className="space-y-3">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4">
+            <div className="space-y-2">
+              <div className="h-5 w-48 animate-pulse rounded bg-gray-800" />
+              <div className="h-4 w-28 animate-pulse rounded bg-gray-800" />
+            </div>
+            <div className="space-y-1 text-right">
+              <div className="h-4 w-16 animate-pulse rounded bg-gray-800" />
+              <div className="h-4 w-20 animate-pulse rounded bg-gray-800" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   const monthGroups = groupByMonth(filtered);
 

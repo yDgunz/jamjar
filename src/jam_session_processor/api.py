@@ -60,7 +60,6 @@ class TrackResponse(BaseModel):
     end_sec: float
     duration_sec: float
     fingerprint: str
-    audio_path: str
     notes: str
 
 
@@ -82,7 +81,6 @@ class SongTrackResponse(BaseModel):
     start_sec: float
     end_sec: float
     duration_sec: float
-    audio_path: str
     notes: str
     session_date: str | None
     source_file: str
@@ -124,13 +122,40 @@ class ReprocessRequest(BaseModel):
     min_duration: int = 120
 
 
+# --- Response helpers ---
+
+
+def _strip_to_basename(path: str) -> str:
+    """Strip a path to just its filename (no directory components)."""
+    return Path(path).name if path else path
+
+
+def _session_response(session) -> SessionResponse:
+    d = session.__dict__.copy()
+    d["source_file"] = _strip_to_basename(d.get("source_file", ""))
+    return SessionResponse(**d)
+
+
+def _track_response(track) -> TrackResponse:
+    d = track.__dict__.copy()
+    d.pop("audio_path", None)
+    return TrackResponse(**d)
+
+
+def _song_track_response(row: dict) -> SongTrackResponse:
+    row = dict(row)
+    row.pop("audio_path", None)
+    row["source_file"] = _strip_to_basename(row.get("source_file", ""))
+    return SongTrackResponse(**row)
+
+
 # --- Session endpoints ---
 
 
 @app.get("/api/sessions", response_model=list[SessionResponse])
 def list_sessions():
     db = get_db()
-    return [SessionResponse(**s.__dict__) for s in db.list_sessions()]
+    return [_session_response(s) for s in db.list_sessions()]
 
 
 @app.get("/api/sessions/{session_id}", response_model=SessionResponse)
@@ -139,7 +164,7 @@ def get_session(session_id: int):
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    return SessionResponse(**session.__dict__)
+    return _session_response(session)
 
 
 @app.put("/api/sessions/{session_id}/name", response_model=SessionResponse)
@@ -149,7 +174,7 @@ def update_session_name(session_id: int, req: NameRequest):
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    return SessionResponse(**session.__dict__)
+    return _session_response(session)
 
 
 @app.put("/api/sessions/{session_id}/notes", response_model=SessionResponse)
@@ -159,7 +184,7 @@ def update_session_notes(session_id: int, req: NotesRequest):
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    return SessionResponse(**session.__dict__)
+    return _session_response(session)
 
 
 @app.put("/api/sessions/{session_id}/date", response_model=SessionResponse)
@@ -169,7 +194,7 @@ def update_session_date(session_id: int, req: DateRequest):
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    return SessionResponse(**session.__dict__)
+    return _session_response(session)
 
 
 class DeleteSessionRequest(BaseModel):
@@ -209,7 +234,7 @@ def get_session_tracks(session_id: int):
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    return [TrackResponse(**t.__dict__) for t in db.get_tracks_for_session(session_id)]
+    return [_track_response(t) for t in db.get_tracks_for_session(session_id)]
 
 
 @app.post(
@@ -291,7 +316,7 @@ def reprocess_session(session_id: int, req: ReprocessRequest):
         )
 
     return [
-        TrackResponse(**t.__dict__)
+        _track_response(t)
         for t in db.get_tracks_for_session(session_id)
     ]
 
@@ -316,6 +341,14 @@ async def upload_session(file: UploadFile):
         )
 
     cfg = get_config()
+    max_bytes = cfg.max_upload_mb * 1024 * 1024
+
+    # Early rejection if Content-Length header is present and too large
+    if file.size is not None and file.size > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum upload size is {cfg.max_upload_mb} MB.",
+        )
 
     # Save to input directory
     cfg.input_dir.mkdir(parents=True, exist_ok=True)
@@ -326,10 +359,25 @@ async def upload_session(file: UploadFile):
             detail=f"File '{file.filename}' already exists in input/",
         )
 
+    # Stream file to disk in chunks, enforcing size limit
     try:
-        content = await file.read()
-        dest.write_bytes(content)
+        bytes_written = 0
+        chunk_size = 1024 * 1024  # 1 MB
+        with open(dest, "wb") as f:
+            while chunk := await file.read(chunk_size):
+                bytes_written += len(chunk)
+                if bytes_written > max_bytes:
+                    f.close()
+                    dest.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File too large. Maximum upload size is {cfg.max_upload_mb} MB.",
+                    )
+                f.write(chunk)
+    except HTTPException:
+        raise
     except Exception as e:
+        dest.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
 
     source = dest.resolve()
@@ -383,7 +431,7 @@ async def upload_session(file: UploadFile):
             raise HTTPException(status_code=500, detail=f"Export failed: {e}")
 
     session = db.get_session(session_id)
-    return SessionResponse(**session.__dict__)
+    return _session_response(session)
 
 
 # --- Track endpoints ---
@@ -397,7 +445,7 @@ def tag_track(track_id: int, req: TagRequest):
     tracks = _find_track(db, track_id)
     if not tracks:
         raise HTTPException(status_code=404, detail="Track not found")
-    return TrackResponse(**tracks.__dict__)
+    return _track_response(tracks)
 
 
 @app.delete("/api/tracks/{track_id}/tag")
@@ -414,7 +462,7 @@ def update_track_notes(track_id: int, req: NotesRequest):
     track = _find_track(db, track_id)
     if not track:
         raise HTTPException(status_code=404, detail="Track not found")
-    return TrackResponse(**track.__dict__)
+    return _track_response(track)
 
 
 @app.post("/api/tracks/{track_id}/merge", response_model=list[TrackResponse])
@@ -428,7 +476,7 @@ def merge_tracks_endpoint(track_id: int, req: MergeRequest):
     except Exception as e:
         logger.exception("Merge failed")
         raise HTTPException(status_code=500, detail=f"Merge failed: {e}")
-    return [TrackResponse(**t.__dict__) for t in tracks]
+    return [_track_response(t) for t in tracks]
 
 
 @app.post("/api/tracks/{track_id}/split", response_model=list[TrackResponse])
@@ -441,7 +489,7 @@ def split_track_endpoint(track_id: int, req: SplitRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception("Split failed")
-    return [TrackResponse(**t.__dict__) for t in tracks]
+    return [_track_response(t) for t in tracks]
 
 
 @app.get("/api/tracks/{track_id}/audio")
@@ -515,7 +563,7 @@ def rename_song(song_id: int, req: NameRequest):
 def get_song_tracks(song_id: int):
     db = get_db()
     rows = db.get_tracks_for_song(song_id)
-    return [SongTrackResponse(**r) for r in rows]
+    return [_song_track_response(r) for r in rows]
 
 
 # --- Helpers ---

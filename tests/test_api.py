@@ -464,3 +464,75 @@ def test_upload_duplicate(client, tmp_path):
         files={"file": ("dup.m4a", BytesIO(b"\x00" * 50), "audio/mp4")},
     )
     assert resp.status_code == 409
+
+
+def test_upload_too_large(client, monkeypatch):
+    """Upload exceeding max size should return 413."""
+    from io import BytesIO
+
+    from jam_session_processor.config import reset_config
+
+    # Set a tiny 1 byte limit
+    monkeypatch.setenv("JAM_MAX_UPLOAD_MB", "0")
+    reset_config()
+
+    content = b"\x00" * 2048
+    resp = client.post(
+        "/api/sessions/upload",
+        files={"file": ("big.m4a", BytesIO(content), "audio/mp4")},
+    )
+    assert resp.status_code == 413
+    assert "too large" in resp.json()["detail"].lower()
+    reset_config()
+
+
+# --- Path stripping tests ---
+
+
+def test_track_response_no_audio_path(seeded_client):
+    """Track responses should not include audio_path."""
+    resp = seeded_client.get("/api/sessions/1/tracks")
+    assert resp.status_code == 200
+    tracks = resp.json()
+    assert len(tracks) > 0
+    for track in tracks:
+        assert "audio_path" not in track
+
+
+def test_song_track_response_no_audio_path(seeded_client):
+    """Song track responses should not include audio_path."""
+    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+
+    songs = seeded_client.get("/api/songs").json()
+    song_id = songs[0]["id"]
+
+    resp = seeded_client.get(f"/api/songs/{song_id}/tracks")
+    assert resp.status_code == 200
+    tracks = resp.json()
+    assert len(tracks) > 0
+    for track in tracks:
+        assert "audio_path" not in track
+
+
+def test_session_source_file_is_basename(seeded_client):
+    """Session source_file should be filename only (no directory separators)."""
+    resp = seeded_client.get("/api/sessions/1")
+    assert resp.status_code == 200
+    source = resp.json()["source_file"]
+    assert "/" not in source
+    assert "\\" not in source
+    assert source == "session1.m4a"
+
+
+def test_song_track_source_file_is_basename(seeded_client):
+    """Song track source_file should be filename only."""
+    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+
+    songs = seeded_client.get("/api/songs").json()
+    song_id = songs[0]["id"]
+
+    resp = seeded_client.get(f"/api/songs/{song_id}/tracks")
+    tracks = resp.json()
+    for track in tracks:
+        assert "/" not in track["source_file"]
+        assert "\\" not in track["source_file"]

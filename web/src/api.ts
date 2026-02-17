@@ -33,7 +33,6 @@ export interface Track {
   end_sec: number;
   duration_sec: number;
   fingerprint: string;
-  audio_path: string;
   notes: string;
 }
 
@@ -55,7 +54,6 @@ export interface SongTrack {
   start_sec: number;
   end_sec: number;
   duration_sec: number;
-  audio_path: string;
   notes: string;
   session_date: string | null;
   source_file: string;

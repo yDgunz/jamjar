@@ -66,6 +66,7 @@ def test_resolve_path_relative(tmp_path):
         output_dir=tmp_path / "output",
         cors_origins=["http://localhost:5173"],
         port=8000,
+        max_upload_mb=500,
     )
     assert cfg.resolve_path("output/session/track.ogg") == tmp_path / "output/session/track.ogg"
 
@@ -78,6 +79,7 @@ def test_resolve_path_absolute(tmp_path):
         output_dir=tmp_path / "output",
         cors_origins=["http://localhost:5173"],
         port=8000,
+        max_upload_mb=500,
     )
     abs_path = "/some/absolute/path.ogg"
     assert cfg.resolve_path(abs_path) == Path(abs_path)
@@ -91,6 +93,7 @@ def test_make_relative_inside_data_dir(tmp_path):
         output_dir=tmp_path / "output",
         cors_origins=["http://localhost:5173"],
         port=8000,
+        max_upload_mb=500,
     )
     absolute = tmp_path / "output" / "session" / "track.ogg"
     assert cfg.make_relative(absolute) == "output/session/track.ogg"
@@ -104,6 +107,7 @@ def test_make_relative_outside_data_dir(tmp_path):
         output_dir=tmp_path / "data" / "output",
         cors_origins=["http://localhost:5173"],
         port=8000,
+        max_upload_mb=500,
     )
     outside = tmp_path / "elsewhere" / "file.ogg"
     assert cfg.make_relative(outside) == str(outside)
@@ -117,6 +121,7 @@ def test_output_dir_for_source(tmp_path):
         output_dir=tmp_path / "output",
         cors_origins=["http://localhost:5173"],
         port=8000,
+        max_upload_mb=500,
     )
     assert cfg.output_dir_for_source("my-session") == tmp_path / "output" / "my-session"
 

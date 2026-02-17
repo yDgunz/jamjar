@@ -272,6 +272,64 @@ def process_all(directory: Path, threshold: float, min_duration: int, audio_form
                    audio_format_name=audio_format_name)
 
 
+UPLOAD_EXTENSIONS = {".m4a", ".wav", ".mp3", ".flac", ".ogg"}
+
+
+@cli.command()
+@click.argument("file", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "-s", "--server",
+    required=True,
+    help="Server URL (e.g. http://localhost:8000).",
+)
+def upload(file: Path, server: str):
+    """Upload an audio file to a remote server for processing."""
+    import requests
+
+    ext = file.suffix.lower()
+    if ext not in UPLOAD_EXTENSIONS:
+        allowed = ", ".join(sorted(UPLOAD_EXTENSIONS))
+        click.echo(f"Error: Invalid file type '{ext}'. Allowed: {allowed}")
+        raise SystemExit(1)
+
+    url = f"{server.rstrip('/')}/api/sessions/upload"
+    file_size = file.stat().st_size
+    size_mb = file_size / (1024 * 1024)
+    click.echo(f"Uploading {file.name} ({size_mb:.1f} MB) to {server}...")
+
+    try:
+        with open(file, "rb") as f:
+            resp = requests.post(
+                url,
+                files={"file": (file.name, f)},
+                timeout=600,
+            )
+    except requests.ConnectionError:
+        click.echo(f"Error: Could not connect to {server}")
+        raise SystemExit(1)
+    except requests.Timeout:
+        click.echo("Error: Upload timed out (10 minutes)")
+        raise SystemExit(1)
+
+    if resp.status_code != 200:
+        detail = ""
+        try:
+            detail = resp.json().get("detail", "")
+        except Exception:
+            pass
+        msg = f"Error: Server returned {resp.status_code}"
+        if detail:
+            msg += f" — {detail}"
+        click.echo(msg)
+        raise SystemExit(1)
+
+    data = resp.json()
+    click.echo(f"Session created (id={data['id']})")
+    click.echo(f"  Date: {data.get('date') or 'unknown'}")
+    click.echo(f"  Tracks: {data.get('track_count', 0)}")
+    click.echo(f"  Source: {data.get('source_file', '')}")
+
+
 def _format_sec(sec: float) -> str:
     total = int(sec)
     minutes, seconds = divmod(total, 60)

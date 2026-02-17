@@ -19,6 +19,7 @@ Tool for processing and cataloging band jam session recordings. Splits full iPho
 | `jam-session tracks <session_id>` | List tracks for a session with timestamps and tags |
 | `jam-session reset-db` | Clear all data from the database (with confirmation) |
 | `jam-session serve` | Start the FastAPI backend (default port 8000) |
+| `jam-session upload <file> -s <URL>` | Upload an audio file to a remote server for processing |
 
 ### Processing Pipeline
 
@@ -270,6 +271,14 @@ cd web && npm run dev
 - **FFmpeg** — installed via `brew install ffmpeg`
 - **Node.js** — required for the web frontend (Vite + React)
 
+## Deployment
+
+The app runs in Docker via `docker compose`. CI/CD is via GitHub Actions (`.github/workflows/deploy.yml`): push to `main` triggers SSH deploy to the VPS.
+
+**Required GitHub Secrets:** `SSH_HOST`, `SSH_USER`, `SSH_KEY`
+
+**SQLite backups:** `scripts/backup-db.sh` uses `sqlite3 .backup` for safe copies. Add a cron job in the container or host to run it periodically.
+
 ## Environment Variables
 
 All configuration is via `JAM_*` environment variables. Defaults match pre-config behavior — nothing breaks without a `.env` file.
@@ -282,6 +291,7 @@ All configuration is via `JAM_*` environment variables. Defaults match pre-confi
 | `JAM_OUTPUT_DIR` | `output` | Exported tracks base dir (relative to DATA_DIR or absolute) |
 | `JAM_CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins |
 | `JAM_PORT` | `8000` | API server port |
+| `JAM_MAX_UPLOAD_MB` | `500` | Maximum upload file size in MB |
 
 Path values stored in the DB are relative to `JAM_DATA_DIR`. The `config.resolve_path()` method resolves them to absolute at runtime. Already-absolute paths (from old DBs) pass through unchanged.
 
@@ -306,7 +316,7 @@ Backend tests live in `tests/` and run via `pytest`. Frontend has **no tests and
 
 | Module | Test File | Coverage |
 |--------|-----------|----------|
-| `api.py` | `test_api.py` | Good — but missing `PUT /sessions/{id}/name`, `PUT /sessions/{id}/date`, `GET /sessions/{id}/audio`; no error-path tests |
+| `api.py` | `test_api.py` | Good — upload size limits, path stripping, CRUD; missing `GET /sessions/{id}/audio` error paths |
 | `db.py` | `test_db.py` | Good — but missing `_migrate()` backfill logic, schema creation, PRAGMA settings |
 | `track_ops.py` | `test_track_ops.py` | Good — core merge/split covered |
 | `fingerprint.py` | `test_fingerprint.py` | Partial — public API tested but no direct tests for `_compute_chromagram()`, `_dtw_distance()`, `_trim_edges()`, ffmpeg decode failures |
@@ -314,7 +324,7 @@ Backend tests live in `tests/` and run via `pytest`. Frontend has **no tests and
 | `metadata.py` | `test_metadata.py` | Partial — date parsing tested but no M4A tag extraction, no `©day` fallback chain, no file-mtime fallback |
 | `splitter.py` | `test_splitter.py` | Minimal (32 lines) — 3 happy-path `detect_songs()` tests only; `compute_rms_profile()`, `smooth_profile()`, `export_segment()` untested |
 | `cli.py` | **none** | **0% — all commands untested** |
-| `config.py` | **none** | **0% — path resolution, env var parsing, singleton untested** |
+| `config.py` | `test_config.py` | Good — env var parsing, resolve/relative paths, singleton reset |
 
 ### Frontend Coverage Map
 
@@ -345,24 +355,20 @@ No test framework installed. No test files exist. All 2,100+ lines are untested.
 - [x] Hetzner CX22 server (Ubuntu 24.04, Docker installed)
 - [ ] Cloudflare DNS — add domain, point A record at Hetzner IP, then re-enable Caddy HTTPS in docker-compose
 
-**Code:**
-- [x] `GET /health` endpoint
-- [x] FastAPI serves built frontend as static files
-- [x] Dockerfile (Python + Node build stage, single image, ffmpeg included)
-- [x] Caddy reverse proxy config (HTTPS via Let's Encrypt)
-- [x] `docker-compose.yml` (app + Caddy, volume for `JAM_DATA_DIR`)
-- [x] Upload overlay with status progression
-- [x] Simplified reprocess UX (too many / too few)
+### Done — Post-Deploy Hardening
 
-### Next — Post-Deploy Hardening
+- [x] CI/CD pipeline: push to main → SSH deploy to VPS (`.github/workflows/deploy.yml`)
+- [x] SQLite backup script (`scripts/backup-db.sh` — `sqlite3 .backup`, gzip, retention)
+- [x] File size limits on upload endpoint (`JAM_MAX_UPLOAD_MB`, chunked streaming, 413 response)
+- [x] Strip local paths from API responses (`audio_path` removed, `source_file` basename-only)
+- [x] Global error boundary in frontend (`ErrorBoundary.tsx`)
+- [x] Skeleton loading states (all pages use `animate-pulse` skeletons)
+- [x] CLI upload command (`jam-session upload <file> -s <URL>`)
 
+### Next
+
+- [ ] Cloudflare DNS — add domain, point A record at Hetzner IP, then re-enable Caddy HTTPS
 - [ ] Deploy script or README with push-to-server instructions
-- [ ] CI/CD pipeline: push to main → build Docker image → deploy to VPS
-- [ ] SQLite backup strategy (scheduled copies off-site)
-- [ ] File size limits on upload endpoint
-- [ ] Strip `source_file` and local paths from API responses
-- [ ] Global error boundaries in frontend
-- [ ] Loading/skeleton states for slow connections
 
 ### Later
 
@@ -370,7 +376,6 @@ No test framework installed. No test files exist. All 2,100+ lines are untested.
 - Groups (scoped sessions/songs per band)
 - R2 audio storage (presigned URLs, CDN caching)
 - Background job processing (async upload/reprocess, progress tracking)
-- CLI as API client (`jam-session upload`, `--server` flag)
 - Database migrations (Alembic, evaluate Postgres)
 - Performance mode enhancements (auto-scroll, transposition, setlists)
 - Frontend resilience (TanStack Query, optimistic updates)

@@ -48,7 +48,18 @@ export default function PerformMode() {
     };
   }, []);
 
-  if (loading) return <div className="min-h-screen bg-gray-950 p-4 text-gray-400">Loading...</div>;
+  if (loading) return (
+    <div className="min-h-screen bg-gray-950 p-4">
+      <div className="flex items-center gap-3 border-b border-gray-800 pb-3">
+        <div className="h-5 w-8 animate-pulse rounded bg-gray-800" />
+        <div className="h-6 w-48 animate-pulse rounded bg-gray-800" />
+      </div>
+      <div className="mt-6 space-y-3">
+        <div className="h-4 w-16 animate-pulse rounded bg-gray-800" />
+        <div className="h-32 w-full animate-pulse rounded bg-gray-800" />
+      </div>
+    </div>
+  );
   if (!song) return <div className="min-h-screen bg-gray-950 p-4 text-gray-400">Song not found.</div>;
 
   const hasChart = !!song.chart;

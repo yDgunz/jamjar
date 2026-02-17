@@ -320,7 +320,27 @@ export default function SongHistory() {
     }
   };
 
-  if (loading) return <p className="text-gray-400">Loading...</p>;
+  if (loading) return (
+    <div>
+      <div className="h-4 w-28 animate-pulse rounded bg-gray-800" />
+      <div className="mt-4 mb-6 space-y-2">
+        <div className="h-8 w-48 animate-pulse rounded bg-gray-800" />
+        <div className="h-4 w-36 animate-pulse rounded bg-gray-800" />
+      </div>
+      <div className="mb-6 rounded-lg border border-gray-800 bg-gray-900 p-4 space-y-3">
+        <div className="h-4 w-16 animate-pulse rounded bg-gray-800" />
+        <div className="h-12 w-full animate-pulse rounded bg-gray-800" />
+      </div>
+      <div className="space-y-2">
+        {[1, 2].map((i) => (
+          <div key={i} className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 space-y-2">
+            <div className="h-4 w-40 animate-pulse rounded bg-gray-800" />
+            <div className="h-10 w-full animate-pulse rounded bg-gray-800" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div>
