@@ -13,6 +13,12 @@ from jam_session_processor.db import Database
 
 app = FastAPI(title="Jam Session Processor", version="0.1.0")
 
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_config().cors_origins,
@@ -518,3 +524,22 @@ def get_song_tracks(song_id: int):
 def _find_track(db: Database, track_id: int):
     """Find a track by ID across all sessions."""
     return db.get_track(track_id)
+
+
+# --- SPA static file serving ---
+
+import os as _os
+
+_static_dir = _os.environ.get("JAM_STATIC_DIR")
+if _static_dir:
+    _static_path = Path(_static_dir)
+    if _static_path.is_dir():
+        from fastapi.staticfiles import StaticFiles
+
+        # Serve index.html for the root and any non-file paths (React Router)
+        @app.get("/{full_path:path}")
+        def spa_catch_all(full_path: str):
+            file = _static_path / full_path
+            if full_path and file.is_file():
+                return FileResponse(file)
+            return FileResponse(_static_path / "index.html")

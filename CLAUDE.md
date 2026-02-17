@@ -347,11 +347,11 @@ No test framework installed. No test files exist. All 2,100+ lines are untested.
 4. SSH into the VPS and install Docker: `curl -fsSL https://get.docker.com | sh`
 
 **Claude builds these in parallel:**
-- [ ] `GET /health` endpoint
-- [ ] FastAPI serves built frontend as static files (no separate web server in dev)
-- [ ] Dockerfile (Python + Node build stage, single image, ffmpeg included)
-- [ ] Caddy reverse proxy config (HTTPS via Let's Encrypt, ~5 lines)
-- [ ] `docker-compose.yml` (app + Caddy, volume for `JAM_DATA_DIR`)
+- [x] `GET /health` endpoint
+- [x] FastAPI serves built frontend as static files (no separate web server in dev)
+- [x] Dockerfile (Python + Node build stage, single image, ffmpeg included)
+- [x] Caddy reverse proxy config (HTTPS via Let's Encrypt, ~5 lines)
+- [x] `docker-compose.yml` (app + Caddy, volume for `JAM_DATA_DIR`)
 - [ ] Deploy script or README with push-to-server instructions
 
 ### Next — Post-Deploy Hardening
