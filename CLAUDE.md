@@ -338,99 +338,43 @@ No test framework installed. No test files exist. All 2,100+ lines are untested.
 
 ## Roadmap
 
-### Performance Mode
-- [x] Full-screen read-only view of chart + lyrics per song (`/songs/:id/perform`)
-- [x] Responsive layout: two-column (chart + lyrics) on desktop, stacked on mobile
-- [x] Adjustable font size with `+`/`-` buttons, persisted in `localStorage`
-- [x] Screen Wake Lock to prevent dimming during rehearsal
-- [x] No editing controls, no nav chrome — clean music-stand view
-- [ ] Auto-scroll at configurable tempo
-- [ ] Chord transposition (shift chart up/down by semitones)
-- [ ] Setlist mode (queue multiple songs, swipe between them)
+### Now — MVP Deployment (you: accounts & infra, Claude: code)
 
-### CLI as API Client
-- [ ] Add `jam-session upload <file>` command that POSTs to the server's upload endpoint
-- [ ] Add `--server` option (or `JAM_SERVER_URL` env var / config file) for the remote API base URL
-- [ ] Expand the upload API endpoint to accept CLI options (threshold, min-duration, format, references)
-- [ ] Stream progress back to CLI (poll session `processing_status` or stream SSE)
-- [ ] Keep `jam-session process` as a local-only mode for offline use
-- [ ] Add `jam-session sessions` / `jam-session tracks` remote mode — fetch from API when `--server` is set
+**You do these while Claude works on the code tasks:**
+1. Create a **GitHub repo** and push this codebase (Claude needs the remote for deploy later)
+2. Sign up for **Hetzner Cloud** (hetzner.com/cloud) — create a CX22 server (2 vCPU, 4GB, ~$4/mo), Ubuntu 24.04, add your SSH key
+3. Sign up for **Cloudflare** (free tier) — add your domain, point an A record at the Hetzner IP
+4. SSH into the VPS and install Docker: `curl -fsSL https://get.docker.com | sh`
 
-### Background Job Processing
-- [ ] Add task queue (Celery + Redis, ARQ, or SQLite-backed worker)
-- [ ] Add `processing_status` field on sessions (`pending`, `processing`, `ready`, `failed`)
-- [ ] Move upload processing (`POST /sessions/upload`) to async worker
-- [ ] Move reprocess (`POST /sessions/{id}/reprocess`) to async worker
-- [ ] SSE or polling endpoint for frontend to track processing progress
-- [ ] Update frontend upload UX with progress/status indicators
+**Claude builds these in parallel:**
+- [ ] `GET /health` endpoint
+- [ ] FastAPI serves built frontend as static files (no separate web server in dev)
+- [ ] Dockerfile (Python + Node build stage, single image, ffmpeg included)
+- [ ] Caddy reverse proxy config (HTTPS via Let's Encrypt, ~5 lines)
+- [ ] `docker-compose.yml` (app + Caddy, volume for `JAM_DATA_DIR`)
+- [ ] Deploy script or README with push-to-server instructions
 
-### Auth & Multi-Tenancy
-- [ ] Choose auth strategy: email/password (bcrypt) + JWT, or OAuth, or magic links
-- [ ] `users` table (id, email, password_hash, created_at)
-- [ ] Session token middleware (JWT or httponly cookies) on all API endpoints
-- [ ] Auth UI: login, signup/invite acceptance, password reset
-- [ ] Gate audio streaming endpoints behind auth (currently any track ID is publicly accessible)
-- [ ] Strip `source_file` and other local paths from API responses in production
+### Next — Post-Deploy Hardening
 
-### Groups
-- [ ] Add `groups` table (id, name, created_at) and `sessions.group_id` foreign key
-- [ ] Add `group_members` join table (user_id, group_id, role)
-- [ ] API middleware that scopes all DB queries to the authenticated user's group
-- [ ] API endpoints for group CRUD and membership
-- [ ] Scope sessions, songs, and catalog views per group in the frontend
-- [ ] Group switcher in the nav UI
-
-### Database Migrations
-- [ ] Adopt Alembic for schema versioning (replace ad-hoc `ALTER TABLE` checks in `db.py`)
-- [ ] Generate initial migration from current schema
-- [ ] Evaluate SQLite with WAL mode vs. Postgres for concurrent multi-user writes
-
-### R2 Integration for Audio Storage
-- [ ] Configure Cloudflare R2 bucket with S3-compatible credentials
-- [ ] Upload compressed tracks to R2 after processing (keep local copy optional)
-- [ ] Store R2 object keys in `tracks.audio_path` (e.g., `r2://bucket/group/session/track.opus`)
-- [ ] Update `/api/tracks/{id}/audio` to generate presigned R2 URLs (redirect) instead of serving local files
-- [ ] Migration script to upload existing local tracks to R2
-- [ ] Cloudflare CDN caching for audio delivery
-
-### Deployment
-- [ ] Dockerize the app (FastAPI + built React frontend in a single image)
-- [ ] Provision VPS (Hetzner CX22 or similar)
-- [ ] Set up reverse proxy (Caddy or nginx) with HTTPS via Let's Encrypt
-- [ ] Configure Cloudflare DNS and CDN in front of the VPS
 - [ ] CI/CD pipeline: push to main → build Docker image → deploy to VPS
-- [ ] SQLite backup strategy (scheduled copies to R2 or off-site)
-- [ ] `GET /health` endpoint for load balancer checks
+- [ ] SQLite backup strategy (scheduled copies off-site)
+- [ ] File size limits on upload endpoint
+- [ ] Strip `source_file` and local paths from API responses
+- [ ] Global error boundaries in frontend
+- [ ] Loading/skeleton states for slow connections
 
-### Frontend Resilience
-- [ ] Add TanStack Query (or similar) for data fetching with caching, retry, and loading states
-- [ ] Global error boundaries so a failed API call doesn't break the page
-- [ ] Skeleton/loading states for slow connections (mobile at rehearsal spaces)
-- [ ] Optimistic updates for tagging and notes editing
+### Later
 
-### Observability
-- [ ] Structured logging (`structlog` or stdlib) with request IDs
-- [ ] Error tracking (Sentry or similar)
-- [ ] Basic usage metrics: sessions processed, tracks stored, storage used per group
-
-### Security Hardening
-- [ ] Rate limiting on upload and reprocess endpoints (resource-intensive)
-- [ ] File size limits on upload
-- [ ] Input length limits on text fields (notes, lyrics, chart)
-- [ ] CSRF protection
-
-### Data Export & Portability
-- [ ] Export session catalog as CSV/JSON
-- [ ] Download all audio for a song or session as a zip
-- [ ] Account/group data deletion flow
-
-### Import & Bulk Operations
-- [ ] Spreadsheet import (format TBD) to pre-populate tags and session notes
-- [ ] Re-process sessions with different split settings
-- [ ] Migration script to re-encode existing WAV tracks to compressed format
-
-### Future Ideas
-- Auto-suggest song names based on catalog history
-- Duration/energy trends per song over time
-- Export playlists or compilations (best takes)
-- Multi-user notes (bandmates add their own annotations)
+- Auth & multi-tenancy (users, JWT/cookies, login UI)
+- Groups (scoped sessions/songs per band)
+- R2 audio storage (presigned URLs, CDN caching)
+- Background job processing (async upload/reprocess, progress tracking)
+- CLI as API client (`jam-session upload`, `--server` flag)
+- Database migrations (Alembic, evaluate Postgres)
+- Performance mode enhancements (auto-scroll, transposition, setlists)
+- Frontend resilience (TanStack Query, optimistic updates)
+- Observability (structured logging, Sentry, usage metrics)
+- Security hardening (rate limiting, CSRF, input length limits)
+- Data export (CSV/JSON catalog, zip downloads)
+- Import & bulk ops (spreadsheet import, batch re-encode)
+- Auto-suggest song names, duration/energy trends, playlists, multi-user notes
