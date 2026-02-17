@@ -25,7 +25,7 @@ def generate_output_name(
     end_sec: float | None = None,
     fingerprint: str = "",
     song_name: str = "",
-    extension: str = ".ogg",
+    extension: str = ".m4a",
 ) -> str:
     date_str = session_date.strftime("%Y-%m-%d") if session_date else "unknown-date"
     width = len(str(total_tracks))

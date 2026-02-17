@@ -21,7 +21,7 @@ class AudioFormat:
 OPUS = AudioFormat(".ogg", "libopus", "192k")
 AAC = AudioFormat(".m4a", "aac", "192k")
 WAV = AudioFormat(".wav", "pcm_s16le", None)
-DEFAULT_FORMAT = OPUS
+DEFAULT_FORMAT = AAC
 
 
 @dataclass

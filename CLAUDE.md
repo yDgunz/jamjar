@@ -26,7 +26,7 @@ Tool for processing and cataloging band jam session recordings. Splits full iPho
 1. **Metadata extraction** — reads `.m4a` and `.wav` files using mutagen. Recording date comes from iPhone `©day` tag, then filename parsing (`M-D-YY`, `M-D-YYYY`, `YYYY-MM-DD`).
 2. **Song detection** — decodes to 8 kHz mono PCM via ffmpeg, computes per-second RMS energy, applies 15-second rolling average, finds sustained high-energy regions (default: 2+ minutes above -30 dB).
 3. **Fingerprinting** — computes chroma-based fingerprint (FFT → pitch class binning → 32-bin summary → SHA256 hash). Optionally matches against reference songs using DTW distance.
-4. **Export** — ffmpeg seek+split extracts each song to Opus (OGG container, 192kbps). WAV and AAC available via `--format` flag. No full-file loading.
+4. **Export** — ffmpeg seek+split extracts each song to AAC (M4A container, 192kbps). Opus and WAV available via `--format` flag. No full-file loading.
 5. **Database** — creates session and track records in SQLite with fingerprints and file paths.
 
 ### `process` CLI Options
@@ -36,7 +36,7 @@ Tool for processing and cataloging band jam session recordings. Splits full iPho
 - `-o, --output-dir` — output directory (default: `./output/<input_stem>/`)
 - `-r, --references` — directory of reference songs for chroma fingerprint matching
 - `--match-threshold` — DTW distance threshold for reference matching (default: 0.04)
-- `-f, --format` — output audio format: `opus`, `aac`, or `wav` (default: `opus`)
+- `-f, --format` — output audio format: `aac`, `opus`, or `wav` (default: `aac`)
 
 ### REST API
 
@@ -297,7 +297,7 @@ Path values stored in the DB are relative to `JAM_DATA_DIR`. The `config.resolve
 
 ## Design Decisions
 
-- **Output format:** Opus in OGG container at 192kbps (default). WAV and AAC available via `-f/--format` CLI option.
+- **Output format:** AAC in M4A container at 192kbps (default). Opus and WAV available via `-f/--format` CLI option. AAC was chosen over Opus for Safari/iOS compatibility.
 - **Song detection:** Energy-based, not silence-based. A 15-second smoothing window and minimum duration filter distinguish actual songs from brief noodling between them.
 - **Default threshold:** -30 dB with 120s minimum duration. For louder rooms or more noodling, raise the threshold (e.g., -25). For quieter recordings, lower it (e.g., -35).
 - **Performance:** ffmpeg handles all decoding and segment export at the C level. A 1.5hr session processes in ~10 seconds.

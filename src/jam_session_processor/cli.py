@@ -75,7 +75,7 @@ def info(file: Path):
     "-f", "--format",
     "audio_format_name",
     type=click.Choice(["opus", "aac", "wav"], case_sensitive=False),
-    default="opus",
+    default="aac",
     show_default=True,
     help="Output audio format.",
 )
@@ -249,7 +249,7 @@ def serve(port: int | None, use_reload: bool):
     "-f", "--format",
     "audio_format_name",
     type=click.Choice(["opus", "aac", "wav"], case_sensitive=False),
-    default="opus",
+    default="aac",
     show_default=True,
     help="Output audio format.",
 )
