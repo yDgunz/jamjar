@@ -338,24 +338,25 @@ No test framework installed. No test files exist. All 2,100+ lines are untested.
 
 ## Roadmap
 
-### Now — MVP Deployment (you: accounts & infra, Claude: code)
+### Done — MVP Deployment
 
-**You do these while Claude works on the code tasks:**
-1. Create a **GitHub repo** and push this codebase (Claude needs the remote for deploy later)
-2. Sign up for **Hetzner Cloud** (hetzner.com/cloud) — create a CX22 server (2 vCPU, 4GB, ~$4/mo), Ubuntu 24.04, add your SSH key
-3. Sign up for **Cloudflare** (free tier) — add your domain, point an A record at the Hetzner IP
-4. SSH into the VPS and install Docker: `curl -fsSL https://get.docker.com | sh`
+**Infra:**
+- [x] GitHub repo created and pushed
+- [x] Hetzner CX22 server (Ubuntu 24.04, Docker installed)
+- [ ] Cloudflare DNS — add domain, point A record at Hetzner IP, then re-enable Caddy HTTPS in docker-compose
 
-**Claude builds these in parallel:**
+**Code:**
 - [x] `GET /health` endpoint
-- [x] FastAPI serves built frontend as static files (no separate web server in dev)
+- [x] FastAPI serves built frontend as static files
 - [x] Dockerfile (Python + Node build stage, single image, ffmpeg included)
-- [x] Caddy reverse proxy config (HTTPS via Let's Encrypt, ~5 lines)
+- [x] Caddy reverse proxy config (HTTPS via Let's Encrypt)
 - [x] `docker-compose.yml` (app + Caddy, volume for `JAM_DATA_DIR`)
-- [ ] Deploy script or README with push-to-server instructions
+- [x] Upload overlay with status progression
+- [x] Simplified reprocess UX (too many / too few)
 
 ### Next — Post-Deploy Hardening
 
+- [ ] Deploy script or README with push-to-server instructions
 - [ ] CI/CD pipeline: push to main → build Docker image → deploy to VPS
 - [ ] SQLite backup strategy (scheduled copies off-site)
 - [ ] File size limits on upload endpoint
