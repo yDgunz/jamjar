@@ -369,6 +369,7 @@ No test framework installed. No test files exist. All 2,100+ lines are untested.
 
 - [ ] Cloudflare DNS — add domain, point A record at Hetzner IP, then re-enable Caddy HTTPS
 - [ ] Deploy script or README with push-to-server instructions
+- [ ] Set up `.env` on production server with `JAM_JWT_SECRET` and `JAM_API_KEY` (generate with `openssl rand -hex 32`)
 
 ### Later
 

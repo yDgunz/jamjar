@@ -12,8 +12,22 @@ export function formatDate(dateStr: string | null | undefined): string {
   return `${days[date.getDay()]} ${Number(m)}/${Number(d)}/${shortYear}`;
 }
 
+export interface AuthGroup {
+  id: number;
+  name: string;
+}
+
+export interface AuthUser {
+  id: number;
+  email: string;
+  name: string;
+  groups: AuthGroup[];
+}
+
 export interface Session {
   id: number;
+  group_id: number;
+  group_name: string;
   name: string;
   date: string | null;
   source_file: string;
@@ -61,7 +75,17 @@ export interface SongTrack {
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(url, init);
+  const resp = await fetch(url, {
+    ...init,
+    credentials: "include",
+  });
+  if (resp.status === 401) {
+    // Redirect to login on auth failure (unless already on login page)
+    if (!window.location.pathname.startsWith("/login")) {
+      window.location.href = "/login";
+    }
+    throw new Error("Authentication required");
+  }
   if (!resp.ok) {
     const body = await resp.json().catch(() => null);
     const detail = body?.detail;
@@ -71,6 +95,20 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  // Auth
+  login: (email: string, password: string) =>
+    fetchJson<AuthUser>(`${BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    }),
+
+  getMe: () => fetchJson<AuthUser>(`${BASE}/auth/me`),
+
+  logout: () =>
+    fetch(`${BASE}/auth/logout`, { method: "POST", credentials: "include" }),
+
+  // Sessions
   listSessions: () => fetchJson<Session[]>(`${BASE}/sessions`),
 
   getSession: (id: number) => fetchJson<Session>(`${BASE}/sessions/${id}`),
@@ -106,7 +144,7 @@ export const api = {
     }),
 
   untagTrack: (trackId: number) =>
-    fetch(`${BASE}/tracks/${trackId}/tag`, { method: "DELETE" }),
+    fetch(`${BASE}/tracks/${trackId}/tag`, { method: "DELETE", credentials: "include" }),
 
   updateTrackNotes: (trackId: number, notes: string) =>
     fetchJson<Track>(`${BASE}/tracks/${trackId}/notes`, {
@@ -147,6 +185,7 @@ export const api = {
 
   sessionAudioUrl: (sessionId: number) => `${BASE}/sessions/${sessionId}/audio`,
 
+  // Songs
   listSongs: () => fetchJson<Song[]>(`${BASE}/songs`),
 
   getSong: (songId: number) => fetchJson<Song>(`${BASE}/songs/${songId}`),
@@ -174,9 +213,13 @@ export const api = {
   getSongTracks: (songId: number) =>
     fetchJson<SongTrack[]>(`${BASE}/songs/${songId}/tracks`),
 
-  uploadSession: (file: File) => {
+  uploadSession: (file: File, groupId?: number) => {
     const form = new FormData();
     form.append("file", file);
-    return fetchJson<Session>(`${BASE}/sessions/upload`, { method: "POST", body: form });
+    const params = groupId ? `?group_id=${groupId}` : "";
+    return fetchJson<Session>(`${BASE}/sessions/upload${params}`, {
+      method: "POST",
+      body: form,
+    });
   },
 };

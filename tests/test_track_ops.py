@@ -14,21 +14,29 @@ def db(tmp_path):
 
 
 @pytest.fixture
-def session_with_tracks(db, tmp_path):
+def group_id(db):
+    return db.create_group("TestBand")
+
+
+@pytest.fixture
+def session_with_tracks(db, group_id, tmp_path):
     """Create a session with 3 tracks and dummy audio files."""
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    sid = db.create_session(str(tmp_path / "source.m4a"), date="2026-02-03")
+    sid = db.create_session(str(tmp_path / "source.m4a"), group_id, date="2026-02-03")
 
     tracks = []
     for i in range(1, 4):
         audio = output_dir / f"track{i}.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 100)
         tid = db.create_track(
-            sid, track_number=i,
-            start_sec=(i - 1) * 300.0, end_sec=i * 300.0,
-            audio_path=str(audio), fingerprint=f"fp{i}",
+            sid,
+            track_number=i,
+            start_sec=(i - 1) * 300.0,
+            end_sec=i * 300.0,
+            audio_path=str(audio),
+            fingerprint=f"fp{i}",
         )
         tracks.append(tid)
 
@@ -62,9 +70,15 @@ def test_merge_adjacent_tracks(mock_fp, mock_export, db, session_with_tracks):
 
 @patch("jam_session_processor.track_ops.export_segment", side_effect=_mock_export)
 @patch("jam_session_processor.track_ops.compute_chroma_fingerprint", side_effect=_mock_fingerprint)
-def test_merge_preserves_first_track_metadata(mock_fp, mock_export, db, session_with_tracks):
+def test_merge_preserves_first_track_metadata(
+    mock_fp,
+    mock_export,
+    db,
+    group_id,
+    session_with_tracks,
+):
     sid, tids, output_dir = session_with_tracks
-    db.tag_track(tids[0], "Fat Cat")
+    db.tag_track(tids[0], "Fat Cat", group_id)
     db.update_track_notes(tids[0], "Great take")
 
     result = merge_tracks(db, tids[0], tids[1])
@@ -93,12 +107,12 @@ def test_merge_non_adjacent_fails(db, session_with_tracks):
         merge_tracks(db, tids[0], tids[2])
 
 
-def test_merge_different_sessions_fails(db, tmp_path):
+def test_merge_different_sessions_fails(db, group_id, tmp_path):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    sid1 = db.create_session("s1.m4a", date="2026-02-03")
-    sid2 = db.create_session("s2.m4a", date="2026-02-04")
+    sid1 = db.create_session("s1.m4a", group_id, date="2026-02-03")
+    sid2 = db.create_session("s2.m4a", group_id, date="2026-02-04")
 
     audio1 = output_dir / "t1.wav"
     audio2 = output_dir / "t2.wav"
@@ -133,9 +147,15 @@ def test_split_track(mock_fp, mock_export, db, session_with_tracks):
 
 @patch("jam_session_processor.track_ops.export_segment", side_effect=_mock_export)
 @patch("jam_session_processor.track_ops.compute_chroma_fingerprint", side_effect=_mock_fingerprint)
-def test_split_preserves_first_half_metadata(mock_fp, mock_export, db, session_with_tracks):
+def test_split_preserves_first_half_metadata(
+    mock_fp,
+    mock_export,
+    db,
+    group_id,
+    session_with_tracks,
+):
     sid, tids, output_dir = session_with_tracks
-    db.tag_track(tids[0], "Fat Cat")
+    db.tag_track(tids[0], "Fat Cat", group_id)
     db.update_track_notes(tids[0], "Great take")
 
     result = split_track(db, tids[0], 150.0)
@@ -177,6 +197,7 @@ def test_merge_deletes_old_audio_files(mock_fp, mock_export, db, session_with_tr
     t1 = db.get_track(tids[0])
     t2 = db.get_track(tids[1])
     from pathlib import Path
+
     assert Path(t1.audio_path).exists()
     assert Path(t2.audio_path).exists()
 

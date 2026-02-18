@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, formatDate } from "../api";
 import type { Session } from "../api";
+import { useAuth } from "../context/AuthContext";
+import GroupSelector from "../components/GroupSelector";
 
 function formatMonthHeader(yearMonth: string): string {
   if (yearMonth === "unknown") return "Unknown Date";
@@ -24,12 +26,16 @@ function groupByMonth(sessions: Session[]): [string, Session[]][] {
 }
 
 export default function SessionList() {
+  const { user } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("Uploading...");
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadGroupId, setUploadGroupId] = useState<number | null>(
+    user && user.groups.length === 1 ? user.groups[0].id : null,
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -43,12 +49,22 @@ export default function SessionList() {
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Multi-group users must select a group first
+    const groups = user?.groups ?? [];
+    const groupId = groups.length === 1 ? groups[0].id : uploadGroupId;
+    if (groups.length > 1 && !groupId) {
+      setUploadError("Select a group before uploading");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     setUploading(true);
     setUploadStatus("Uploading...");
     setUploadError(null);
     const timer = setTimeout(() => setUploadStatus("Processing \u2014 this may take a minute..."), 2000);
     try {
-      const session = await api.uploadSession(file);
+      const session = await api.uploadSession(file, groupId ?? undefined);
       navigate(`/sessions/${session.id}`);
     } catch (err: unknown) {
       setUploadError(err instanceof Error ? err.message : "Upload failed");
@@ -111,6 +127,13 @@ export default function SessionList() {
         <div className="flex items-center gap-3">
           {uploadError && (
             <span className="text-sm text-red-400">{uploadError}</span>
+          )}
+          {user && user.groups.length > 1 && (
+            <GroupSelector
+              groups={user.groups}
+              value={uploadGroupId}
+              onChange={setUploadGroupId}
+            />
           )}
           <input
             ref={fileInputRef}

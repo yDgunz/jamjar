@@ -36,7 +36,6 @@ def test_parse_date_no_date():
 
 def test_parse_date_from_filename_in_metadata(tmp_path):
     """When file has no metadata date tag, fall back to filename."""
-    from pydub import AudioSegment
     from pydub.generators import Sine
 
     audio = Sine(440).to_audio_segment(duration=1000)

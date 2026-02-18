@@ -7,6 +7,10 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 @dataclass(frozen=True)
 class Config:
@@ -17,6 +21,8 @@ class Config:
     cors_origins: list[str]
     port: int
     max_upload_mb: int
+    jwt_secret: str
+    api_key: str
 
     def resolve_path(self, stored: str) -> Path:
         """Resolve a stored path to absolute.
@@ -66,6 +72,8 @@ def _build_config() -> Config:
         ],
         port=int(os.environ.get("JAM_PORT", "8000")),
         max_upload_mb=int(os.environ.get("JAM_MAX_UPLOAD_MB", "500")),
+        jwt_secret=os.environ.get("JAM_JWT_SECRET", ""),
+        api_key=os.environ.get("JAM_API_KEY", ""),
     )
 
 

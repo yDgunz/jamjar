@@ -4,8 +4,29 @@ from dataclasses import dataclass
 from pathlib import Path
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL DEFAULT '',
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS user_groups (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, group_id)
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
     name TEXT NOT NULL DEFAULT '',
     date TEXT,
     source_file TEXT NOT NULL,
@@ -15,11 +36,13 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE TABLE IF NOT EXISTS songs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
     chart TEXT NOT NULL DEFAULT '',
     lyrics TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(group_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS tracks (
@@ -39,8 +62,25 @@ CREATE TABLE IF NOT EXISTS tracks (
 
 
 @dataclass
+class User:
+    id: int
+    email: str
+    name: str
+    password_hash: str
+    created_at: str
+
+
+@dataclass
+class Group:
+    id: int
+    name: str
+    created_at: str
+
+
+@dataclass
 class Session:
     id: int
+    group_id: int
     name: str
     date: str | None
     source_file: str
@@ -70,6 +110,7 @@ class Track:
 @dataclass
 class Song:
     id: int
+    group_id: int
     name: str
     chart: str = ""
     lyrics: str = ""
@@ -86,12 +127,12 @@ def clean_session_name(source_file: str) -> str:
     """
     name = Path(source_file).stem
     # Remove date patterns
-    name = re.sub(r'\b\d{4}-\d{1,2}-\d{1,2}\b', '', name)  # YYYY-MM-DD
-    name = re.sub(r'\b\d{1,2}-\d{1,2}-\d{2,4}\b', '', name)  # M-D-YY or M-D-YYYY
+    name = re.sub(r"\b\d{4}-\d{1,2}-\d{1,2}\b", "", name)  # YYYY-MM-DD
+    name = re.sub(r"\b\d{1,2}-\d{1,2}-\d{2,4}\b", "", name)  # M-D-YY or M-D-YYYY
     # Clean up leftover separators and whitespace
-    name = re.sub(r'\s*-\s*$', '', name)  # trailing dash
-    name = re.sub(r'^\s*-\s*', '', name)  # leading dash
-    name = re.sub(r'\s{2,}', ' ', name)  # collapse multiple spaces
+    name = re.sub(r"\s*-\s*$", "", name)  # trailing dash
+    name = re.sub(r"^\s*-\s*", "", name)  # leading dash
+    name = re.sub(r"\s{2,}", " ", name)  # collapse multiple spaces
     return name.strip()
 
 
@@ -99,6 +140,7 @@ class Database:
     def __init__(self, db_path: Path | None = None):
         if db_path is None:
             from jam_session_processor.config import get_config
+
             db_path = get_config().db_path
         self.db_path = db_path
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
@@ -108,30 +150,7 @@ class Database:
 
     def _init_schema(self):
         self.conn.executescript(SCHEMA)
-        self._migrate()
         self.conn.commit()
-
-    def _migrate(self):
-        """Run any needed migrations on existing databases."""
-        # Add 'name' column if missing (pre-existing DBs)
-        cols = [r[1] for r in self.conn.execute("PRAGMA table_info(sessions)").fetchall()]
-        if "name" not in cols:
-            self.conn.execute("ALTER TABLE sessions ADD COLUMN name TEXT NOT NULL DEFAULT ''")
-            # Backfill names from source_file
-            for row in self.conn.execute("SELECT id, source_file FROM sessions").fetchall():
-                name = clean_session_name(row[1])
-                self.conn.execute("UPDATE sessions SET name = ? WHERE id = ?", (name, row[0]))
-
-        # Add song metadata columns if missing
-        song_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(songs)").fetchall()]
-        for col in ("chart", "lyrics", "notes"):
-            if col not in song_cols:
-                self.conn.execute(f"ALTER TABLE songs ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
-
-        # Drop waveform_peaks column if present (unused)
-        track_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(tracks)").fetchall()]
-        if "waveform_peaks" in track_cols:
-            self.conn.execute("ALTER TABLE tracks DROP COLUMN waveform_peaks")
 
     def close(self):
         self.conn.close()
@@ -142,16 +161,109 @@ class Database:
             DROP TABLE IF EXISTS tracks;
             DROP TABLE IF EXISTS songs;
             DROP TABLE IF EXISTS sessions;
+            DROP TABLE IF EXISTS user_groups;
+            DROP TABLE IF EXISTS groups;
+            DROP TABLE IF EXISTS users;
         """)
         self._init_schema()
 
+    # --- Users ---
+
+    def create_user(self, email: str, password_hash: str, name: str = "") -> int:
+        cur = self.conn.execute(
+            "INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)",
+            (email, password_hash, name),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_user_by_email(self, email: str) -> User | None:
+        row = self.conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if not row:
+            return None
+        return User(**row)
+
+    def get_user(self, user_id: int) -> User | None:
+        row = self.conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row:
+            return None
+        return User(**row)
+
+    def list_users(self) -> list[User]:
+        rows = self.conn.execute("SELECT * FROM users ORDER BY email").fetchall()
+        return [User(**row) for row in rows]
+
+    def update_user_password(self, user_id: int, password_hash: str):
+        self.conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id)
+        )
+        self.conn.commit()
+
+    # --- Groups ---
+
+    def create_group(self, name: str) -> int:
+        cur = self.conn.execute("INSERT INTO groups (name) VALUES (?)", (name,))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_group(self, group_id: int) -> Group | None:
+        row = self.conn.execute("SELECT * FROM groups WHERE id = ?", (group_id,)).fetchone()
+        if not row:
+            return None
+        return Group(**row)
+
+    def get_group_by_name(self, name: str) -> Group | None:
+        row = self.conn.execute("SELECT * FROM groups WHERE name = ?", (name,)).fetchone()
+        if not row:
+            return None
+        return Group(**row)
+
+    def list_groups(self) -> list[Group]:
+        rows = self.conn.execute("SELECT * FROM groups ORDER BY name").fetchall()
+        return [Group(**row) for row in rows]
+
+    # --- Membership ---
+
+    def assign_user_to_group(self, user_id: int, group_id: int):
+        self.conn.execute(
+            "INSERT OR IGNORE INTO user_groups (user_id, group_id) VALUES (?, ?)",
+            (user_id, group_id),
+        )
+        self.conn.commit()
+
+    def remove_user_from_group(self, user_id: int, group_id: int):
+        self.conn.execute(
+            "DELETE FROM user_groups WHERE user_id = ? AND group_id = ?",
+            (user_id, group_id),
+        )
+        self.conn.commit()
+
+    def get_user_groups(self, user_id: int) -> list[Group]:
+        rows = self.conn.execute(
+            """SELECT g.* FROM groups g
+               JOIN user_groups ug ON ug.group_id = g.id
+               WHERE ug.user_id = ?
+               ORDER BY g.name""",
+            (user_id,),
+        ).fetchall()
+        return [Group(**row) for row in rows]
+
+    def get_group_ids_for_user(self, user_id: int) -> list[int]:
+        rows = self.conn.execute(
+            "SELECT group_id FROM user_groups WHERE user_id = ?", (user_id,)
+        ).fetchall()
+        return [row["group_id"] for row in rows]
+
     # --- Sessions ---
 
-    def create_session(self, source_file: str, date: str | None = None, notes: str = "") -> int:
+    def create_session(
+        self, source_file: str, group_id: int, date: str | None = None, notes: str = ""
+    ) -> int:
         name = clean_session_name(source_file)
         cur = self.conn.execute(
-            "INSERT INTO sessions (name, source_file, date, notes) VALUES (?, ?, ?, ?)",
-            (name, source_file, date, notes),
+            "INSERT INTO sessions (group_id, name, source_file, date, notes)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (group_id, name, source_file, date, notes),
         )
         self.conn.commit()
         return cur.lastrowid
@@ -178,22 +290,28 @@ class Database:
             return None
         return Session(**row)
 
-    def list_sessions(self) -> list[Session]:
-        rows = self.conn.execute(
-            """SELECT s.*,
+    def list_sessions(self, group_ids: list[int] | None = None) -> list[Session]:
+        if group_ids is not None and not group_ids:
+            return []
+        base = """SELECT s.*,
                       COUNT(t.id) as track_count,
                       COUNT(t.song_id) as tagged_count,
                       COALESCE((SELECT GROUP_CONCAT(DISTINCT s2.name)
                                 FROM tracks t2 JOIN songs s2 ON t2.song_id = s2.id
                                 WHERE t2.session_id = s.id), '') as song_names
                FROM sessions s
-               LEFT JOIN tracks t ON t.session_id = s.id
-               GROUP BY s.id
-               ORDER BY s.date DESC, s.id DESC"""
-        ).fetchall()
+               LEFT JOIN tracks t ON t.session_id = s.id"""
+        if group_ids is not None:
+            placeholders = ",".join("?" for _ in group_ids)
+            base += f" WHERE s.group_id IN ({placeholders})"
+            base += " GROUP BY s.id ORDER BY s.date DESC, s.id DESC"
+            rows = self.conn.execute(base, group_ids).fetchall()
+        else:
+            base += " GROUP BY s.id ORDER BY s.date DESC, s.id DESC"
+            rows = self.conn.execute(base).fetchall()
         return [Session(**row) for row in rows]
 
-    def find_session_by_source(self, source_file: str) -> Session | None:
+    def find_session_by_source(self, source_file: str, group_id: int) -> Session | None:
         row = self.conn.execute(
             """SELECT s.*,
                       COUNT(t.id) as track_count,
@@ -203,9 +321,9 @@ class Database:
                                 WHERE t2.session_id = s.id), '') as song_names
                FROM sessions s
                LEFT JOIN tracks t ON t.session_id = s.id
-               WHERE s.source_file = ?
+               WHERE s.source_file = ? AND s.group_id = ?
                GROUP BY s.id""",
-            (source_file,),
+            (source_file, group_id),
         ).fetchone()
         if not row:
             return None
@@ -215,6 +333,7 @@ class Database:
         """Delete a session and its tracks. Optionally delete audio files."""
         if delete_files:
             from jam_session_processor.config import get_config
+
             cfg = get_config()
             tracks = self.get_tracks_for_session(session_id)
             for t in tracks:
@@ -265,9 +384,9 @@ class Database:
         ).fetchall()
         return [Track(**row) for row in rows]
 
-    def tag_track(self, track_id: int, song_name: str) -> int:
+    def tag_track(self, track_id: int, song_name: str, group_id: int) -> int:
         """Tag a track with a song name. Creates the song if it doesn't exist. Returns song_id."""
-        song_id = self._get_or_create_song(song_name)
+        song_id = self._get_or_create_song(song_name, group_id)
         self.conn.execute(
             "UPDATE tracks SET song_id = ? WHERE id = ?",
             (song_id, track_id),
@@ -305,8 +424,16 @@ class Database:
     def update_track(self, track_id: int, **kwargs):
         """Update arbitrary columns on a track. Valid keys: track_number, start_sec,
         end_sec, duration_sec, audio_path, fingerprint, song_id, notes."""
-        allowed = {"track_number", "start_sec", "end_sec", "duration_sec",
-                    "audio_path", "fingerprint", "song_id", "notes"}
+        allowed = {
+            "track_number",
+            "start_sec",
+            "end_sec",
+            "duration_sec",
+            "audio_path",
+            "fingerprint",
+            "song_id",
+            "notes",
+        }
         updates = {k: v for k, v in kwargs.items() if k in allowed}
         if not updates:
             return
@@ -317,30 +444,40 @@ class Database:
 
     # --- Songs ---
 
-    def _get_or_create_song(self, name: str) -> int:
-        row = self.conn.execute("SELECT id FROM songs WHERE name = ?", (name,)).fetchone()
+    def _get_or_create_song(self, name: str, group_id: int) -> int:
+        row = self.conn.execute(
+            "SELECT id FROM songs WHERE name = ? AND group_id = ?", (name, group_id)
+        ).fetchone()
         if row:
             return row["id"]
-        cur = self.conn.execute("INSERT INTO songs (name) VALUES (?)", (name,))
+        cur = self.conn.execute(
+            "INSERT INTO songs (name, group_id) VALUES (?, ?)", (name, group_id)
+        )
         self.conn.commit()
         return cur.lastrowid
 
-    def list_songs(self) -> list[Song]:
-        rows = self.conn.execute(
-            """SELECT s.id, s.name, s.chart, s.lyrics, s.notes,
+    def list_songs(self, group_ids: list[int] | None = None) -> list[Song]:
+        if group_ids is not None and not group_ids:
+            return []
+        base = """SELECT s.id, s.group_id, s.name, s.chart, s.lyrics, s.notes,
                       COUNT(t.id) as take_count,
                       MIN(ses.date) as first_date, MAX(ses.date) as last_date
                FROM songs s
                LEFT JOIN tracks t ON t.song_id = s.id
-               LEFT JOIN sessions ses ON t.session_id = ses.id
-               GROUP BY s.id
-               ORDER BY s.name"""
-        ).fetchall()
+               LEFT JOIN sessions ses ON t.session_id = ses.id"""
+        if group_ids is not None:
+            placeholders = ",".join("?" for _ in group_ids)
+            base += f" WHERE s.group_id IN ({placeholders})"
+            base += " GROUP BY s.id ORDER BY s.name"
+            rows = self.conn.execute(base, group_ids).fetchall()
+        else:
+            base += " GROUP BY s.id ORDER BY s.name"
+            rows = self.conn.execute(base).fetchall()
         return [Song(**row) for row in rows]
 
     def get_song(self, song_id: int) -> Song | None:
         row = self.conn.execute(
-            """SELECT s.id, s.name, s.chart, s.lyrics, s.notes,
+            """SELECT s.id, s.group_id, s.name, s.chart, s.lyrics, s.notes,
                       COUNT(t.id) as take_count,
                       MIN(ses.date) as first_date, MAX(ses.date) as last_date
                FROM songs s
@@ -383,9 +520,14 @@ class Database:
         self.conn.commit()
 
     def rename_song(self, song_id: int, new_name: str):
-        """Rename a song. Raises ValueError if new_name already exists."""
+        """Rename a song. Raises ValueError if new_name already exists in the same group."""
+        # Get the song's group_id for scoped uniqueness check
+        song = self.conn.execute("SELECT group_id FROM songs WHERE id = ?", (song_id,)).fetchone()
+        if not song:
+            raise ValueError(f"Song {song_id} not found")
         existing = self.conn.execute(
-            "SELECT id FROM songs WHERE name = ? AND id != ?", (new_name, song_id)
+            "SELECT id FROM songs WHERE name = ? AND group_id = ? AND id != ?",
+            (new_name, song["group_id"], song_id),
         ).fetchone()
         if existing:
             raise ValueError(f"Song '{new_name}' already exists")

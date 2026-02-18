@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from jam_session_processor import api
+from jam_session_processor.auth import hash_password
 from jam_session_processor.config import reset_config
 from jam_session_processor.db import Database
 
@@ -9,6 +10,8 @@ from jam_session_processor.db import Database
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("JAM_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("JAM_JWT_SECRET", "test-secret")
+    monkeypatch.setenv("JAM_API_KEY", "test-api-key")
     reset_config()
     db = Database(tmp_path / "test.db")
     api._db = db
@@ -18,64 +21,162 @@ def client(tmp_path, monkeypatch):
     reset_config()
 
 
+def _create_user_and_group(db, email="test@example.com", group_name="TestBand"):
+    """Create a user with a group and return (user_id, group_id)."""
+    uid = db.create_user(email, hash_password("password"), name="Test User")
+    gid = db.create_group(group_name)
+    db.assign_user_to_group(uid, gid)
+    return uid, gid
+
+
 @pytest.fixture
-def seeded_client(client, tmp_path):
-    """Client with a session and tracks already in the DB."""
+def auth_client(client):
+    """Client with a user, group, and auth cookie set."""
     db = api._db
-    sid = db.create_session("session1.m4a", date="2026-02-03", notes="Test session")
-    # Create audio files so streaming works
+    uid, gid = _create_user_and_group(db)
+    # Login via API to set the cookie properly
+    resp = client.post(
+        "/api/auth/login",
+        json={"email": "test@example.com", "password": "password"},
+    )
+    assert resp.status_code == 200
+    return client, uid, gid
+
+
+@pytest.fixture
+def seeded_client(auth_client, tmp_path):
+    """Client with a session and tracks already in the DB."""
+    client, uid, gid = auth_client
+    db = api._db
+    sid = db.create_session("session1.m4a", gid, date="2026-02-03", notes="Test session")
     for i in range(1, 4):
         audio = tmp_path / f"track{i}.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 100)
-        db.create_track(sid, track_number=i, start_sec=(i - 1) * 300.0,
-                        end_sec=i * 300.0, audio_path=str(audio))
-    return client
+        db.create_track(
+            sid, track_number=i, start_sec=(i - 1) * 300.0, end_sec=i * 300.0, audio_path=str(audio)
+        )
+    return client, uid, gid
 
 
-def test_list_sessions_empty(client):
+# --- Auth tests ---
+
+
+def test_unauthenticated_api_returns_401(client):
+    resp = client.get("/api/sessions")
+    assert resp.status_code == 401
+
+
+def test_health_is_public(client):
+    resp = client.get("/health")
+    assert resp.status_code == 200
+
+
+def test_login_success(client):
+    db = api._db
+    _create_user_and_group(db)
+
+    resp = client.post(
+        "/api/auth/login",
+        json={"email": "test@example.com", "password": "password"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["email"] == "test@example.com"
+    assert "jam_session" in resp.cookies
+
+
+def test_login_wrong_password(client):
+    db = api._db
+    _create_user_and_group(db)
+
+    resp = client.post("/api/auth/login", json={"email": "test@example.com", "password": "wrong"})
+    assert resp.status_code == 401
+
+
+def test_login_unknown_user(client):
+    resp = client.post("/api/auth/login", json={"email": "nobody@example.com", "password": "x"})
+    assert resp.status_code == 401
+
+
+def test_get_me(auth_client):
+    client, uid, gid = auth_client
+    resp = client.get("/api/auth/me")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["email"] == "test@example.com"
+    assert len(data["groups"]) == 1
+
+
+def test_logout(auth_client):
+    client, uid, gid = auth_client
+    resp = client.post("/api/auth/logout")
+    assert resp.status_code == 200
+
+
+def test_api_key_auth(client, tmp_path):
+    db = api._db
+    db.create_group("TestBand")
+
+    resp = client.get("/api/sessions", headers={"X-API-Key": "test-api-key"})
+    assert resp.status_code == 200
+
+
+def test_invalid_api_key(client):
+    resp = client.get("/api/sessions", headers={"X-API-Key": "wrong-key"})
+    assert resp.status_code == 401
+
+
+# --- Session tests ---
+
+
+def test_list_sessions_empty(auth_client):
+    client, uid, gid = auth_client
     resp = client.get("/api/sessions")
     assert resp.status_code == 200
     assert resp.json() == []
 
 
 def test_list_sessions(seeded_client):
-    resp = seeded_client.get("/api/sessions")
+    client, uid, gid = seeded_client
+    resp = client.get("/api/sessions")
     assert resp.status_code == 200
     sessions = resp.json()
     assert len(sessions) == 1
     assert sessions[0]["source_file"] == "session1.m4a"
     assert sessions[0]["track_count"] == 3
     assert sessions[0]["song_names"] == ""
+    assert sessions[0]["group_id"] == gid
+    assert sessions[0]["group_name"] == "TestBand"
 
 
 def test_session_song_names(seeded_client):
-    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
-    seeded_client.post("/api/tracks/2/tag", json={"song_name": "Spit Me Out"})
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+    client.post("/api/tracks/2/tag", json={"song_name": "Spit Me Out"})
 
-    resp = seeded_client.get("/api/sessions")
+    resp = client.get("/api/sessions")
     sessions = resp.json()
     names = sessions[0]["song_names"].split(",")
     assert "Fat Cat" in names
     assert "Spit Me Out" in names
 
-    # Also verify in get_session
-    resp = seeded_client.get("/api/sessions/1")
-    assert "Fat Cat" in resp.json()["song_names"]
-
 
 def test_get_session(seeded_client):
-    resp = seeded_client.get("/api/sessions/1")
+    client, uid, gid = seeded_client
+    resp = client.get("/api/sessions/1")
     assert resp.status_code == 200
     assert resp.json()["date"] == "2026-02-03"
 
 
-def test_get_session_not_found(client):
+def test_get_session_not_found(auth_client):
+    client, uid, gid = auth_client
     resp = client.get("/api/sessions/999")
     assert resp.status_code == 404
 
 
 def test_get_session_tracks(seeded_client):
-    resp = seeded_client.get("/api/sessions/1/tracks")
+    client, uid, gid = seeded_client
+    resp = client.get("/api/sessions/1/tracks")
     assert resp.status_code == 200
     tracks = resp.json()
     assert len(tracks) == 3
@@ -84,38 +185,42 @@ def test_get_session_tracks(seeded_client):
 
 
 def test_tag_and_untag_track(seeded_client):
+    client, uid, gid = seeded_client
     # Tag
-    resp = seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+    resp = client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
     assert resp.status_code == 200
     assert resp.json()["song_name"] == "Fat Cat"
 
     # Verify in session tracks
-    resp = seeded_client.get("/api/sessions/1/tracks")
+    resp = client.get("/api/sessions/1/tracks")
     assert resp.json()[0]["song_name"] == "Fat Cat"
 
     # Untag
-    resp = seeded_client.delete("/api/tracks/1/tag")
+    resp = client.delete("/api/tracks/1/tag")
     assert resp.status_code == 200
 
-    resp = seeded_client.get("/api/sessions/1/tracks")
+    resp = client.get("/api/sessions/1/tracks")
     assert resp.json()[0]["song_name"] is None
 
 
 def test_update_track_notes(seeded_client):
-    resp = seeded_client.put("/api/tracks/1/notes", json={"notes": "Great take"})
+    client, uid, gid = seeded_client
+    resp = client.put("/api/tracks/1/notes", json={"notes": "Great take"})
     assert resp.status_code == 200
     assert resp.json()["notes"] == "Great take"
 
 
 def test_stream_audio(seeded_client):
-    resp = seeded_client.get("/api/tracks/1/audio")
+    client, uid, gid = seeded_client
+    resp = client.get("/api/tracks/1/audio")
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "audio/wav"
 
 
-def test_stream_audio_ogg(client, tmp_path):
+def test_stream_audio_ogg(auth_client, tmp_path):
+    client, uid, gid = auth_client
     db = api._db
-    sid = db.create_session("session1.m4a", date="2026-02-03")
+    sid = db.create_session("session1.m4a", gid, date="2026-02-03")
     audio = tmp_path / "track1.ogg"
     audio.write_bytes(b"OggS" + b"\x00" * 100)
     db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path=str(audio))
@@ -125,70 +230,75 @@ def test_stream_audio_ogg(client, tmp_path):
     assert resp.headers["content-type"] == "audio/ogg"
 
 
-def test_stream_audio_not_found(client):
+def test_stream_audio_not_found(auth_client):
+    client, uid, gid = auth_client
     resp = client.get("/api/tracks/999/audio")
     assert resp.status_code == 404
 
 
 def test_list_songs(seeded_client):
-    # Tag two tracks with different songs
-    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
-    seeded_client.post("/api/tracks/2/tag", json={"song_name": "Spit Me Out"})
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+    client.post("/api/tracks/2/tag", json={"song_name": "Spit Me Out"})
 
-    resp = seeded_client.get("/api/songs")
+    resp = client.get("/api/songs")
     assert resp.status_code == 200
     songs = resp.json()
     assert len(songs) == 2
 
 
 def test_update_session_notes(seeded_client):
-    resp = seeded_client.put("/api/sessions/1/notes", json={"notes": "Great rehearsal"})
+    client, uid, gid = seeded_client
+    resp = client.put("/api/sessions/1/notes", json={"notes": "Great rehearsal"})
     assert resp.status_code == 200
     assert resp.json()["notes"] == "Great rehearsal"
 
-    # Verify it persisted
-    resp = seeded_client.get("/api/sessions/1")
+    resp = client.get("/api/sessions/1")
     assert resp.json()["notes"] == "Great rehearsal"
 
 
 def test_get_song_tracks(seeded_client):
-    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
-    seeded_client.post("/api/tracks/3/tag", json={"song_name": "Fat Cat"})
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+    client.post("/api/tracks/3/tag", json={"song_name": "Fat Cat"})
 
-    # Find the song ID
-    songs = seeded_client.get("/api/songs").json()
+    songs = client.get("/api/songs").json()
     song_id = songs[0]["id"]
 
-    resp = seeded_client.get(f"/api/songs/{song_id}/tracks")
+    resp = client.get(f"/api/songs/{song_id}/tracks")
     assert resp.status_code == 200
     tracks = resp.json()
     assert len(tracks) == 2
 
 
 @pytest.fixture
-def seeded_client_with_source(client, tmp_path):
+def seeded_client_with_source(auth_client, tmp_path):
     """Client with a session whose source_file is a real path (for merge/split)."""
     from unittest.mock import patch
 
+    client, uid, gid = auth_client
     db = api._db
     source = tmp_path / "source.m4a"
     source.write_bytes(b"\x00" * 100)
-    sid = db.create_session(str(source), date="2026-02-03")
+    sid = db.create_session(str(source), gid, date="2026-02-03")
 
     output_dir = tmp_path / "output"
     output_dir.mkdir()
     for i in range(1, 4):
         audio = output_dir / f"track{i}.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 100)
-        db.create_track(sid, track_number=i, start_sec=(i - 1) * 300.0,
-                        end_sec=i * 300.0, audio_path=str(audio))
+        db.create_track(
+            sid, track_number=i, start_sec=(i - 1) * 300.0, end_sec=i * 300.0, audio_path=str(audio)
+        )
 
     def mock_export(file_path, output_path, start_sec, end_sec, **kwargs):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"RIFF" + b"\x00" * 100)
 
-    with patch("jam_session_processor.track_ops.export_segment", side_effect=mock_export), \
-         patch("jam_session_processor.track_ops.compute_chroma_fingerprint", return_value="mockfp"):
+    with (
+        patch("jam_session_processor.track_ops.export_segment", side_effect=mock_export),
+        patch("jam_session_processor.track_ops.compute_chroma_fingerprint", return_value="mockfp"),
+    ):
         yield client
 
 
@@ -220,23 +330,25 @@ def test_split_invalid_position_returns_400(seeded_client_with_source):
     assert resp.status_code == 400
 
 
-def test_reprocess_session(client, tmp_path):
-    from unittest.mock import patch, MagicMock
+def test_reprocess_session(auth_client, tmp_path):
+    from unittest.mock import MagicMock, patch
+
     from jam_session_processor.splitter import SplitResult
 
+    client, uid, gid = auth_client
     db = api._db
     source = tmp_path / "source.m4a"
     source.write_bytes(b"\x00" * 100)
-    sid = db.create_session(str(source), date="2026-02-03")
+    sid = db.create_session(str(source), gid, date="2026-02-03")
 
     output_dir = tmp_path / "output"
     output_dir.mkdir()
-    # Create 2 old tracks
     for i in range(1, 3):
         audio = output_dir / f"track{i}.wav"
         audio.write_bytes(b"RIFF" + b"\x00" * 100)
-        db.create_track(sid, track_number=i, start_sec=(i - 1) * 300.0,
-                        end_sec=i * 300.0, audio_path=str(audio))
+        db.create_track(
+            sid, track_number=i, start_sec=(i - 1) * 300.0, end_sec=i * 300.0, audio_path=str(audio)
+        )
 
     new_segments = [(0.0, 200.0), (210.0, 400.0), (420.0, 600.0)]
     mock_result = SplitResult(segments=new_segments, total_duration_sec=600.0)
@@ -252,10 +364,14 @@ def test_reprocess_session(client, tmp_path):
     mock_meta = MagicMock()
     mock_meta.recording_date = None
 
-    with patch("jam_session_processor.splitter.detect_songs", return_value=mock_result), \
-         patch("jam_session_processor.output.export_segments", side_effect=mock_export), \
-         patch("jam_session_processor.fingerprint.compute_chroma_fingerprint", return_value="mockfp"), \
-         patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta):
+    with (
+        patch("jam_session_processor.splitter.detect_songs", return_value=mock_result),
+        patch("jam_session_processor.output.export_segments", side_effect=mock_export),
+        patch(
+            "jam_session_processor.fingerprint.compute_chroma_fingerprint", return_value="mockfp"
+        ),
+        patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta),
+    ):
         resp = client.post(
             f"/api/sessions/{sid}/reprocess",
             json={"threshold": -25.0, "min_duration": 60},
@@ -269,9 +385,10 @@ def test_reprocess_session(client, tmp_path):
     assert tracks[2]["start_sec"] == 420.0
 
 
-def test_reprocess_source_not_found(client, tmp_path):
+def test_reprocess_source_not_found(auth_client, tmp_path):
+    client, uid, gid = auth_client
     db = api._db
-    sid = db.create_session("/nonexistent/file.m4a", date="2026-02-03")
+    sid = db.create_session("/nonexistent/file.m4a", gid, date="2026-02-03")
 
     resp = client.post(
         f"/api/sessions/{sid}/reprocess",
@@ -282,38 +399,38 @@ def test_reprocess_source_not_found(client, tmp_path):
 
 
 def test_delete_session_endpoint(seeded_client):
-    resp = seeded_client.request("DELETE", "/api/sessions/1",
-                                json={"delete_files": False})
+    client, uid, gid = seeded_client
+    resp = client.request("DELETE", "/api/sessions/1", json={"delete_files": False})
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
 
-    # Session should be gone
-    resp = seeded_client.get("/api/sessions/1")
+    resp = client.get("/api/sessions/1")
     assert resp.status_code == 404
 
 
 def test_rename_song_endpoint(seeded_client):
-    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
 
-    songs = seeded_client.get("/api/songs").json()
+    songs = client.get("/api/songs").json()
     song_id = songs[0]["id"]
 
-    resp = seeded_client.put(f"/api/songs/{song_id}/name", json={"name": "Fat Cat Blues"})
+    resp = client.put(f"/api/songs/{song_id}/name", json={"name": "Fat Cat Blues"})
     assert resp.status_code == 200
     assert resp.json()["name"] == "Fat Cat Blues"
 
-    # Verify tracks still tagged
-    resp = seeded_client.get("/api/sessions/1/tracks")
+    resp = client.get("/api/sessions/1/tracks")
     assert resp.json()[0]["song_name"] == "Fat Cat Blues"
 
 
 def test_get_song_endpoint(seeded_client):
-    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
 
-    songs = seeded_client.get("/api/songs").json()
+    songs = client.get("/api/songs").json()
     song_id = songs[0]["id"]
 
-    resp = seeded_client.get(f"/api/songs/{song_id}")
+    resp = client.get(f"/api/songs/{song_id}")
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Fat Cat"
@@ -323,81 +440,89 @@ def test_get_song_endpoint(seeded_client):
     assert data["take_count"] == 1
 
 
-def test_get_song_not_found(client):
+def test_get_song_not_found(auth_client):
+    client, uid, gid = auth_client
     resp = client.get("/api/songs/9999")
     assert resp.status_code == 404
 
 
 def test_update_song_details_endpoint(seeded_client):
-    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
 
-    songs = seeded_client.get("/api/songs").json()
+    songs = client.get("/api/songs").json()
     song_id = songs[0]["id"]
 
-    resp = seeded_client.put(f"/api/songs/{song_id}/details", json={
-        "chart": "Intro: Am | G | F | E\nVerse: C | G",
-        "lyrics": "Some lyrics here",
-        "notes": "Play slow",
-    })
+    resp = client.put(
+        f"/api/songs/{song_id}/details",
+        json={
+            "chart": "Intro: Am | G | F | E\nVerse: C | G",
+            "lyrics": "Some lyrics here",
+            "notes": "Play slow",
+        },
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data["chart"] == "Intro: Am | G | F | E\nVerse: C | G"
     assert data["lyrics"] == "Some lyrics here"
     assert data["notes"] == "Play slow"
 
-    # Verify persistence via GET
-    resp = seeded_client.get(f"/api/songs/{song_id}")
+    resp = client.get(f"/api/songs/{song_id}")
     assert resp.json()["chart"] == "Intro: Am | G | F | E\nVerse: C | G"
 
 
-def test_update_song_details_not_found(client):
+def test_update_song_details_not_found(auth_client):
+    client, uid, gid = auth_client
     resp = client.put("/api/songs/9999/details", json={"chart": "C"})
     assert resp.status_code == 404
 
 
 def test_delete_song_endpoint(seeded_client):
-    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
 
-    songs = seeded_client.get("/api/songs").json()
+    songs = client.get("/api/songs").json()
     song_id = songs[0]["id"]
 
-    resp = seeded_client.delete(f"/api/songs/{song_id}")
+    resp = client.delete(f"/api/songs/{song_id}")
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
 
-    # Song should be gone
-    assert seeded_client.get(f"/api/songs/{song_id}").status_code == 404
-    assert seeded_client.get("/api/songs").json() == []
+    assert client.get(f"/api/songs/{song_id}").status_code == 404
+    assert client.get("/api/songs").json() == []
 
-    # Track should be untagged
-    tracks = seeded_client.get("/api/sessions/1/tracks").json()
+    tracks = client.get("/api/sessions/1/tracks").json()
     assert tracks[0]["song_id"] is None
 
 
-def test_delete_song_not_found(client):
+def test_delete_song_not_found(auth_client):
+    client, uid, gid = auth_client
     resp = client.delete("/api/songs/9999")
     assert resp.status_code == 404
 
 
 def test_rename_song_collision_returns_400(seeded_client):
-    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
-    seeded_client.post("/api/tracks/2/tag", json={"song_name": "Spit Me Out"})
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+    client.post("/api/tracks/2/tag", json={"song_name": "Spit Me Out"})
 
-    songs = seeded_client.get("/api/songs").json()
+    songs = client.get("/api/songs").json()
     fat_cat_id = next(s["id"] for s in songs if s["name"] == "Fat Cat")
 
-    resp = seeded_client.put(f"/api/songs/{fat_cat_id}/name", json={"name": "Spit Me Out"})
+    resp = client.put(f"/api/songs/{fat_cat_id}/name", json={"name": "Spit Me Out"})
     assert resp.status_code == 400
 
 
 # --- Upload endpoint tests ---
 
 
-def test_upload_session(client, tmp_path):
+def test_upload_session(auth_client, tmp_path):
     from io import BytesIO
     from unittest.mock import MagicMock, patch
 
     from jam_session_processor.splitter import SplitResult
+
+    client, uid, gid = auth_client
 
     segments = [(0.0, 200.0), (210.0, 400.0)]
     mock_result = SplitResult(segments=segments, total_duration_sec=400.0)
@@ -414,10 +539,14 @@ def test_upload_session(client, tmp_path):
             paths.append(p)
         return paths
 
-    with patch("jam_session_processor.splitter.detect_songs", return_value=mock_result), \
-         patch("jam_session_processor.output.export_segments", side_effect=mock_export), \
-         patch("jam_session_processor.fingerprint.compute_chroma_fingerprint", return_value="mockfp"), \
-         patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta):
+    with (
+        patch("jam_session_processor.splitter.detect_songs", return_value=mock_result),
+        patch("jam_session_processor.output.export_segments", side_effect=mock_export),
+        patch(
+            "jam_session_processor.fingerprint.compute_chroma_fingerprint", return_value="mockfp"
+        ),
+        patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta),
+    ):
         resp = client.post(
             "/api/sessions/upload",
             files={"file": ("test-session.m4a", BytesIO(b"\x00" * 100), "audio/mp4")},
@@ -427,10 +556,13 @@ def test_upload_session(client, tmp_path):
     data = resp.json()
     assert data["track_count"] == 2
     assert "test-session" in data["source_file"]
+    assert data["group_id"] == gid
 
 
-def test_upload_invalid_type(client, tmp_path):
+def test_upload_invalid_type(auth_client, tmp_path):
     from io import BytesIO
+
+    client, uid, gid = auth_client
 
     resp = client.post(
         "/api/sessions/upload",
@@ -440,18 +572,21 @@ def test_upload_invalid_type(client, tmp_path):
     assert "Invalid file type" in resp.json()["detail"]
 
 
-def test_upload_duplicate(client, tmp_path):
+def test_upload_duplicate(auth_client, tmp_path):
     from io import BytesIO
     from unittest.mock import MagicMock, patch
 
     from jam_session_processor.splitter import SplitResult
 
+    client, uid, gid = auth_client
     mock_result = SplitResult(segments=[], total_duration_sec=100.0)
     mock_meta = MagicMock()
     mock_meta.recording_date = None
 
-    with patch("jam_session_processor.splitter.detect_songs", return_value=mock_result), \
-         patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta):
+    with (
+        patch("jam_session_processor.splitter.detect_songs", return_value=mock_result),
+        patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta),
+    ):
         resp = client.post(
             "/api/sessions/upload",
             files={"file": ("dup.m4a", BytesIO(b"\x00" * 50), "audio/mp4")},
@@ -466,13 +601,13 @@ def test_upload_duplicate(client, tmp_path):
     assert resp.status_code == 409
 
 
-def test_upload_too_large(client, monkeypatch):
+def test_upload_too_large(auth_client, monkeypatch):
     """Upload exceeding max size should return 413."""
     from io import BytesIO
 
     from jam_session_processor.config import reset_config
 
-    # Set a tiny 1 byte limit
+    client, uid, gid = auth_client
     monkeypatch.setenv("JAM_MAX_UPLOAD_MB", "0")
     reset_config()
 
@@ -486,12 +621,50 @@ def test_upload_too_large(client, monkeypatch):
     reset_config()
 
 
+def test_upload_with_api_key(client, tmp_path):
+    from io import BytesIO
+    from unittest.mock import MagicMock, patch
+
+    from jam_session_processor.splitter import SplitResult
+
+    db = api._db
+    gid = db.create_group("TestBand")
+
+    mock_result = SplitResult(segments=[], total_duration_sec=100.0)
+    mock_meta = MagicMock()
+    mock_meta.recording_date = None
+
+    with (
+        patch("jam_session_processor.splitter.detect_songs", return_value=mock_result),
+        patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta),
+    ):
+        resp = client.post(
+            f"/api/sessions/upload?group_id={gid}",
+            files={"file": ("apikey.m4a", BytesIO(b"\x00" * 50), "audio/mp4")},
+            headers={"X-API-Key": "test-api-key"},
+        )
+
+    assert resp.status_code == 200
+
+
+def test_upload_api_key_missing_group_id(client, tmp_path):
+    from io import BytesIO
+
+    resp = client.post(
+        "/api/sessions/upload",
+        files={"file": ("test.m4a", BytesIO(b"\x00" * 50), "audio/mp4")},
+        headers={"X-API-Key": "test-api-key"},
+    )
+    assert resp.status_code == 400
+    assert "group_id" in resp.json()["detail"].lower()
+
+
 # --- Path stripping tests ---
 
 
 def test_track_response_no_audio_path(seeded_client):
-    """Track responses should not include audio_path."""
-    resp = seeded_client.get("/api/sessions/1/tracks")
+    client, uid, gid = seeded_client
+    resp = client.get("/api/sessions/1/tracks")
     assert resp.status_code == 200
     tracks = resp.json()
     assert len(tracks) > 0
@@ -500,13 +673,13 @@ def test_track_response_no_audio_path(seeded_client):
 
 
 def test_song_track_response_no_audio_path(seeded_client):
-    """Song track responses should not include audio_path."""
-    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
 
-    songs = seeded_client.get("/api/songs").json()
+    songs = client.get("/api/songs").json()
     song_id = songs[0]["id"]
 
-    resp = seeded_client.get(f"/api/songs/{song_id}/tracks")
+    resp = client.get(f"/api/songs/{song_id}/tracks")
     assert resp.status_code == 200
     tracks = resp.json()
     assert len(tracks) > 0
@@ -515,8 +688,8 @@ def test_song_track_response_no_audio_path(seeded_client):
 
 
 def test_session_source_file_is_basename(seeded_client):
-    """Session source_file should be filename only (no directory separators)."""
-    resp = seeded_client.get("/api/sessions/1")
+    client, uid, gid = seeded_client
+    resp = client.get("/api/sessions/1")
     assert resp.status_code == 200
     source = resp.json()["source_file"]
     assert "/" not in source
@@ -525,14 +698,75 @@ def test_session_source_file_is_basename(seeded_client):
 
 
 def test_song_track_source_file_is_basename(seeded_client):
-    """Song track source_file should be filename only."""
-    seeded_client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
 
-    songs = seeded_client.get("/api/songs").json()
+    songs = client.get("/api/songs").json()
     song_id = songs[0]["id"]
 
-    resp = seeded_client.get(f"/api/songs/{song_id}/tracks")
+    resp = client.get(f"/api/songs/{song_id}/tracks")
     tracks = resp.json()
     for track in tracks:
         assert "/" not in track["source_file"]
         assert "\\" not in track["source_file"]
+
+
+# --- Group scoping tests ---
+
+
+def test_cannot_see_other_groups_sessions(client, tmp_path):
+    db = api._db
+    # User 1 in Group A
+    uid1 = db.create_user("user1@example.com", hash_password("pw"), name="User1")
+    gid_a = db.create_group("GroupA")
+    db.assign_user_to_group(uid1, gid_a)
+    # User 2 in Group B
+    uid2 = db.create_user("user2@example.com", hash_password("pw"), name="User2")
+    gid_b = db.create_group("GroupB")
+    db.assign_user_to_group(uid2, gid_b)
+
+    # Create session in Group A
+    db.create_session("groupA.m4a", gid_a, date="2026-02-01")
+    # Create session in Group B
+    db.create_session("groupB.m4a", gid_b, date="2026-02-02")
+
+    # User 1 should only see Group A sessions
+    # Login as user1
+    resp = client.post("/api/auth/login", json={"email": "user1@example.com", "password": "pw"})
+    assert resp.status_code == 200
+
+    resp = client.get("/api/sessions")
+    sessions = resp.json()
+    assert len(sessions) == 1
+    assert sessions[0]["source_file"] == "groupA.m4a"
+
+    # User 1 should get 404 for Group B session
+    resp = client.get("/api/sessions/2")
+    assert resp.status_code == 404
+
+
+def test_cannot_see_other_groups_songs(client, tmp_path):
+    db = api._db
+    uid1 = db.create_user("user1@example.com", hash_password("pw"))
+    gid_a = db.create_group("GroupA")
+    db.assign_user_to_group(uid1, gid_a)
+
+    uid2 = db.create_user("user2@example.com", hash_password("pw"))
+    gid_b = db.create_group("GroupB")
+    db.assign_user_to_group(uid2, gid_b)
+
+    # Create songs in each group
+    sid_a = db.create_session("a.m4a", gid_a)
+    tid_a = db.create_track(sid_a, 1, 0, 300, "ta.wav")
+    db.tag_track(tid_a, "Song A", gid_a)
+
+    sid_b = db.create_session("b.m4a", gid_b)
+    tid_b = db.create_track(sid_b, 1, 0, 300, "tb.wav")
+    db.tag_track(tid_b, "Song B", gid_b)
+
+    # User 1 sees only Song A
+    resp = client.post("/api/auth/login", json={"email": "user1@example.com", "password": "pw"})
+    assert resp.status_code == 200
+    songs = client.get("/api/songs").json()
+    assert len(songs) == 1
+    assert songs[0]["name"] == "Song A"

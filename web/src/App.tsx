@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import Login from "./pages/Login";
 import SessionList from "./pages/SessionList";
 import SessionDetail from "./pages/SessionDetail";
 import SongCatalog from "./pages/SongCatalog";
@@ -7,6 +9,8 @@ import SongHistory from "./pages/SongHistory";
 import PerformMode from "./pages/PerformMode";
 
 function Layout({ children }: { children: React.ReactNode }) {
+  const { user, logout } = useAuth();
+
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
       <header className="border-b border-gray-800 px-4 py-3">
@@ -15,7 +19,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             <span className="sm:hidden">Jam Sessions</span>
             <span className="hidden sm:inline">Jam Session Processor</span>
           </span>
-          <nav className="flex gap-4 text-sm">
+          <nav className="flex flex-1 gap-4 text-sm">
             <NavLink
               to="/"
               end
@@ -34,6 +38,17 @@ function Layout({ children }: { children: React.ReactNode }) {
               Songs
             </NavLink>
           </nav>
+          {user && (
+            <div className="flex items-center gap-3 text-sm">
+              <span className="text-gray-400">{user.name || user.email}</span>
+              <button
+                onClick={logout}
+                className="text-gray-500 transition hover:text-gray-300"
+              >
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-4 sm:px-6 sm:py-8">
@@ -43,10 +58,9 @@ function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function App() {
+function AuthenticatedApp() {
   return (
-    <ErrorBoundary>
-    <BrowserRouter>
+    <AuthProvider>
       <Routes>
         {/* Full-screen route — no app chrome */}
         <Route path="/songs/:id/perform" element={<PerformMode />} />
@@ -63,7 +77,19 @@ export default function App() {
           </Layout>
         } />
       </Routes>
-    </BrowserRouter>
+    </AuthProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="*" element={<AuthenticatedApp />} />
+        </Routes>
+      </BrowserRouter>
     </ErrorBoundary>
   );
 }

@@ -33,10 +33,15 @@ class SplitResult:
 def compute_rms_profile(file_path: Path) -> list[float]:
     """Extract per-second RMS dB values using ffmpeg to decode and Python to compute."""
     cmd = [
-        "ffmpeg", "-i", str(file_path),
-        "-ac", "1",
-        "-ar", str(ANALYSIS_SAMPLE_RATE),
-        "-f", "s16le",
+        "ffmpeg",
+        "-i",
+        str(file_path),
+        "-ac",
+        "1",
+        "-ar",
+        str(ANALYSIS_SAMPLE_RATE),
+        "-f",
+        "s16le",
         "-",
     ]
     proc = subprocess.run(cmd, capture_output=True)
@@ -126,11 +131,16 @@ def export_segment(
     """Use ffmpeg to extract a segment to the specified format."""
     duration = end_sec - start_sec
     cmd = [
-        "ffmpeg", "-y",
-        "-ss", str(start_sec),
-        "-i", str(file_path),
-        "-t", str(duration),
-        "-c:a", audio_format.codec,
+        "ffmpeg",
+        "-y",
+        "-ss",
+        str(start_sec),
+        "-i",
+        str(file_path),
+        "-t",
+        str(duration),
+        "-c:a",
+        audio_format.codec,
     ]
     if audio_format.bitrate:
         cmd += ["-b:a", audio_format.bitrate]

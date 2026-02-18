@@ -4,19 +4,6 @@ import click
 
 from jam_session_processor.config import get_config
 from jam_session_processor.db import Database
-from jam_session_processor.fingerprint import build_reference_db, compute_chroma_fingerprint
-from jam_session_processor.metadata import extract_metadata
-from jam_session_processor.output import export_segments
-from jam_session_processor.splitter import (
-    AAC,
-    DEFAULT_ENERGY_THRESHOLD_DB,
-    DEFAULT_MIN_SONG_DURATION_SEC,
-    OPUS,
-    WAV,
-    detect_songs,
-)
-
-FORMAT_CHOICES = {"opus": OPUS, "aac": AAC, "wav": WAV}
 
 
 def _get_db() -> Database:
@@ -25,211 +12,16 @@ def _get_db() -> Database:
 
 @click.group()
 def cli():
-    """Process iPhone jam session recordings."""
+    """Jam session processor — admin CLI and server."""
 
 
 @cli.command()
-@click.argument("file", type=click.Path(exists=True, path_type=Path))
-def info(file: Path):
-    """Display metadata for an audio file."""
-    meta = extract_metadata(file)
-    click.echo(meta.summary())
-
-
-@cli.command()
-@click.argument("file", type=click.Path(exists=True, path_type=Path))
-@click.option(
-    "-o", "--output-dir",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="Output directory (default: ./output/<filename>/)",
-)
-@click.option(
-    "-t", "--threshold",
-    type=float,
-    default=DEFAULT_ENERGY_THRESHOLD_DB,
-    show_default=True,
-    help="Energy threshold in dB. Higher values are more selective.",
-)
-@click.option(
-    "-m", "--min-duration",
-    type=int,
-    default=DEFAULT_MIN_SONG_DURATION_SEC,
-    show_default=True,
-    help="Minimum song duration in seconds.",
-)
-@click.option(
-    "-r", "--references",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    default=None,
-    help="Directory of reference songs for matching.",
-)
-@click.option(
-    "--match-threshold",
-    type=float,
-    default=0.04,
-    show_default=True,
-    help="DTW distance threshold for reference matching (lower = stricter).",
-)
-@click.option(
-    "-f", "--format",
-    "audio_format_name",
-    type=click.Choice(["opus", "aac", "wav"], case_sensitive=False),
-    default="aac",
-    show_default=True,
-    help="Output audio format.",
-)
-def process(
-    file: Path,
-    output_dir: Path | None,
-    threshold: float,
-    min_duration: int,
-    references: Path | None,
-    match_threshold: float,
-    audio_format_name: str,
-):
-    """Split a jam session recording into individual songs."""
-    audio_format = FORMAT_CHOICES[audio_format_name]
-    meta = extract_metadata(file)
-    click.echo(meta.summary())
-    click.echo()
-
-    # Build reference DB if provided
-    reference_db = None
-    if references:
-        click.echo(f"Loading reference songs from {references}/...")
-        reference_db = build_reference_db(references)
-        click.echo(f"  {len(reference_db)} reference(s) loaded")
-        click.echo()
-
-    click.echo("Analyzing energy levels...")
-    result = detect_songs(file, energy_threshold_db=threshold, min_song_duration_sec=min_duration)
-
-    if not result.segments:
-        click.echo("No songs detected. Try lowering --threshold or --min-duration.")
-        return
-
-    click.echo(f"Found {len(result.segments)} song(s):")
-    for i, (start, end) in enumerate(result.segments, start=1):
-        duration = end - start
-        click.echo(f"  {i}. {_format_sec(start)} - {_format_sec(end)}  ({_format_sec(duration)})")
-    click.echo()
-
-    cfg = get_config()
-    if output_dir is None:
-        output_dir = cfg.output_dir_for_source(file.stem)
-
-    # Save to database
-    db = _get_db()
-    source_file = cfg.make_relative(file.resolve())
-    date_str = meta.recording_date.strftime("%Y-%m-%d") if meta.recording_date else None
-
-    # Check if session already exists
-    existing = db.find_session_by_source(source_file)
-    if existing:
-        click.echo(f"Session for '{source_file}' already exists (id={existing.id}). Skipping DB insert.")
-        click.echo("Use 'jam-session reset-db' to clear and re-process.")
-        session_id = existing.id
-    else:
-        session_id = db.create_session(source_file, date=date_str)
-        click.echo(f"Created session id={session_id}")
-
-    def on_progress(current, total, name, match_info=""):
-        click.echo(f"  [{current}/{total}] {name}{match_info}")
-
-    click.echo("Fingerprinting and exporting...")
-    exported = export_segments(
-        file, result.segments, output_dir,
-        session_date=meta.recording_date,
-        reference_db=reference_db,
-        match_threshold=match_threshold,
-        on_progress=on_progress,
-        audio_format=audio_format,
-    )
-
-    # Save tracks to database (only if we created a new session)
-    if not existing:
-        for i, ((start, end), audio_path) in enumerate(zip(result.segments, exported), start=1):
-            fp = compute_chroma_fingerprint(file, start_sec=start, duration_sec=end - start)
-            db.create_track(
-                session_id,
-                track_number=i,
-                start_sec=start,
-                end_sec=end,
-                audio_path=cfg.make_relative(audio_path.resolve()),
-                fingerprint=fp,
-            )
-        click.echo(f"Saved {len(exported)} track(s) to database.")
-
-    db.close()
-    click.echo(f"Done! {len(exported)} file(s) written to {output_dir}/")
-
-
-@cli.command()
-def sessions():
-    """List all processed sessions."""
-    db = _get_db()
-    session_list = db.list_sessions()
-    if not session_list:
-        click.echo("No sessions in database. Use 'jam-session process <file>' to add one.")
-        db.close()
-        return
-
-    click.echo(f"{'ID':>4}  {'Date':>12}  {'Tracks':>6}  {'Tagged':>6}  Source")
-    click.echo("-" * 70)
-    for s in session_list:
-        date = s.date or "unknown"
-        click.echo(f"{s.id:>4}  {date:>12}  {s.track_count:>6}  {s.tagged_count:>6}  {s.source_file}")
-    db.close()
-
-
-@cli.command("tracks")
-@click.argument("session_id", type=int)
-def tracks(session_id: int):
-    """List tracks for a session."""
-    db = _get_db()
-    session = db.get_session(session_id)
-    if not session:
-        click.echo(f"Session {session_id} not found.")
-        db.close()
-        return
-
-    click.echo(f"Session {session.id}: {session.source_file} ({session.date or 'unknown date'})")
-    click.echo()
-
-    track_list = db.get_tracks_for_session(session_id)
-    if not track_list:
-        click.echo("  No tracks.")
-        db.close()
-        return
-
-    for t in track_list:
-        duration = t.duration_sec
-        song = f" → {t.song_name}" if t.song_name else ""
-        notes = f" [{t.notes}]" if t.notes else ""
-        click.echo(
-            f"  {t.track_number:>2}. {_format_sec(t.start_sec)} - {_format_sec(t.end_sec)}"
-            f"  ({_format_sec(duration)}){song}{notes}"
-        )
-    db.close()
-
-
-@cli.command("reset-db")
-@click.confirmation_option(prompt="This will delete all session data. Continue?")
-def reset_db():
-    """Clear all data from the database."""
-    db = _get_db()
-    db.reset()
-    db.close()
-    click.echo("Database cleared.")
-
-
-@cli.command()
-@click.option("-p", "--port", type=int, default=None, help="Port to listen on (default: JAM_PORT or 8000).")
+@click.option("-p", "--port", type=int, default=None, help="Port (default: JAM_PORT or 8000).")
 @click.option("--reload", "use_reload", is_flag=True, help="Enable auto-reload for development.")
 def serve(port: int | None, use_reload: bool):
     """Start the API server."""
     import uvicorn
+
     if port is None:
         port = get_config().port
     click.echo(f"Starting server on http://localhost:{port}")
@@ -241,48 +33,30 @@ def serve(port: int | None, use_reload: bool):
     )
 
 
-@cli.command("process-all")
-@click.argument("directory", type=click.Path(exists=True, file_okay=False, path_type=Path))
-@click.option("-t", "--threshold", type=float, default=DEFAULT_ENERGY_THRESHOLD_DB, show_default=True)
-@click.option("-m", "--min-duration", type=int, default=DEFAULT_MIN_SONG_DURATION_SEC, show_default=True)
-@click.option(
-    "-f", "--format",
-    "audio_format_name",
-    type=click.Choice(["opus", "aac", "wav"], case_sensitive=False),
-    default="aac",
-    show_default=True,
-    help="Output audio format.",
-)
-def process_all(directory: Path, threshold: float, min_duration: int, audio_format_name: str):
-    """Process all audio files in a directory."""
-    extensions = {".m4a", ".wav", ".mp3", ".flac", ".ogg"}
-    files = sorted(f for f in directory.iterdir() if f.suffix.lower() in extensions)
-    if not files:
-        click.echo(f"No audio files found in {directory}/")
-        return
-
-    click.echo(f"Found {len(files)} audio file(s) in {directory}/")
-    for f in files:
-        click.echo(f"\n{'='*60}")
-        click.echo(f"Processing: {f.name}")
-        click.echo(f"{'='*60}")
-        ctx = click.get_current_context()
-        ctx.invoke(process, file=f, output_dir=None, threshold=threshold,
-                   min_duration=min_duration, references=None, match_threshold=0.04,
-                   audio_format_name=audio_format_name)
-
-
 UPLOAD_EXTENSIONS = {".m4a", ".wav", ".mp3", ".flac", ".ogg"}
 
 
 @cli.command()
 @click.argument("file", type=click.Path(exists=True, path_type=Path))
 @click.option(
-    "-s", "--server",
+    "-s",
+    "--server",
     required=True,
     help="Server URL (e.g. http://localhost:8000).",
 )
-def upload(file: Path, server: str):
+@click.option(
+    "-g",
+    "--group",
+    required=True,
+    help="Group name to upload into.",
+)
+@click.option(
+    "--api-key",
+    envvar="JAM_API_KEY",
+    required=True,
+    help="API key for authentication (or set JAM_API_KEY env var).",
+)
+def upload(file: Path, server: str, group: str, api_key: str):
     """Upload an audio file to a remote server for processing."""
     import requests
 
@@ -292,16 +66,27 @@ def upload(file: Path, server: str):
         click.echo(f"Error: Invalid file type '{ext}'. Allowed: {allowed}")
         raise SystemExit(1)
 
+    # Look up group_id from the server
     url = f"{server.rstrip('/')}/api/sessions/upload"
     file_size = file.stat().st_size
     size_mb = file_size / (1024 * 1024)
-    click.echo(f"Uploading {file.name} ({size_mb:.1f} MB) to {server}...")
+    click.echo(f"Uploading {file.name} ({size_mb:.1f} MB) to {server} (group: {group})...")
+
+    # First resolve group name to group_id via a local DB lookup
+    db = _get_db()
+    grp = db.get_group_by_name(group)
+    db.close()
+    if not grp:
+        click.echo(f"Error: Group '{group}' not found in local database")
+        raise SystemExit(1)
 
     try:
         with open(file, "rb") as f:
             resp = requests.post(
                 url,
                 files={"file": (file.name, f)},
+                headers={"X-API-Key": api_key},
+                params={"group_id": grp.id},
                 timeout=600,
             )
     except requests.ConnectionError:
@@ -330,7 +115,160 @@ def upload(file: Path, server: str):
     click.echo(f"  Source: {data.get('source_file', '')}")
 
 
-def _format_sec(sec: float) -> str:
-    total = int(sec)
-    minutes, seconds = divmod(total, 60)
-    return f"{minutes}:{seconds:02d}"
+# --- Admin commands ---
+
+
+@cli.command("add-user")
+@click.argument("email")
+@click.option("--name", default="", help="Display name for the user.")
+def add_user(email: str, name: str):
+    """Create a new user. Prompts for password."""
+    from jam_session_processor.auth import hash_password
+
+    password = click.prompt("Password", hide_input=True, confirmation_prompt=True)
+    if not password:
+        click.echo("Error: Password cannot be empty")
+        raise SystemExit(1)
+
+    db = _get_db()
+    existing = db.get_user_by_email(email)
+    if existing:
+        click.echo(f"Error: User '{email}' already exists")
+        db.close()
+        raise SystemExit(1)
+
+    user_id = db.create_user(email, hash_password(password), name=name)
+    db.close()
+    click.echo(f"Created user '{email}' (id={user_id})")
+
+
+@cli.command("add-group")
+@click.argument("name")
+def add_group(name: str):
+    """Create a new group."""
+    db = _get_db()
+    existing = db.get_group_by_name(name)
+    if existing:
+        click.echo(f"Error: Group '{name}' already exists")
+        db.close()
+        raise SystemExit(1)
+
+    group_id = db.create_group(name)
+    db.close()
+    click.echo(f"Created group '{name}' (id={group_id})")
+
+
+@cli.command("assign-user")
+@click.argument("email")
+@click.argument("group_name")
+def assign_user(email: str, group_name: str):
+    """Add a user to a group."""
+    db = _get_db()
+    user = db.get_user_by_email(email)
+    if not user:
+        click.echo(f"Error: User '{email}' not found")
+        db.close()
+        raise SystemExit(1)
+
+    group = db.get_group_by_name(group_name)
+    if not group:
+        click.echo(f"Error: Group '{group_name}' not found")
+        db.close()
+        raise SystemExit(1)
+
+    db.assign_user_to_group(user.id, group.id)
+    db.close()
+    click.echo(f"Assigned '{email}' to group '{group_name}'")
+
+
+@cli.command("remove-user")
+@click.argument("email")
+@click.argument("group_name")
+def remove_user(email: str, group_name: str):
+    """Remove a user from a group."""
+    db = _get_db()
+    user = db.get_user_by_email(email)
+    if not user:
+        click.echo(f"Error: User '{email}' not found")
+        db.close()
+        raise SystemExit(1)
+
+    group = db.get_group_by_name(group_name)
+    if not group:
+        click.echo(f"Error: Group '{group_name}' not found")
+        db.close()
+        raise SystemExit(1)
+
+    db.remove_user_from_group(user.id, group.id)
+    db.close()
+    click.echo(f"Removed '{email}' from group '{group_name}'")
+
+
+@cli.command("list-users")
+def list_users():
+    """List all users and their group memberships."""
+    db = _get_db()
+    users = db.list_users()
+    if not users:
+        click.echo("No users.")
+        db.close()
+        return
+
+    for u in users:
+        groups = db.get_user_groups(u.id)
+        group_names = ", ".join(g.name for g in groups) or "(no groups)"
+        name_part = f" ({u.name})" if u.name else ""
+        click.echo(f"  {u.email}{name_part} — {group_names}")
+    db.close()
+
+
+@cli.command("list-groups")
+def list_groups():
+    """List all groups."""
+    db = _get_db()
+    groups = db.list_groups()
+    if not groups:
+        click.echo("No groups.")
+        db.close()
+        return
+
+    for g in groups:
+        click.echo(f"  {g.name} (id={g.id})")
+    db.close()
+
+
+@cli.command("reset-db")
+def reset_db():
+    """Clear all data from the database (with confirmation)."""
+    click.echo("This will delete ALL data (users, groups, sessions, tracks, songs).")
+    if not click.confirm("Are you sure?"):
+        click.echo("Aborted.")
+        return
+    db = _get_db()
+    db.reset()
+    db.close()
+    click.echo("Database reset complete.")
+
+
+@cli.command("reset-password")
+@click.argument("email")
+def reset_password(email: str):
+    """Reset a user's password. Prompts for new password."""
+    from jam_session_processor.auth import hash_password
+
+    db = _get_db()
+    user = db.get_user_by_email(email)
+    if not user:
+        click.echo(f"Error: User '{email}' not found")
+        db.close()
+        raise SystemExit(1)
+
+    password = click.prompt("New password", hide_input=True, confirmation_prompt=True)
+    if not password:
+        click.echo("Error: Password cannot be empty")
+        db.close()
+        raise SystemExit(1)
+
+    db.update_user_password(user.id, hash_password(password))
+    db.close()
+    click.echo(f"Password updated for '{email}'")

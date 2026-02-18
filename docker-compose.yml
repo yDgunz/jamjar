@@ -8,6 +8,8 @@ services:
     environment:
       - JAM_DATA_DIR=/data
       - JAM_STATIC_DIR=/app/static
+      - JAM_JWT_SECRET=${JAM_JWT_SECRET}
+      - JAM_API_KEY=${JAM_API_KEY}
     restart: unless-stopped
 
   caddy:

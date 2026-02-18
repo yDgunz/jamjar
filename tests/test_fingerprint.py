@@ -1,7 +1,6 @@
 import shutil
 
 import pytest
-from pydub import AudioSegment
 from pydub.generators import Sine
 
 from jam_session_processor.fingerprint import (

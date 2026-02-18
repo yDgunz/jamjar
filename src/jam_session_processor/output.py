@@ -59,15 +59,22 @@ def export_segments(
         match = None
         if reference_db:
             chromagram = compute_chromagram_for_file(
-                file_path, start_sec=start, duration_sec=end - start,
+                file_path,
+                start_sec=start,
+                duration_sec=end - start,
             )
             match = match_against_references(chromagram, reference_db, threshold=match_threshold)
             if match:
                 song_name = match.name
 
         name = generate_output_name(
-            session_date, i, len(segments), start, end,
-            fingerprint=fp, song_name=song_name,
+            session_date,
+            i,
+            len(segments),
+            start,
+            end,
+            fingerprint=fp,
+            song_name=song_name,
             extension=audio_format.extension,
         )
         out_path = output_dir / name
