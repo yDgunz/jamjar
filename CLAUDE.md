@@ -348,31 +348,28 @@ No test framework installed. No test files exist. All 2,100+ lines are untested.
 
 ## Roadmap
 
-### Done — MVP Deployment
+### Done
 
-**Infra:**
-- [x] ~~Cloudflare DNS~~ — using Cloudflare proxy (orange cloud) instead of Caddy for HTTPS
+- Cloudflare DNS + HTTPS via proxy (orange cloud)
+- R2 audio storage with custom domain (`audio.jam-jar.app`)
+- Storage abstraction layer (`storage.py`) — local filesystem + R2 backends
+- Auth, groups, role-based access
+- CI/CD deploy to VPS via GitHub Actions
 
-### Next — R2 Audio Storage
+### Now
 
-- [x] **You (manual):** Create R2 bucket in Cloudflare dashboard, generate API token with S3 read/write
-- [x] **You (manual):** Configure CORS on the R2 bucket (allow GET/HEAD from your domain + localhost, expose Range headers)
-- [ ] **You (manual):** Add R2 env vars to production `.env`: `JAM_R2_ACCOUNT_ID`, `JAM_R2_ACCESS_KEY_ID`, `JAM_R2_SECRET_ACCESS_KEY`, `JAM_R2_BUCKET`
-- [x] **Code:** Storage abstraction layer (`storage.py`), config, API changes, frontend download URLs
-- [ ] **You (manual):** Verify playback/download works from R2, then optionally clean up local `input/` and `output/` on the volume
+- Clean up local `input/` and `output/` on Docker volume (save disk after R2 migration)
+- Deploy docs (so CI/CD setup isn't tribal knowledge)
 
-### Next — Other
+### Next
 
-- [x] ~~Cloudflare DNS~~ — using Cloudflare proxy (orange cloud) instead of Caddy for HTTPS
-- [ ] Deploy script or README with push-to-server instructions
-- [ ] Set up `.env` on production server with `JAM_JWT_SECRET` and `JAM_API_KEY` (generate with `openssl rand -hex 32`)
+- Background job processing (async upload/reprocess, progress tracking)
+- Performance mode enhancements (auto-scroll, transposition, setlists)
+- Frontend resilience (TanStack Query, optimistic updates)
 
 ### Later
 
-- Background job processing (async upload/reprocess, progress tracking)
 - Database migrations (Alembic, evaluate Postgres)
-- Performance mode enhancements (auto-scroll, transposition, setlists)
-- Frontend resilience (TanStack Query, optimistic updates)
 - Observability (structured logging, Sentry, usage metrics)
 - Security hardening (rate limiting, CSRF, input length limits)
 - Data export (CSV/JSON catalog, zip downloads)

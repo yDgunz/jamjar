@@ -24,9 +24,11 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-950 px-4">
       <div className="w-full max-w-sm">
-        <h1 className="mb-8 text-center text-2xl font-bold text-white">
-          Jam Session Processor
-        </h1>
+        <div className="mb-8 flex flex-col items-center gap-2">
+          <span className="text-6xl" role="img" aria-label="jar">🫙</span>
+          <h1 className="text-3xl font-bold text-white">JamJar</h1>
+          <p className="text-sm text-gray-500">Band session recordings</p>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="rounded border border-red-800 bg-red-900/30 px-3 py-2 text-sm text-red-300">

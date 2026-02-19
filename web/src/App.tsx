@@ -17,10 +17,10 @@ function Layout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-gray-950 text-gray-100">
       <header className="border-b border-gray-800 px-4 py-3">
         <div className="mx-auto flex max-w-5xl items-center gap-8">
-          <span className="text-xl font-bold text-white">
-            <span className="sm:hidden">Jam Recordings</span>
-            <span className="hidden sm:inline">Jam Session Processor</span>
-          </span>
+          <NavLink to="/" className="flex items-center gap-1.5 text-xl font-bold text-white hover:text-indigo-300 transition">
+            <span className="text-2xl" role="img" aria-label="jar">🫙</span>
+            <span>JamJar</span>
+          </NavLink>
           <nav className="flex flex-1 gap-4 text-sm">
             <NavLink
               to="/"
