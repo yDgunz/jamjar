@@ -16,7 +16,8 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
-            cd /opt/jam-session-processor
+            set -e
+            cd /opt/jamjar
             git pull
             docker compose up --build -d
             docker image prune -f
