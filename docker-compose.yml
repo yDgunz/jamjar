@@ -14,6 +14,7 @@ services:
       - JAM_R2_ACCESS_KEY_ID=${JAM_R2_ACCESS_KEY_ID:-}
       - JAM_R2_SECRET_ACCESS_KEY=${JAM_R2_SECRET_ACCESS_KEY:-}
       - JAM_R2_BUCKET=${JAM_R2_BUCKET:-}
+      - JAM_R2_CUSTOM_DOMAIN=${JAM_R2_CUSTOM_DOMAIN:-}
     restart: unless-stopped
 
 volumes:

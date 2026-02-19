@@ -99,6 +99,7 @@ class R2Storage:
     def __init__(self):
         cfg = get_config()
         self._bucket = cfg.r2_bucket
+        self._custom_domain = cfg.r2_custom_domain
         self._client = boto3.client(
             "s3",
             endpoint_url=f"https://{cfg.r2_account_id}.r2.cloudflarestorage.com",
@@ -164,6 +165,10 @@ class R2Storage:
             return False
 
     def url(self, key: str) -> str | None:
+        if self._custom_domain:
+            from urllib.parse import quote
+
+            return f"https://{self._custom_domain}/{quote(key)}"
         return self._client.generate_presigned_url(
             "get_object",
             Params={"Bucket": self._bucket, "Key": key},

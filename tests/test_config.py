@@ -26,6 +26,7 @@ def test_defaults_match_current_behavior(monkeypatch, tmp_path):
     monkeypatch.delenv("JAM_R2_ACCESS_KEY_ID", raising=False)
     monkeypatch.delenv("JAM_R2_SECRET_ACCESS_KEY", raising=False)
     monkeypatch.delenv("JAM_R2_BUCKET", raising=False)
+    monkeypatch.delenv("JAM_R2_CUSTOM_DOMAIN", raising=False)
     monkeypatch.chdir(tmp_path)
 
     cfg = get_config()
@@ -89,6 +90,7 @@ def _make_config(tmp_path):
         r2_access_key_id="",
         r2_secret_access_key="",
         r2_bucket="",
+        r2_custom_domain="",
     )
 
 
@@ -124,6 +126,7 @@ def test_make_relative_outside_data_dir(tmp_path):
         r2_access_key_id="",
         r2_secret_access_key="",
         r2_bucket="",
+        r2_custom_domain="",
     )
     outside = tmp_path / "elsewhere" / "file.ogg"
     assert cfg.make_relative(outside) == str(outside)

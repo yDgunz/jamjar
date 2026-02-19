@@ -27,6 +27,7 @@ class Config:
     r2_access_key_id: str
     r2_secret_access_key: str
     r2_bucket: str
+    r2_custom_domain: str
 
     def resolve_path(self, stored: str) -> Path:
         """Resolve a stored path to absolute.
@@ -82,6 +83,7 @@ def _build_config() -> Config:
         r2_access_key_id=os.environ.get("JAM_R2_ACCESS_KEY_ID", ""),
         r2_secret_access_key=os.environ.get("JAM_R2_SECRET_ACCESS_KEY", ""),
         r2_bucket=os.environ.get("JAM_R2_BUCKET", ""),
+        r2_custom_domain=os.environ.get("JAM_R2_CUSTOM_DOMAIN", ""),
     )
 
 
