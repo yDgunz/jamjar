@@ -22,6 +22,10 @@ def test_defaults_match_current_behavior(monkeypatch, tmp_path):
     monkeypatch.delenv("JAM_PORT", raising=False)
     monkeypatch.delenv("JAM_JWT_SECRET", raising=False)
     monkeypatch.delenv("JAM_API_KEY", raising=False)
+    monkeypatch.delenv("JAM_R2_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("JAM_R2_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("JAM_R2_SECRET_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("JAM_R2_BUCKET", raising=False)
     monkeypatch.chdir(tmp_path)
 
     cfg = get_config()
@@ -33,6 +37,10 @@ def test_defaults_match_current_behavior(monkeypatch, tmp_path):
     assert cfg.port == 8000
     assert cfg.jwt_secret == ""
     assert cfg.api_key == ""
+    assert cfg.r2_account_id == ""
+    assert cfg.r2_access_key_id == ""
+    assert cfg.r2_secret_access_key == ""
+    assert cfg.r2_bucket == ""
 
 
 def test_custom_env_vars(monkeypatch, tmp_path):
@@ -77,6 +85,10 @@ def _make_config(tmp_path):
         max_upload_mb=500,
         jwt_secret="test",
         api_key="test",
+        r2_account_id="",
+        r2_access_key_id="",
+        r2_secret_access_key="",
+        r2_bucket="",
     )
 
 
@@ -108,6 +120,10 @@ def test_make_relative_outside_data_dir(tmp_path):
         max_upload_mb=500,
         jwt_secret="test",
         api_key="test",
+        r2_account_id="",
+        r2_access_key_id="",
+        r2_secret_access_key="",
+        r2_bucket="",
     )
     outside = tmp_path / "elsewhere" / "file.ogg"
     assert cfg.make_relative(outside) == str(outside)

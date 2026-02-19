@@ -17,11 +17,33 @@ export interface AuthGroup {
   name: string;
 }
 
+export type Role = "superadmin" | "admin" | "editor" | "readonly";
+
 export interface AuthUser {
   id: number;
   email: string;
   name: string;
+  role: Role;
   groups: AuthGroup[];
+}
+
+const ROLE_LEVEL: Record<Role, number> = { readonly: 0, editor: 1, admin: 2, superadmin: 3 };
+
+export function hasRole(user: AuthUser | null, minRole: Role): boolean {
+  if (!user) return false;
+  return (ROLE_LEVEL[user.role] ?? 0) >= ROLE_LEVEL[minRole];
+}
+
+export function canEdit(user: AuthUser | null): boolean {
+  return hasRole(user, "editor");
+}
+
+export function canAdmin(user: AuthUser | null): boolean {
+  return hasRole(user, "admin");
+}
+
+export function isSuperAdmin(user: AuthUser | null): boolean {
+  return hasRole(user, "superadmin");
 }
 
 export interface Session {
@@ -52,6 +74,8 @@ export interface Track {
 
 export interface Song {
   id: number;
+  group_id: number;
+  group_name: string;
   name: string;
   chart: string;
   lyrics: string;
@@ -72,6 +96,20 @@ export interface SongTrack {
   session_date: string | null;
   source_file: string;
   session_name: string;
+}
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  groups: { id: number; name: string }[];
+}
+
+export interface AdminGroup {
+  id: number;
+  name: string;
+  member_count: number;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -134,6 +172,13 @@ export const api = {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ date }),
+    }),
+
+  updateSessionGroup: (id: number, groupId: number) =>
+    fetchJson<Session>(`${BASE}/sessions/${id}/group`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_id: groupId }),
     }),
 
   tagTrack: (trackId: number, songName: string) =>
@@ -207,19 +252,84 @@ export const api = {
       body: JSON.stringify({ name }),
     }),
 
+  updateSongGroup: (songId: number, groupId: number) =>
+    fetchJson<Song>(`${BASE}/songs/${songId}/group`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_id: groupId }),
+    }),
+
   deleteSong: (songId: number) =>
     fetchJson<{ ok: boolean }>(`${BASE}/songs/${songId}`, { method: "DELETE" }),
 
   getSongTracks: (songId: number) =>
     fetchJson<SongTrack[]>(`${BASE}/songs/${songId}/tracks`),
 
-  uploadSession: (file: File, groupId?: number) => {
+  uploadSession: (file: File, groupId?: number, threshold?: number) => {
     const form = new FormData();
     form.append("file", file);
-    const params = groupId ? `?group_id=${groupId}` : "";
-    return fetchJson<Session>(`${BASE}/sessions/upload${params}`, {
+    const params = new URLSearchParams();
+    if (groupId !== undefined) params.set("group_id", String(groupId));
+    if (threshold !== undefined) params.set("threshold", String(threshold));
+    const qs = params.toString();
+    return fetchJson<Session>(`${BASE}/sessions/upload${qs ? `?${qs}` : ""}`, {
       method: "POST",
       body: form,
     });
   },
+
+  // Admin
+  adminListUsers: () => fetchJson<AdminUser[]>(`${BASE}/admin/users`),
+
+  adminCreateUser: (email: string, password: string, name: string, role = "editor") =>
+    fetchJson<AdminUser>(`${BASE}/admin/users`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, name, role }),
+    }),
+
+  adminDeleteUser: (userId: number) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/admin/users/${userId}`, {
+      method: "DELETE",
+    }),
+
+  adminResetPassword: (userId: number, password: string) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/admin/users/${userId}/password`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    }),
+
+  adminUpdateRole: (userId: number, role: string) =>
+    fetchJson<AdminUser>(`${BASE}/admin/users/${userId}/role`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
+    }),
+
+  adminAssignGroup: (userId: number, groupId: number) =>
+    fetchJson<AdminUser>(`${BASE}/admin/users/${userId}/groups`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_id: groupId }),
+    }),
+
+  adminRemoveGroup: (userId: number, groupId: number) =>
+    fetchJson<AdminUser>(`${BASE}/admin/users/${userId}/groups/${groupId}`, {
+      method: "DELETE",
+    }),
+
+  adminListGroups: () => fetchJson<AdminGroup[]>(`${BASE}/admin/groups`),
+
+  adminCreateGroup: (name: string) =>
+    fetchJson<AdminGroup>(`${BASE}/admin/groups`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+
+  adminDeleteGroup: (groupId: number) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/admin/groups/${groupId}`, {
+      method: "DELETE",
+    }),
 };

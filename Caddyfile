@@ -1,3 +1,0 @@
-{$JAM_DOMAIN:http://} {
-	reverse_proxy app:8000
-}

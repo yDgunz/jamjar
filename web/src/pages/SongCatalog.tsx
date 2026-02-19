@@ -2,13 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { api, formatDate } from "../api";
 import type { Song } from "../api";
+import { useAuth } from "../context/AuthContext";
 
 type SortKey = "name" | "last_played" | "takes";
 
 export default function SongCatalog() {
+  const { user } = useAuth();
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>("name");
+  const [groupFilter, setGroupFilter] = useState<number | null>(null);
 
   useEffect(() => {
     api.listSongs().then((data) => {
@@ -18,7 +21,10 @@ export default function SongCatalog() {
   }, []);
 
   const sorted = useMemo(() => {
-    const copy = [...songs];
+    const filtered = groupFilter !== null
+      ? songs.filter((s) => s.group_id === groupFilter)
+      : songs;
+    const copy = [...filtered];
     switch (sortBy) {
       case "name":
         return copy.sort((a, b) => a.name.localeCompare(b.name));
@@ -27,7 +33,7 @@ export default function SongCatalog() {
       case "takes":
         return copy.sort((a, b) => b.take_count - a.take_count);
     }
-  }, [songs, sortBy]);
+  }, [songs, sortBy, groupFilter]);
 
   if (loading) return (
     <div>
@@ -57,7 +63,7 @@ export default function SongCatalog() {
     return (
       <p className="text-gray-400">
         No songs tagged yet. Tag takes from a{" "}
-        <Link to="/" className="text-indigo-400 hover:text-indigo-300">session</Link> to build your catalog.
+        <Link to="/" className="text-indigo-400 hover:text-indigo-300">recording</Link> to build your catalog.
       </p>
     );
   }
@@ -70,14 +76,44 @@ export default function SongCatalog() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Song Catalog</h1>
-        <div className="flex items-center gap-1">
+      <div className="mb-3 flex items-center gap-2">
+        <h1 className="text-lg font-bold">Songs</h1>
+        {user && user.groups.length > 1 && (
+          <>
+            <div className="mx-1 h-4 w-px bg-gray-700" />
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setGroupFilter(null)}
+                className={`rounded px-2.5 py-1.5 text-xs transition ${
+                  groupFilter === null
+                    ? "bg-indigo-600 text-white"
+                    : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+                }`}
+              >
+                All
+              </button>
+              {user.groups.map((g) => (
+                <button
+                  key={g.id}
+                  onClick={() => setGroupFilter(g.id)}
+                  className={`rounded px-2.5 py-1.5 text-xs transition ${
+                    groupFilter === g.id
+                      ? "bg-indigo-600 text-white"
+                      : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+                  }`}
+                >
+                  {g.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        <div className="ml-auto flex items-center gap-1">
           {sortOptions.map((opt) => (
             <button
               key={opt.key}
               onClick={() => setSortBy(opt.key)}
-              className={`rounded px-3 py-2 text-xs transition ${
+              className={`rounded px-2.5 py-1.5 text-xs transition ${
                 sortBy === opt.key
                   ? "bg-indigo-600 text-white"
                   : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
@@ -96,7 +132,12 @@ export default function SongCatalog() {
             className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4 transition hover:border-indigo-500 hover:bg-gray-800"
           >
             <div>
-              <div className="font-medium text-white">{song.name}</div>
+              <div className="font-medium text-white">
+                {song.name}
+                {user && user.groups.length > 1 && !groupFilter && song.group_name && (
+                  <span className="ml-2 text-xs font-normal text-gray-500">{song.group_name}</span>
+                )}
+              </div>
               <div className="mt-1 text-sm text-gray-400">
                 {song.last_date
                   ? `Last played ${formatDate(song.last_date)}`

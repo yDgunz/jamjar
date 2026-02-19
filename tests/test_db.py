@@ -416,6 +416,36 @@ def test_delete_song(db, group_id):
     assert track.song_name is None
 
 
+def test_create_user_default_role(db):
+    uid = db.create_user("alice@example.com", "hash123", name="Alice")
+    user = db.get_user(uid)
+    assert user.role == "editor"
+
+
+def test_create_user_with_role(db):
+    uid = db.create_user("alice@example.com", "hash123", role="admin")
+    user = db.get_user(uid)
+    assert user.role == "admin"
+
+
+def test_create_user_invalid_role(db):
+    with pytest.raises(ValueError, match="Invalid role"):
+        db.create_user("alice@example.com", "hash123", role="wizard")
+
+
+def test_update_user_role(db):
+    uid = db.create_user("alice@example.com", "hash123")
+    assert db.get_user(uid).role == "editor"
+    db.update_user_role(uid, "superadmin")
+    assert db.get_user(uid).role == "superadmin"
+
+
+def test_update_user_role_invalid(db):
+    uid = db.create_user("alice@example.com", "hash123")
+    with pytest.raises(ValueError, match="Invalid role"):
+        db.update_user_role(uid, "wizard")
+
+
 def test_rename_song_scoped_to_group(db):
     gid1 = db.create_group("Band1")
     gid2 = db.create_group("Band2")

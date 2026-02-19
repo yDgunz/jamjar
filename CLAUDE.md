@@ -351,31 +351,24 @@ No test framework installed. No test files exist. All 2,100+ lines are untested.
 ### Done — MVP Deployment
 
 **Infra:**
-- [x] GitHub repo created and pushed
-- [x] Hetzner CX22 server (Ubuntu 24.04, Docker installed)
-- [ ] Cloudflare DNS — add domain, point A record at Hetzner IP, then re-enable Caddy HTTPS in docker-compose
+- [x] ~~Cloudflare DNS~~ — using Cloudflare proxy (orange cloud) instead of Caddy for HTTPS
 
-### Done — Post-Deploy Hardening
+### Next — R2 Audio Storage
 
-- [x] CI/CD pipeline: push to main → SSH deploy to VPS (`.github/workflows/deploy.yml`)
-- [x] SQLite backup script (`scripts/backup-db.sh` — `sqlite3 .backup`, gzip, retention)
-- [x] File size limits on upload endpoint (`JAM_MAX_UPLOAD_MB`, chunked streaming, 413 response)
-- [x] Strip local paths from API responses (`audio_path` removed, `source_file` basename-only)
-- [x] Global error boundary in frontend (`ErrorBoundary.tsx`)
-- [x] Skeleton loading states (all pages use `animate-pulse` skeletons)
-- [x] CLI upload command (`jam-session upload <file> -s <URL>`)
+- [x] **You (manual):** Create R2 bucket in Cloudflare dashboard, generate API token with S3 read/write
+- [x] **You (manual):** Configure CORS on the R2 bucket (allow GET/HEAD from your domain + localhost, expose Range headers)
+- [ ] **You (manual):** Add R2 env vars to production `.env`: `JAM_R2_ACCOUNT_ID`, `JAM_R2_ACCESS_KEY_ID`, `JAM_R2_SECRET_ACCESS_KEY`, `JAM_R2_BUCKET`
+- [x] **Code:** Storage abstraction layer (`storage.py`), config, API changes, frontend download URLs
+- [ ] **You (manual):** Verify playback/download works from R2, then optionally clean up local `input/` and `output/` on the volume
 
-### Next
+### Next — Other
 
-- [ ] Cloudflare DNS — add domain, point A record at Hetzner IP, then re-enable Caddy HTTPS
+- [x] ~~Cloudflare DNS~~ — using Cloudflare proxy (orange cloud) instead of Caddy for HTTPS
 - [ ] Deploy script or README with push-to-server instructions
 - [ ] Set up `.env` on production server with `JAM_JWT_SECRET` and `JAM_API_KEY` (generate with `openssl rand -hex 32`)
 
 ### Later
 
-- Auth & multi-tenancy (users, JWT/cookies, login UI)
-- Groups (scoped sessions/songs per band)
-- R2 audio storage (presigned URLs, CDN caching)
 - Background job processing (async upload/reprocess, progress tracking)
 - Database migrations (Alembic, evaluate Postgres)
 - Performance mode enhancements (auto-scroll, transposition, setlists)

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router";
-import { api, formatDate } from "../api";
+import { api, formatDate, canEdit, canAdmin } from "../api";
 import type { Session, Track, Song } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
 import type { Marker } from "../components/AudioPlayer";
 import Modal, { Toast } from "../components/Modal";
 import TrackRow from "../components/TrackRow";
+import { useAuth } from "../context/AuthContext";
 
 function MergeButton({ trackId, nextTrackId, onTracksChanged, onError }: {
   trackId: number;
@@ -69,6 +70,7 @@ function MergeButton({ trackId, nextTrackId, onTracksChanged, onError }: {
 }
 
 export default function SessionDetail() {
+  const { user } = useAuth();
   const { id } = useParams<{ id: string }>();
   const [session, setSession] = useState<Session | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -82,7 +84,7 @@ export default function SessionDetail() {
   const [notesInput, setNotesInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [threshold, setThreshold] = useState(-30);
+  const [threshold, setThreshold] = useState(25);
   const [reprocessing, setReprocessing] = useState(false);
   const [reprocessOpen, setReprocessOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -147,13 +149,11 @@ export default function SessionDetail() {
     refresh();
   };
 
-  const handleReprocess = async (direction: "stricter" | "looser") => {
-    const newThreshold = direction === "stricter" ? threshold + 3 : threshold - 3;
+  const handleReprocess = async () => {
     setReprocessOpen(false);
     setReprocessing(true);
     try {
-      const newTracks = await api.reprocessSession(sessionId, newThreshold, 120);
-      setThreshold(newThreshold);
+      const newTracks = await api.reprocessSession(sessionId, -threshold, 120);
       handleTracksChanged(newTracks);
       setSuccessMsg(`Reprocessed: ${newTracks.length} take${newTracks.length !== 1 ? "s" : ""} found`);
     } catch (err) {
@@ -180,7 +180,7 @@ export default function SessionDetail() {
         <div className="h-8 w-64 animate-pulse rounded bg-gray-800" />
         <div className="h-4 w-48 animate-pulse rounded bg-gray-800" />
       </div>
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-3 flex items-center gap-3">
         <div className="h-px flex-1 bg-gray-700" />
         <div className="h-4 w-12 animate-pulse rounded bg-gray-800" />
         <div className="h-px flex-1 bg-gray-700" />
@@ -198,7 +198,7 @@ export default function SessionDetail() {
       </div>
     </div>
   );
-  if (!session) return <p className="text-red-400">Session not found.</p>;
+  if (!session) return <p className="text-red-400">Recording not found.</p>;
 
   return (
     <div>
@@ -213,80 +213,105 @@ export default function SessionDetail() {
           </div>
         </div>
       )}
-      <div className="flex items-center justify-between">
-        <Link to="/" className="text-sm text-indigo-400 hover:text-indigo-300">
-          &larr; All Sessions
-        </Link>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setReprocessOpen(true)}
-            className="rounded px-2 py-1.5 text-xs text-gray-500 transition hover:text-gray-300"
-          >
-            Reprocess
-          </button>
-          <button
-            onClick={() => setConfirmDelete(true)}
-            className="rounded px-2 py-1.5 text-xs text-gray-500 transition hover:text-red-400"
-          >
-            Delete
-          </button>
-        </div>
-      </div>
+      <Link to="/" className="text-sm text-indigo-400 hover:text-indigo-300">
+        &larr; All Recordings
+      </Link>
 
-      <div className="mt-4 mb-6">
-        {/* Editable session name */}
-        {editingName ? (
-          <input
-            autoFocus
-            value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleSaveName();
-              if (e.key === "Escape") { setEditingName(false); setNameInput(session.name); }
-            }}
-            onBlur={handleSaveName}
-            className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-2xl font-bold text-white focus:border-indigo-500 focus:outline-none"
-          />
-        ) : (
-          <h1
-            onClick={() => setEditingName(true)}
-            className="cursor-pointer text-2xl font-bold hover:text-indigo-400"
-            title="Click to rename"
-          >
-            {session.name || session.source_file}
-          </h1>
-        )}
-
-        <p className="mt-1 text-gray-400">
-          {editingDate ? (
-            <input
-              type="date"
-              autoFocus
-              value={dateInput}
-              onChange={(e) => setDateInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSaveDate();
-                if (e.key === "Escape") { setEditingDate(false); setDateInput(session.date ?? ""); }
-              }}
-              onBlur={handleSaveDate}
-              className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
-            />
-          ) : (
-            <button
-              onClick={() => setEditingDate(true)}
-              className="hover:text-indigo-400"
-              title="Click to change date"
-            >
-              {formatDate(session.date)}
-            </button>
+      <div className="mt-1">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            {editingName && canEdit(user) ? (
+              <input
+                autoFocus
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveName();
+                  if (e.key === "Escape") { setEditingName(false); setNameInput(session.name); }
+                }}
+                onBlur={handleSaveName}
+                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-lg font-bold text-white focus:border-indigo-500 focus:outline-none"
+              />
+            ) : (
+              <h1
+                onClick={() => canEdit(user) && setEditingName(true)}
+                className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-indigo-400" : ""}`}
+                title={canEdit(user) ? "Click to rename" : undefined}
+              >
+                {session.name || session.source_file}
+                {session.group_name && user && user.groups.length > 1 && canAdmin(user) ? (
+                  <select
+                    value={session.group_id}
+                    onChange={async (e) => {
+                      try {
+                        const updated = await api.updateSessionGroup(sessionId, Number(e.target.value));
+                        setSession(updated);
+                        api.listSongs().then(setSongs);
+                      } catch (err) {
+                        showError(`Move failed: ${err instanceof Error ? err.message : err}`);
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="ml-2 rounded border border-transparent bg-transparent py-0 text-sm font-normal text-gray-500 hover:border-gray-700 hover:text-gray-300 focus:border-indigo-500 focus:outline-none"
+                  >
+                    {user!.groups.map((g) => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                ) : session.group_name ? (
+                  <span className="ml-2 text-sm font-normal text-gray-500">{session.group_name}</span>
+                ) : null}
+              </h1>
+            )}
+            <p className="mt-0.5 text-sm text-gray-400">
+              {editingDate && canEdit(user) ? (
+                <input
+                  type="date"
+                  autoFocus
+                  value={dateInput}
+                  onChange={(e) => setDateInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveDate();
+                    if (e.key === "Escape") { setEditingDate(false); setDateInput(session.date ?? ""); }
+                  }}
+                  onBlur={handleSaveDate}
+                  className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                />
+              ) : canEdit(user) ? (
+                <button
+                  onClick={() => setEditingDate(true)}
+                  className="hover:text-indigo-400"
+                  title="Click to change date"
+                >
+                  {formatDate(session.date)}
+                </button>
+              ) : (
+                <span>{formatDate(session.date)}</span>
+              )}
+              {" "}&middot; {session.track_count} take{session.track_count !== 1 ? "s" : ""} &middot;{" "}
+              {session.tagged_count} tagged
+            </p>
+          </div>
+          {canAdmin(user) && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setReprocessOpen(true)}
+                className="rounded px-2 py-1.5 text-xs text-gray-500 transition hover:text-gray-300"
+              >
+                Reprocess
+              </button>
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="rounded px-2 py-1.5 text-xs text-gray-500 transition hover:text-red-400"
+              >
+                Delete
+              </button>
+            </div>
           )}
-          {" "}&middot; {session.track_count} take{session.track_count !== 1 ? "s" : ""} &middot;{" "}
-          {session.tagged_count} tagged
-        </p>
+        </div>
 
-        {/* Session notes */}
-        <div className="mt-2">
-          {editingNotes ? (
+        <div className="mt-1">
+          {editingNotes && canEdit(user) ? (
             <textarea
               autoFocus
               value={notesInput}
@@ -296,29 +321,32 @@ export default function SessionDetail() {
                 if (e.key === "Escape") { setEditingNotes(false); setNotesInput(session.notes ?? ""); }
               }}
               onBlur={handleSaveSessionNotes}
-              placeholder="Add session notes..."
+              placeholder="Add notes..."
               rows={3}
-              className="w-full max-w-md rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+              className="w-full max-w-md rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
             />
           ) : session.notes ? (
-            <button
-              onClick={() => setEditingNotes(true)}
-              className="text-left text-sm whitespace-pre-wrap text-gray-400 italic hover:text-gray-300"
-            >
-              {session.notes}
-            </button>
-          ) : (
+            canEdit(user) ? (
+              <button
+                onClick={() => setEditingNotes(true)}
+                className="text-left text-sm whitespace-pre-wrap text-gray-400 italic hover:text-gray-300"
+              >
+                {session.notes}
+              </button>
+            ) : (
+              <p className="text-sm whitespace-pre-wrap text-gray-400 italic">{session.notes}</p>
+            )
+          ) : canEdit(user) ? (
             <button
               onClick={() => setEditingNotes(true)}
               className="text-sm text-gray-600 hover:text-gray-400"
             >
-              + add session notes
+              + add notes
             </button>
-          )}
+          ) : null}
         </div>
 
-        {/* Full session audio */}
-        <div className="mt-4 rounded-lg border border-gray-700 bg-gray-800/50 px-4 py-3">
+        <div className="mt-2 rounded-lg border border-gray-700 bg-gray-800/50 px-4 py-3">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">Full Recording</p>
           <AudioPlayer
             src={api.sessionAudioUrl(sessionId)}
@@ -330,7 +358,7 @@ export default function SessionDetail() {
         </div>
       </div>
 
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-6 mt-8 flex items-center gap-3">
         <div className="h-px flex-1 bg-gray-700" />
         <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Takes</span>
         <div className="h-px flex-1 bg-gray-700" />
@@ -346,7 +374,7 @@ export default function SessionDetail() {
               onTracksChanged={handleTracksChanged}
               onError={showError}
             />
-            {i < tracks.length - 1 && (
+            {i < tracks.length - 1 && canAdmin(user) && (
               <MergeButton
                 trackId={t.id}
                 nextTrackId={tracks[i + 1].id}
@@ -358,13 +386,36 @@ export default function SessionDetail() {
         ))}
       </div>
       {reprocessOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          onKeyDown={(e) => { if (e.key === "Escape") setReprocessOpen(false); }}
+        >
           <div className="absolute inset-0 bg-black/60" onClick={() => setReprocessOpen(false)} />
           <div className="relative mx-4 w-full max-w-sm rounded-lg border border-gray-700 bg-gray-900 px-6 py-5 shadow-xl">
-            <h3 className="text-sm font-semibold text-white">Wrong number of takes?</h3>
+            <h3 className="text-sm font-semibold text-white">Reprocess</h3>
             <p className="mt-2 text-sm text-gray-400">
               Current takes and tags will be replaced.
             </p>
+            <div className="mt-4">
+              <label className="block text-xs font-medium text-gray-400 mb-1">
+                Threshold (dB)
+              </label>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm text-gray-400">&minus;</span>
+                <input
+                  type="number"
+                  value={threshold}
+                  onChange={(e) => setThreshold(Number(e.target.value))}
+                  min={0}
+                  step={1}
+                  className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                />
+                <span className="text-sm text-gray-500">dB</span>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                Higher = more takes, lower = fewer takes
+              </p>
+            </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => setReprocessOpen(false)}
@@ -373,16 +424,10 @@ export default function SessionDetail() {
                 Cancel
               </button>
               <button
-                onClick={() => handleReprocess("looser")}
+                onClick={handleReprocess}
                 className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
               >
-                Too few
-              </button>
-              <button
-                onClick={() => handleReprocess("stricter")}
-                className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
-              >
-                Too many
+                Reprocess
               </button>
             </div>
           </div>
@@ -390,8 +435,8 @@ export default function SessionDetail() {
       )}
       <Modal
         open={confirmDelete}
-        title="Delete session"
-        message="Delete this session and all its takes? This cannot be undone."
+        title="Delete recording"
+        message="Delete this recording and all its takes? This cannot be undone."
         confirmLabel="Delete"
         variant="danger"
         onConfirm={handleDelete}

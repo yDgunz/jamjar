@@ -168,6 +168,18 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
         {formatTime(currentTime)} / {formatTime(duration)}
       </span>
 
+      {/* Download button */}
+      <a
+        href={src}
+        download
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-800 text-gray-400 transition hover:bg-gray-700 hover:text-white"
+        title="Download"
+      >
+        <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path d="M12 4v12m0 0l-4-4m4 4l4-4M4 18h16" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </a>
+
       {/* Progress bar — hidden on mobile */}
       <div
         ref={progressRef}

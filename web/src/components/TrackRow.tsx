@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { api } from "../api";
+import { api, canEdit, canAdmin } from "../api";
 import type { Track, Song } from "../api";
 import AudioPlayer from "./AudioPlayer";
 import Modal from "./Modal";
+import { useAuth } from "../context/AuthContext";
 
 function formatTime(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onError }: Props) {
+  const { user } = useAuth();
   const [tagging, setTagging] = useState(false);
   const [tagInput, setTagInput] = useState(track.song_name ?? "");
   const [editingNotes, setEditingNotes] = useState(false);
@@ -89,7 +91,7 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
 
       {/* Header row: take name + info */}
       <div className="mb-2 flex items-center gap-2">
-        {tagging ? (
+        {tagging && canEdit(user) ? (
           <div>
             <div className="flex items-center gap-2">
               <input
@@ -155,20 +157,24 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
             >
               {track.song_name}
             </Link>
-            <button
-              onClick={() => { setTagging(true); setTagInput(track.song_name ?? ""); }}
-              className="rounded py-1.5 px-2 text-xs text-gray-600 hover:text-gray-300"
-            >
-              edit
-            </button>
+            {canEdit(user) && (
+              <button
+                onClick={() => { setTagging(true); setTagInput(track.song_name ?? ""); }}
+                className="rounded py-1.5 px-2 text-xs text-gray-600 hover:text-gray-300"
+              >
+                edit
+              </button>
+            )}
           </div>
-        ) : (
+        ) : canEdit(user) ? (
           <button
             onClick={() => setTagging(true)}
             className="text-sm font-medium text-gray-500 hover:text-indigo-400"
           >
             Take {track.track_number}
           </button>
+        ) : (
+          <span className="text-sm font-medium text-gray-500">Take {track.track_number}</span>
         )}
 
         {!tagging && (
@@ -191,7 +197,7 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
       />
 
       {/* Split button — shown when paused mid-take */}
-      {canSplit && (
+      {canSplit && canAdmin(user) && (
         <div className="mt-2">
           <button
             onClick={() => setConfirmingSplit(true)}
@@ -216,7 +222,7 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
 
       {/* Notes */}
       <div className="mt-2">
-        {editingNotes ? (
+        {editingNotes && canEdit(user) ? (
           <textarea
             autoFocus
             value={notesInput}
@@ -231,20 +237,24 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
             className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-xs text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
           />
         ) : track.notes ? (
-          <button
-            onClick={() => setEditingNotes(true)}
-            className="text-left text-xs whitespace-pre-wrap text-gray-400 italic hover:text-gray-300"
-          >
-            {track.notes}
-          </button>
-        ) : (
+          canEdit(user) ? (
+            <button
+              onClick={() => setEditingNotes(true)}
+              className="text-left text-xs whitespace-pre-wrap text-gray-400 italic hover:text-gray-300"
+            >
+              {track.notes}
+            </button>
+          ) : (
+            <p className="text-xs whitespace-pre-wrap text-gray-400 italic">{track.notes}</p>
+          )
+        ) : canEdit(user) ? (
           <button
             onClick={() => setEditingNotes(true)}
             className="text-xs text-gray-600 hover:text-gray-400"
           >
             + add notes
           </button>
-        )}
+        ) : null}
       </div>
     </div>
   );

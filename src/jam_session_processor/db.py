@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL DEFAULT 'editor',
     password_hash TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -61,11 +62,15 @@ CREATE TABLE IF NOT EXISTS tracks (
 """
 
 
+VALID_ROLES = {"superadmin", "admin", "editor", "readonly"}
+
+
 @dataclass
 class User:
     id: int
     email: str
     name: str
+    role: str
     password_hash: str
     created_at: str
 
@@ -151,6 +156,13 @@ class Database:
     def _init_schema(self):
         self.conn.executescript(SCHEMA)
         self.conn.commit()
+        self._migrate()
+
+    def _migrate(self):
+        cols = {row["name"] for row in self.conn.execute("PRAGMA table_info(users)").fetchall()}
+        if "role" not in cols:
+            self.conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'editor'")
+            self.conn.commit()
 
     def close(self):
         self.conn.close()
@@ -169,10 +181,15 @@ class Database:
 
     # --- Users ---
 
-    def create_user(self, email: str, password_hash: str, name: str = "") -> int:
+    def create_user(
+        self, email: str, password_hash: str, name: str = "", role: str = "editor"
+    ) -> int:
+        if role not in VALID_ROLES:
+            valid = ", ".join(sorted(VALID_ROLES))
+            raise ValueError(f"Invalid role '{role}'. Must be one of: {valid}")
         cur = self.conn.execute(
-            "INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)",
-            (email, password_hash, name),
+            "INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?)",
+            (email, password_hash, name, role),
         )
         self.conn.commit()
         return cur.lastrowid
@@ -199,6 +216,18 @@ class Database:
         )
         self.conn.commit()
 
+    def update_user_role(self, user_id: int, role: str):
+        if role not in VALID_ROLES:
+            valid = ", ".join(sorted(VALID_ROLES))
+            raise ValueError(f"Invalid role '{role}'. Must be one of: {valid}")
+        self.conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
+        self.conn.commit()
+
+    def delete_user(self, user_id: int):
+        """Delete a user. CASCADE removes user_groups memberships."""
+        self.conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        self.conn.commit()
+
     # --- Groups ---
 
     def create_group(self, name: str) -> int:
@@ -221,6 +250,11 @@ class Database:
     def list_groups(self) -> list[Group]:
         rows = self.conn.execute("SELECT * FROM groups ORDER BY name").fetchall()
         return [Group(**row) for row in rows]
+
+    def delete_group(self, group_id: int):
+        """Delete a group. CASCADE removes sessions, songs, tracks, and memberships."""
+        self.conn.execute("DELETE FROM groups WHERE id = ?", (group_id,))
+        self.conn.commit()
 
     # --- Membership ---
 
@@ -329,18 +363,11 @@ class Database:
             return None
         return Session(**row)
 
-    def delete_session(self, session_id: int, delete_files: bool = False):
-        """Delete a session and its tracks. Optionally delete audio files."""
-        if delete_files:
-            from jam_session_processor.config import get_config
+    def delete_session(self, session_id: int):
+        """Delete a session and its tracks (DB only).
 
-            cfg = get_config()
-            tracks = self.get_tracks_for_session(session_id)
-            for t in tracks:
-                try:
-                    cfg.resolve_path(t.audio_path).unlink(missing_ok=True)
-                except OSError:
-                    pass
+        File cleanup is the caller's responsibility.
+        """
         self.conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
         self.conn.commit()
 
@@ -350,6 +377,20 @@ class Database:
 
     def update_session_notes(self, session_id: int, notes: str):
         self.conn.execute("UPDATE sessions SET notes = ? WHERE id = ?", (notes, session_id))
+        self.conn.commit()
+
+    def update_session_group(self, session_id: int, new_group_id: int):
+        """Move a session to a new group. Retags tracks with equivalent songs in the new group."""
+        tracks = self.get_tracks_for_session(session_id)
+        for t in tracks:
+            if t.song_id and t.song_name:
+                new_song_id = self._get_or_create_song(t.song_name, new_group_id)
+                self.conn.execute(
+                    "UPDATE tracks SET song_id = ? WHERE id = ?", (new_song_id, t.id)
+                )
+        self.conn.execute(
+            "UPDATE sessions SET group_id = ? WHERE id = ?", (new_group_id, session_id)
+        )
         self.conn.commit()
 
     # --- Tracks ---
@@ -495,6 +536,25 @@ class Database:
         self.conn.execute(
             "UPDATE songs SET chart = ?, lyrics = ?, notes = ? WHERE id = ?",
             (chart, lyrics, notes, song_id),
+        )
+        self.conn.commit()
+
+    def update_song_group(self, song_id: int, new_group_id: int):
+        """Move a song to a new group.
+
+        Raises ValueError if the target group already has a song with the same name.
+        """
+        song = self.conn.execute("SELECT name, group_id FROM songs WHERE id = ?", (song_id,)).fetchone()
+        if not song:
+            raise ValueError("Song not found")
+        existing = self.conn.execute(
+            "SELECT id FROM songs WHERE name = ? AND group_id = ? AND id != ?",
+            (song["name"], new_group_id, song_id),
+        ).fetchone()
+        if existing:
+            raise ValueError(f"A song named '{song['name']}' already exists in that group")
+        self.conn.execute(
+            "UPDATE songs SET group_id = ? WHERE id = ?", (new_group_id, song_id)
         )
         self.conn.commit()
 

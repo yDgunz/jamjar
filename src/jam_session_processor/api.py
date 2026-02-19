@@ -4,10 +4,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
-from jam_session_processor.auth import create_jwt, decode_jwt, verify_password
+from jam_session_processor.auth import create_jwt, decode_jwt, hash_password, verify_password
 from jam_session_processor.config import get_config
 from jam_session_processor.db import Database
 
@@ -107,6 +107,20 @@ def _get_group_ids(request: Request) -> list[int]:
     return request.state.group_ids
 
 
+_ROLE_LEVEL = {"readonly": 0, "editor": 1, "admin": 2, "superadmin": 3}
+
+
+def _require_role(request: Request, min_role: str):
+    """Raise 403 if the current user lacks the required role level."""
+    if request.state.auth_type == "api_key":
+        return  # API key = full access
+    user = request.state.user
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if _ROLE_LEVEL.get(user.role, 0) < _ROLE_LEVEL[min_role]:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+
 # --- Auth endpoints ---
 
 
@@ -124,6 +138,7 @@ class AuthUserResponse(BaseModel):
     id: int
     email: str
     name: str
+    role: str
     groups: list[AuthUserGroup]
 
 
@@ -140,6 +155,7 @@ def login(req: LoginRequest):
             "id": user.id,
             "email": user.email,
             "name": user.name,
+            "role": user.role,
             "groups": [{"id": g.id, "name": g.name} for g in groups],
         }
     )
@@ -165,6 +181,7 @@ def get_me(request: Request):
         id=user.id,
         email=user.email,
         name=user.name,
+        role=user.role,
         groups=[AuthUserGroup(id=g.id, name=g.name) for g in groups],
     )
 
@@ -207,6 +224,8 @@ class TrackResponse(BaseModel):
 
 class SongResponse(BaseModel):
     id: int
+    group_id: int
+    group_name: str = ""
     name: str
     chart: str = ""
     lyrics: str = ""
@@ -259,8 +278,12 @@ class DateRequest(BaseModel):
     date: str | None
 
 
+class GroupRequest(BaseModel):
+    group_id: int
+
+
 class ReprocessRequest(BaseModel):
-    threshold: float = -30.0
+    threshold: float = -25.0
     min_duration: int = 120
 
 
@@ -286,6 +309,14 @@ def _track_response(track) -> TrackResponse:
     d = track.__dict__.copy()
     d.pop("audio_path", None)
     return TrackResponse(**d)
+
+
+def _song_response(song) -> SongResponse:
+    db = get_db()
+    group = db.get_group(song.group_id)
+    d = song.__dict__.copy()
+    d["group_name"] = group.name if group else ""
+    return SongResponse(**d)
 
 
 def _song_track_response(row: dict) -> SongTrackResponse:
@@ -322,6 +353,7 @@ def update_session_name(session_id: int, req: NameRequest, request: Request):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _require_group_access(request, session.group_id)
+    _require_role(request, "editor")
     db.update_session_name(session_id, req.name)
     session = db.get_session(session_id)
     return _session_response(session)
@@ -334,6 +366,7 @@ def update_session_notes(session_id: int, req: NotesRequest, request: Request):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _require_group_access(request, session.group_id)
+    _require_role(request, "editor")
     db.update_session_notes(session_id, req.notes)
     session = db.get_session(session_id)
     return _session_response(session)
@@ -346,7 +379,24 @@ def update_session_date(session_id: int, req: DateRequest, request: Request):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _require_group_access(request, session.group_id)
+    _require_role(request, "editor")
     db.update_session_date(session_id, req.date)
+    session = db.get_session(session_id)
+    return _session_response(session)
+
+
+@app.put("/api/sessions/{session_id}/group", response_model=SessionResponse)
+def update_session_group(session_id: int, req: GroupRequest, request: Request):
+    db = get_db()
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    _require_group_access(request, session.group_id)
+    _require_group_access(request, req.group_id)
+    _require_role(request, "admin")
+    if not db.get_group(req.group_id):
+        raise HTTPException(status_code=400, detail="Group not found")
+    db.update_session_group(session_id, req.group_id)
     session = db.get_session(session_id)
     return _session_response(session)
 
@@ -357,22 +407,42 @@ class DeleteSessionRequest(BaseModel):
 
 @app.delete("/api/sessions/{session_id}")
 def delete_session(session_id: int, request: Request, req: DeleteSessionRequest | None = None):
+    from jam_session_processor.storage import get_storage
+
     db = get_db()
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _require_group_access(request, session.group_id)
-    db.delete_session(session_id, delete_files=req.delete_files if req else False)
+    _require_role(request, "admin")
+
+    if req and req.delete_files:
+        storage = get_storage()
+        tracks = db.get_tracks_for_session(session_id)
+        for t in tracks:
+            storage.delete(t.audio_path)
+        if session.source_file:
+            storage.delete(session.source_file)
+
+    db.delete_session(session_id)
     return {"ok": True}
 
 
 @app.get("/api/sessions/{session_id}/audio")
 def stream_session_audio(session_id: int, request: Request):
+    from jam_session_processor.storage import get_storage
+
     db = get_db()
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _require_group_access(request, session.group_id)
+
+    storage = get_storage()
+    redirect_url = storage.url(session.source_file)
+    if redirect_url:
+        return RedirectResponse(redirect_url, status_code=307)
+
     cfg = get_config()
     audio_path = cfg.resolve_path(session.source_file)
     if not audio_path.exists():
@@ -399,21 +469,27 @@ def get_session_tracks(session_id: int, request: Request):
 )
 def reprocess_session(session_id: int, req: ReprocessRequest, request: Request):
     """Re-run song detection on a session with new parameters."""
-    import os
-
     from jam_session_processor.fingerprint import compute_chroma_fingerprint
     from jam_session_processor.metadata import extract_metadata
     from jam_session_processor.output import export_segments
     from jam_session_processor.splitter import detect_songs
+    from jam_session_processor.storage import get_storage
 
     db = get_db()
     cfg = get_config()
+    storage = get_storage()
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _require_group_access(request, session.group_id)
+    _require_role(request, "admin")
 
     source = cfg.resolve_path(session.source_file)
+
+    # Ensure source file is local if using remote storage
+    if storage.is_remote:
+        source = storage.get(session.source_file, source)
+
     if not source.exists():
         raise HTTPException(status_code=404, detail="Source audio file not found on disk")
 
@@ -426,10 +502,7 @@ def reprocess_session(session_id: int, req: ReprocessRequest, request: Request):
 
     # Delete old tracks and their audio files
     for track in existing_tracks:
-        try:
-            os.remove(str(cfg.resolve_path(track.audio_path)))
-        except OSError:
-            pass
+        storage.delete(track.audio_path)
         db.delete_track(track.id)
 
     # Re-detect songs
@@ -457,14 +530,17 @@ def reprocess_session(session_id: int, req: ReprocessRequest, request: Request):
 
     for i, ((start, end), audio_path) in enumerate(zip(result.segments, exported), start=1):
         fp = compute_chroma_fingerprint(source, start_sec=start, duration_sec=end - start)
+        rel_path = cfg.make_relative(audio_path.resolve())
         db.create_track(
             session_id,
             track_number=i,
             start_sec=start,
             end_sec=end,
-            audio_path=cfg.make_relative(audio_path.resolve()),
+            audio_path=rel_path,
             fingerprint=fp,
         )
+        if storage.is_remote:
+            storage.put(rel_path, audio_path.resolve())
 
     return [_track_response(t) for t in db.get_tracks_for_session(session_id)]
 
@@ -479,6 +555,9 @@ async def upload_session(request: Request, file: UploadFile):
     from jam_session_processor.metadata import extract_metadata
     from jam_session_processor.output import export_segments
     from jam_session_processor.splitter import detect_songs
+    from jam_session_processor.storage import get_storage
+
+    _require_role(request, "admin")
 
     # Determine group_id
     if request.state.auth_type == "api_key":
@@ -565,10 +644,14 @@ async def upload_session(request: Request, file: UploadFile):
 
     source = dest.resolve()
 
+    # Parse optional threshold
+    threshold_str = request.query_params.get("threshold")
+    threshold = float(threshold_str) if threshold_str else -25.0
+
     # Run processing pipeline
     try:
         meta = extract_metadata(source)
-        result = detect_songs(source)
+        result = detect_songs(source, energy_threshold_db=threshold)
     except Exception as e:
         logger.exception("Upload processing failed")
         raise HTTPException(status_code=500, detail=f"Processing failed: {e}")
@@ -597,16 +680,22 @@ async def upload_session(request: Request, file: UploadFile):
                 output_dir,
                 session_date=meta.recording_date,
             )
+            storage = get_storage()
             for i, ((start, end), audio_path) in enumerate(zip(result.segments, exported), start=1):
                 fp = compute_chroma_fingerprint(source, start_sec=start, duration_sec=end - start)
+                rel_path = cfg.make_relative(audio_path.resolve())
                 db.create_track(
                     session_id,
                     track_number=i,
                     start_sec=start,
                     end_sec=end,
-                    audio_path=cfg.make_relative(audio_path.resolve()),
+                    audio_path=rel_path,
                     fingerprint=fp,
                 )
+                if storage.is_remote:
+                    storage.put(rel_path, audio_path.resolve())
+            if storage.is_remote:
+                storage.put(source_rel, source)
         except Exception as e:
             logger.exception("Upload export/fingerprint failed")
             raise HTTPException(status_code=500, detail=f"Export failed: {e}")
@@ -634,6 +723,7 @@ def _get_track_with_access(db: Database, track_id: int, request: Request):
 def tag_track(track_id: int, req: TagRequest, request: Request):
     db = get_db()
     track, session = _get_track_with_access(db, track_id, request)
+    _require_role(request, "editor")
     db.tag_track(track_id, req.song_name, session.group_id)
     track = db.get_track(track_id)
     return _track_response(track)
@@ -643,6 +733,7 @@ def tag_track(track_id: int, req: TagRequest, request: Request):
 def untag_track(track_id: int, request: Request):
     db = get_db()
     _get_track_with_access(db, track_id, request)
+    _require_role(request, "editor")
     db.untag_track(track_id)
     return {"ok": True}
 
@@ -651,6 +742,7 @@ def untag_track(track_id: int, request: Request):
 def update_track_notes(track_id: int, req: NotesRequest, request: Request):
     db = get_db()
     _get_track_with_access(db, track_id, request)
+    _require_role(request, "editor")
     db.update_track_notes(track_id, req.notes)
     track = db.get_track(track_id)
     return _track_response(track)
@@ -662,6 +754,7 @@ def merge_tracks_endpoint(track_id: int, req: MergeRequest, request: Request):
 
     db = get_db()
     _get_track_with_access(db, track_id, request)
+    _require_role(request, "admin")
     try:
         tracks = merge_tracks(db, track_id, req.other_track_id)
     except ValueError as e:
@@ -678,6 +771,7 @@ def split_track_endpoint(track_id: int, req: SplitRequest, request: Request):
 
     db = get_db()
     _get_track_with_access(db, track_id, request)
+    _require_role(request, "admin")
     try:
         tracks = split_track(db, track_id, req.split_at_sec)
     except ValueError as e:
@@ -689,8 +783,16 @@ def split_track_endpoint(track_id: int, req: SplitRequest, request: Request):
 
 @app.get("/api/tracks/{track_id}/audio")
 def stream_track_audio(track_id: int, request: Request):
+    from jam_session_processor.storage import get_storage
+
     db = get_db()
     track, _ = _get_track_with_access(db, track_id, request)
+
+    storage = get_storage()
+    redirect_url = storage.url(track.audio_path)
+    if redirect_url:
+        return RedirectResponse(redirect_url, status_code=307)
+
     cfg = get_config()
     audio_path = cfg.resolve_path(track.audio_path)
     if not audio_path.exists():
@@ -716,29 +818,31 @@ def _get_song_with_access(db: Database, song_id: int, request: Request):
 def list_songs(request: Request):
     db = get_db()
     group_ids = _get_group_ids(request)
-    return [SongResponse(**s.__dict__) for s in db.list_songs(group_ids)]
+    return [_song_response(s) for s in db.list_songs(group_ids)]
 
 
 @app.get("/api/songs/{song_id}", response_model=SongResponse)
 def get_song(song_id: int, request: Request):
     db = get_db()
     song = _get_song_with_access(db, song_id, request)
-    return SongResponse(**song.__dict__)
+    return _song_response(song)
 
 
 @app.put("/api/songs/{song_id}/details", response_model=SongResponse)
 def update_song_details(song_id: int, req: SongDetailsRequest, request: Request):
     db = get_db()
     _get_song_with_access(db, song_id, request)
+    _require_role(request, "editor")
     db.update_song_details(song_id, req.chart, req.lyrics, req.notes)
     song = db.get_song(song_id)
-    return SongResponse(**song.__dict__)
+    return _song_response(song)
 
 
 @app.delete("/api/songs/{song_id}")
 def delete_song(song_id: int, request: Request):
     db = get_db()
     _get_song_with_access(db, song_id, request)
+    _require_role(request, "admin")
     db.delete_song(song_id)
     return {"ok": True}
 
@@ -747,6 +851,7 @@ def delete_song(song_id: int, request: Request):
 def rename_song(song_id: int, req: NameRequest, request: Request):
     db = get_db()
     _get_song_with_access(db, song_id, request)
+    _require_role(request, "editor")
     try:
         db.rename_song(song_id, req.name.strip())
     except ValueError as e:
@@ -754,7 +859,23 @@ def rename_song(song_id: int, req: NameRequest, request: Request):
     song = db.get_song(song_id)
     if not song:
         raise HTTPException(status_code=404, detail="Song not found")
-    return SongResponse(**song.__dict__)
+    return _song_response(song)
+
+
+@app.put("/api/songs/{song_id}/group", response_model=SongResponse)
+def update_song_group(song_id: int, req: GroupRequest, request: Request):
+    db = get_db()
+    _get_song_with_access(db, song_id, request)
+    _require_group_access(request, req.group_id)
+    _require_role(request, "admin")
+    if not db.get_group(req.group_id):
+        raise HTTPException(status_code=400, detail="Group not found")
+    try:
+        db.update_song_group(song_id, req.group_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    song = db.get_song(song_id)
+    return _song_response(song)
 
 
 @app.get("/api/songs/{song_id}/tracks", response_model=list[SongTrackResponse])
@@ -763,6 +884,184 @@ def get_song_tracks(song_id: int, request: Request):
     _get_song_with_access(db, song_id, request)
     rows = db.get_tracks_for_song(song_id)
     return [_song_track_response(r) for r in rows]
+
+
+# --- Admin endpoints ---
+
+
+class AdminGroupBrief(BaseModel):
+    id: int
+    name: str
+
+
+class AdminUserResponse(BaseModel):
+    id: int
+    email: str
+    name: str
+    role: str
+    groups: list[AdminGroupBrief]
+
+
+class AdminGroupResponse(BaseModel):
+    id: int
+    name: str
+    member_count: int
+
+
+class CreateUserRequest(BaseModel):
+    email: str
+    password: str
+    name: str = ""
+    role: str = "editor"
+
+
+class PasswordRequest(BaseModel):
+    password: str
+
+
+class AssignGroupRequest(BaseModel):
+    group_id: int
+
+
+def _admin_user_response(db, user) -> AdminUserResponse:
+    groups = db.get_user_groups(user.id)
+    return AdminUserResponse(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        role=user.role,
+        groups=[AdminGroupBrief(id=g.id, name=g.name) for g in groups],
+    )
+
+
+def _admin_group_response(db, group) -> AdminGroupResponse:
+    count = db.conn.execute(
+        "SELECT COUNT(*) as cnt FROM user_groups WHERE group_id = ?", (group.id,)
+    ).fetchone()["cnt"]
+    return AdminGroupResponse(id=group.id, name=group.name, member_count=count)
+
+
+@app.get("/api/admin/users", response_model=list[AdminUserResponse])
+def admin_list_users(request: Request):
+    _require_role(request, "superadmin")
+    db = get_db()
+    return [_admin_user_response(db, u) for u in db.list_users()]
+
+
+@app.post("/api/admin/users", response_model=AdminUserResponse, status_code=201)
+def admin_create_user(req: CreateUserRequest, request: Request):
+    _require_role(request, "superadmin")
+    db = get_db()
+    if db.get_user_by_email(req.email):
+        raise HTTPException(status_code=400, detail="Email already exists")
+    from jam_session_processor.db import VALID_ROLES
+
+    if req.role not in VALID_ROLES:
+        valid = ", ".join(sorted(VALID_ROLES))
+        raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {valid}")
+    pw_hash = hash_password(req.password)
+    user_id = db.create_user(req.email, pw_hash, req.name, role=req.role)
+    user = db.get_user(user_id)
+    return _admin_user_response(db, user)
+
+
+@app.delete("/api/admin/users/{user_id}")
+def admin_delete_user(user_id: int, request: Request):
+    _require_role(request, "superadmin")
+    db = get_db()
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete_user(user_id)
+    return {"ok": True}
+
+
+@app.put("/api/admin/users/{user_id}/password")
+def admin_reset_password(user_id: int, req: PasswordRequest, request: Request):
+    _require_role(request, "superadmin")
+    db = get_db()
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    pw_hash = hash_password(req.password)
+    db.update_user_password(user_id, pw_hash)
+    return {"ok": True}
+
+
+class RoleRequest(BaseModel):
+    role: str
+
+
+@app.put("/api/admin/users/{user_id}/role", response_model=AdminUserResponse)
+def admin_update_role(user_id: int, req: RoleRequest, request: Request):
+    _require_role(request, "superadmin")
+    db = get_db()
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    from jam_session_processor.db import VALID_ROLES
+
+    if req.role not in VALID_ROLES:
+        valid = ", ".join(sorted(VALID_ROLES))
+        raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {valid}")
+    db.update_user_role(user_id, req.role)
+    user = db.get_user(user_id)
+    return _admin_user_response(db, user)
+
+
+@app.post("/api/admin/users/{user_id}/groups", response_model=AdminUserResponse)
+def admin_assign_user_to_group(user_id: int, req: AssignGroupRequest, request: Request):
+    _require_role(request, "superadmin")
+    db = get_db()
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not db.get_group(req.group_id):
+        raise HTTPException(status_code=404, detail="Group not found")
+    db.assign_user_to_group(user_id, req.group_id)
+    user = db.get_user(user_id)
+    return _admin_user_response(db, user)
+
+
+@app.delete("/api/admin/users/{user_id}/groups/{group_id}", response_model=AdminUserResponse)
+def admin_remove_user_from_group(user_id: int, group_id: int, request: Request):
+    _require_role(request, "superadmin")
+    db = get_db()
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.remove_user_from_group(user_id, group_id)
+    user = db.get_user(user_id)
+    return _admin_user_response(db, user)
+
+
+@app.get("/api/admin/groups", response_model=list[AdminGroupResponse])
+def admin_list_groups(request: Request):
+    _require_role(request, "superadmin")
+    db = get_db()
+    return [_admin_group_response(db, g) for g in db.list_groups()]
+
+
+@app.post("/api/admin/groups", response_model=AdminGroupResponse, status_code=201)
+def admin_create_group(req: NameRequest, request: Request):
+    _require_role(request, "superadmin")
+    db = get_db()
+    if db.get_group_by_name(req.name):
+        raise HTTPException(status_code=400, detail="Group name already exists")
+    group_id = db.create_group(req.name)
+    group = db.get_group(group_id)
+    return _admin_group_response(db, group)
+
+
+@app.delete("/api/admin/groups/{group_id}")
+def admin_delete_group(group_id: int, request: Request):
+    _require_role(request, "superadmin")
+    db = get_db()
+    group = db.get_group(group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    db.delete_group(group_id)
+    return {"ok": True}
 
 
 # --- SPA static file serving ---

@@ -121,7 +121,13 @@ def upload(file: Path, server: str, group: str, api_key: str):
 @cli.command("add-user")
 @click.argument("email")
 @click.option("--name", default="", help="Display name for the user.")
-def add_user(email: str, name: str):
+@click.option(
+    "--role",
+    type=click.Choice(["superadmin", "admin", "editor", "readonly"]),
+    default="editor",
+    help="User role (default: editor).",
+)
+def add_user(email: str, name: str, role: str):
     """Create a new user. Prompts for password."""
     from jam_session_processor.auth import hash_password
 
@@ -137,9 +143,9 @@ def add_user(email: str, name: str):
         db.close()
         raise SystemExit(1)
 
-    user_id = db.create_user(email, hash_password(password), name=name)
+    user_id = db.create_user(email, hash_password(password), name=name, role=role)
     db.close()
-    click.echo(f"Created user '{email}' (id={user_id})")
+    click.echo(f"Created user '{email}' (id={user_id}, role={role})")
 
 
 @cli.command("add-group")
@@ -218,7 +224,7 @@ def list_users():
         groups = db.get_user_groups(u.id)
         group_names = ", ".join(g.name for g in groups) or "(no groups)"
         name_part = f" ({u.name})" if u.name else ""
-        click.echo(f"  {u.email}{name_part} — {group_names}")
+        click.echo(f"  {u.email}{name_part} [{u.role}] — {group_names}")
     db.close()
 
 
@@ -272,3 +278,20 @@ def reset_password(email: str):
     db.update_user_password(user.id, hash_password(password))
     db.close()
     click.echo(f"Password updated for '{email}'")
+
+
+@cli.command("set-role")
+@click.argument("email")
+@click.argument("role", type=click.Choice(["superadmin", "admin", "editor", "readonly"]))
+def set_role(email: str, role: str):
+    """Set a user's role."""
+    db = _get_db()
+    user = db.get_user_by_email(email)
+    if not user:
+        click.echo(f"Error: User '{email}' not found")
+        db.close()
+        raise SystemExit(1)
+
+    db.update_user_role(user.id, role)
+    db.close()
+    click.echo(f"Updated '{email}' role to '{role}'")

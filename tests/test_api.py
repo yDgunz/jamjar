@@ -5,6 +5,7 @@ from jam_session_processor import api
 from jam_session_processor.auth import hash_password
 from jam_session_processor.config import reset_config
 from jam_session_processor.db import Database
+from jam_session_processor.storage import reset_storage
 
 
 @pytest.fixture
@@ -12,18 +13,24 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("JAM_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("JAM_JWT_SECRET", "test-secret")
     monkeypatch.setenv("JAM_API_KEY", "test-api-key")
+    monkeypatch.delenv("JAM_R2_BUCKET", raising=False)
+    monkeypatch.delenv("JAM_R2_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("JAM_R2_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("JAM_R2_SECRET_ACCESS_KEY", raising=False)
     reset_config()
+    reset_storage()
     db = Database(tmp_path / "test.db")
     api._db = db
     yield TestClient(api.app)
     db.close()
     api._db = None
+    reset_storage()
     reset_config()
 
 
-def _create_user_and_group(db, email="test@example.com", group_name="TestBand"):
+def _create_user_and_group(db, email="test@example.com", group_name="TestBand", role="admin"):
     """Create a user with a group and return (user_id, group_id)."""
-    uid = db.create_user(email, hash_password("password"), name="Test User")
+    uid = db.create_user(email, hash_password("password"), name="Test User", role=role)
     gid = db.create_group(group_name)
     db.assign_user_to_group(uid, gid)
     return uid, gid
@@ -299,6 +306,7 @@ def seeded_client_with_source(auth_client, tmp_path):
         patch("jam_session_processor.track_ops.export_segment", side_effect=mock_export),
         patch("jam_session_processor.track_ops.compute_chroma_fingerprint", return_value="mockfp"),
     ):
+        reset_storage()
         yield client
 
 
@@ -717,11 +725,11 @@ def test_song_track_source_file_is_basename(seeded_client):
 def test_cannot_see_other_groups_sessions(client, tmp_path):
     db = api._db
     # User 1 in Group A
-    uid1 = db.create_user("user1@example.com", hash_password("pw"), name="User1")
+    uid1 = db.create_user("user1@example.com", hash_password("pw"), name="User1", role="admin")
     gid_a = db.create_group("GroupA")
     db.assign_user_to_group(uid1, gid_a)
     # User 2 in Group B
-    uid2 = db.create_user("user2@example.com", hash_password("pw"), name="User2")
+    uid2 = db.create_user("user2@example.com", hash_password("pw"), name="User2", role="admin")
     gid_b = db.create_group("GroupB")
     db.assign_user_to_group(uid2, gid_b)
 
@@ -747,11 +755,11 @@ def test_cannot_see_other_groups_sessions(client, tmp_path):
 
 def test_cannot_see_other_groups_songs(client, tmp_path):
     db = api._db
-    uid1 = db.create_user("user1@example.com", hash_password("pw"))
+    uid1 = db.create_user("user1@example.com", hash_password("pw"), role="admin")
     gid_a = db.create_group("GroupA")
     db.assign_user_to_group(uid1, gid_a)
 
-    uid2 = db.create_user("user2@example.com", hash_password("pw"))
+    uid2 = db.create_user("user2@example.com", hash_password("pw"), role="admin")
     gid_b = db.create_group("GroupB")
     db.assign_user_to_group(uid2, gid_b)
 
@@ -770,3 +778,145 @@ def test_cannot_see_other_groups_songs(client, tmp_path):
     songs = client.get("/api/songs").json()
     assert len(songs) == 1
     assert songs[0]["name"] == "Song A"
+
+
+# --- Role enforcement tests ---
+
+
+def _login_as(client, db, email, role="editor", group_name="TestBand", group_id=None):
+    """Create a user with a role, assign to a group, and login."""
+    uid = db.create_user(email, hash_password("pw"), role=role)
+    if group_id is None:
+        group = db.get_group_by_name(group_name)
+        if not group:
+            group_id = db.create_group(group_name)
+        else:
+            group_id = group.id
+    db.assign_user_to_group(uid, group_id)
+    resp = client.post("/api/auth/login", json={"email": email, "password": "pw"})
+    assert resp.status_code == 200
+    return uid, group_id
+
+
+def test_login_includes_role(client):
+    db = api._db
+    _create_user_and_group(db, role="admin")
+    resp = client.post(
+        "/api/auth/login",
+        json={"email": "test@example.com", "password": "password"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["role"] == "admin"
+
+
+def test_get_me_includes_role(client):
+    db = api._db
+    _login_as(client, db, "editor@test.com", role="editor")
+    resp = client.get("/api/auth/me")
+    assert resp.status_code == 200
+    assert resp.json()["role"] == "editor"
+
+
+def test_readonly_cannot_edit_session_notes(client, tmp_path):
+    db = api._db
+    gid = db.create_group("Band")
+    uid, _ = _login_as(client, db, "readonly@test.com", role="readonly", group_id=gid)
+    sid = db.create_session("test.m4a", gid, date="2026-02-03")
+
+    resp = client.put(f"/api/sessions/{sid}/notes", json={"notes": "new notes"})
+    assert resp.status_code == 403
+
+
+def test_readonly_cannot_tag_track(client, tmp_path):
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "readonly@test.com", role="readonly", group_id=gid)
+    sid = db.create_session("test.m4a", gid, date="2026-02-03")
+    tid = db.create_track(sid, 1, 0, 300, "t.wav")
+
+    resp = client.post(f"/api/tracks/{tid}/tag", json={"song_name": "Song"})
+    assert resp.status_code == 403
+
+
+def test_readonly_can_view_sessions(client, tmp_path):
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "readonly@test.com", role="readonly", group_id=gid)
+    db.create_session("test.m4a", gid, date="2026-02-03")
+
+    resp = client.get("/api/sessions")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+
+
+def test_editor_cannot_delete_session(client, tmp_path):
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "editor@test.com", role="editor", group_id=gid)
+    sid = db.create_session("test.m4a", gid, date="2026-02-03")
+
+    resp = client.request("DELETE", f"/api/sessions/{sid}", json={"delete_files": False})
+    assert resp.status_code == 403
+
+
+def test_editor_can_edit_session_notes(client, tmp_path):
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "editor@test.com", role="editor", group_id=gid)
+    sid = db.create_session("test.m4a", gid, date="2026-02-03")
+
+    resp = client.put(f"/api/sessions/{sid}/notes", json={"notes": "new notes"})
+    assert resp.status_code == 200
+    assert resp.json()["notes"] == "new notes"
+
+
+def test_admin_cannot_access_admin_users(client, tmp_path):
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "admin@test.com", role="admin", group_id=gid)
+
+    resp = client.get("/api/admin/users")
+    assert resp.status_code == 403
+
+
+def test_superadmin_can_access_admin_users(client, tmp_path):
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "super@test.com", role="superadmin", group_id=gid)
+
+    resp = client.get("/api/admin/users")
+    assert resp.status_code == 200
+
+
+def test_superadmin_can_update_role(client, tmp_path):
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "super@test.com", role="superadmin", group_id=gid)
+    target_uid = db.create_user("target@test.com", hash_password("pw"), role="editor")
+
+    resp = client.put(f"/api/admin/users/{target_uid}/role", json={"role": "admin"})
+    assert resp.status_code == 200
+    assert resp.json()["role"] == "admin"
+
+
+def test_update_role_invalid(client, tmp_path):
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "super@test.com", role="superadmin", group_id=gid)
+    target_uid = db.create_user("target@test.com", hash_password("pw"), role="editor")
+
+    resp = client.put(f"/api/admin/users/{target_uid}/role", json={"role": "wizard"})
+    assert resp.status_code == 400
+
+
+def test_admin_create_user_with_role(client, tmp_path):
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "super@test.com", role="superadmin", group_id=gid)
+
+    resp = client.post(
+        "/api/admin/users",
+        json={"email": "new@test.com", "password": "pw", "name": "New", "role": "readonly"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["role"] == "readonly"

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router";
-import { api, formatDate } from "../api";
+import { api, formatDate, canEdit, canAdmin } from "../api";
 import type { Song, SongTrack } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
 import Modal, { Toast } from "../components/Modal";
+import { useAuth } from "../context/AuthContext";
 
 function formatTime(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -104,12 +105,14 @@ function EditableField({
   value,
   placeholder,
   mono,
+  readOnly,
   onSave,
 }: {
   label: string;
   value: string;
   placeholder: string;
   mono?: boolean;
+  readOnly?: boolean;
   onSave: (val: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -136,7 +139,7 @@ function EditableField({
       <label className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
         {label}
       </label>
-      {editing ? (
+      {editing && !readOnly ? (
         <div>
           <textarea
             autoFocus
@@ -167,13 +170,17 @@ function EditableField({
           </div>
         </div>
       ) : value ? (
-        <button
-          onClick={() => setEditing(true)}
-          className={`text-left text-sm whitespace-pre-wrap text-gray-300 hover:text-white ${mono ? "font-mono" : ""}`}
-        >
-          {value}
-        </button>
-      ) : (
+        readOnly ? (
+          <p className={`text-sm whitespace-pre-wrap text-gray-300 ${mono ? "font-mono" : ""}`}>{value}</p>
+        ) : (
+          <button
+            onClick={() => setEditing(true)}
+            className={`text-left text-sm whitespace-pre-wrap text-gray-300 hover:text-white ${mono ? "font-mono" : ""}`}
+          >
+            {value}
+          </button>
+        )
+      ) : readOnly ? null : (
         <button
           onClick={() => setEditing(true)}
           className="text-sm text-gray-600 hover:text-gray-400"
@@ -185,7 +192,7 @@ function EditableField({
   );
 }
 
-function TakeRow({ take, onUpdate }: { take: SongTrack; onUpdate: () => void }) {
+function TakeRow({ take, onUpdate, readOnly }: { take: SongTrack; onUpdate: () => void; readOnly?: boolean }) {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesInput, setNotesInput] = useState(take.notes ?? "");
 
@@ -213,7 +220,7 @@ function TakeRow({ take, onUpdate }: { take: SongTrack; onUpdate: () => void }) 
 
       {/* Notes */}
       <div className="mt-2">
-        {editingNotes ? (
+        {editingNotes && !readOnly ? (
           <textarea
             autoFocus
             value={notesInput}
@@ -228,13 +235,17 @@ function TakeRow({ take, onUpdate }: { take: SongTrack; onUpdate: () => void }) 
             className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-xs text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
           />
         ) : take.notes ? (
-          <button
-            onClick={() => setEditingNotes(true)}
-            className="text-left text-xs whitespace-pre-wrap text-gray-400 italic hover:text-gray-300"
-          >
-            {take.notes}
-          </button>
-        ) : (
+          readOnly ? (
+            <p className="text-xs whitespace-pre-wrap text-gray-400 italic">{take.notes}</p>
+          ) : (
+            <button
+              onClick={() => setEditingNotes(true)}
+              className="text-left text-xs whitespace-pre-wrap text-gray-400 italic hover:text-gray-300"
+            >
+              {take.notes}
+            </button>
+          )
+        ) : readOnly ? null : (
           <button
             onClick={() => setEditingNotes(true)}
             className="text-xs text-gray-600 hover:text-gray-400"
@@ -248,6 +259,7 @@ function TakeRow({ take, onUpdate }: { take: SongTrack; onUpdate: () => void }) 
 }
 
 export default function SongHistory() {
+  const { user } = useAuth();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const songId = Number(id);
@@ -348,66 +360,94 @@ export default function SongHistory() {
         &larr; Song Catalog
       </Link>
 
-      <div className="mt-4 mb-6">
-        <div className="flex items-center gap-3">
-          {editingName ? (
-            <input
-              autoFocus
-              value={nameInput}
-              onChange={(e) => setNameInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSaveName();
-                if (e.key === "Escape") { setEditingName(false); setNameInput(song?.name ?? ""); }
-              }}
-              onBlur={handleSaveName}
-              className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-2xl font-bold text-white focus:border-indigo-500 focus:outline-none"
-            />
-          ) : (
-            <h1
-              onClick={() => setEditingName(true)}
-              className="cursor-pointer text-2xl font-bold hover:text-indigo-400"
-              title="Click to rename"
-            >
-              {song?.name ?? "Unknown Song"}
-            </h1>
-          )}
-          {(song?.chart || song?.lyrics) && (
-            <Link
-              to={`/songs/${songId}/perform`}
-              className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500"
-            >
-              Perform
-            </Link>
-          )}
-          <button
-            onClick={() => setShowDelete(true)}
-            className="rounded px-3 py-1.5 text-xs text-gray-600 hover:bg-red-950 hover:text-red-400"
-            title="Delete song"
-          >
-            Delete
-          </button>
+      <div className="mt-1">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            {editingName && canEdit(user) ? (
+              <input
+                autoFocus
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveName();
+                  if (e.key === "Escape") { setEditingName(false); setNameInput(song?.name ?? ""); }
+                }}
+                onBlur={handleSaveName}
+                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-lg font-bold text-white focus:border-indigo-500 focus:outline-none"
+              />
+            ) : (
+              <h1
+                onClick={() => canEdit(user) && setEditingName(true)}
+                className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-indigo-400" : ""}`}
+                title={canEdit(user) ? "Click to rename" : undefined}
+              >
+                {song?.name ?? "Unknown Song"}
+                {song?.group_name && user && user.groups.length > 1 && canAdmin(user) ? (
+                  <select
+                    value={song.group_id}
+                    onChange={async (e) => {
+                      try {
+                        const updated = await api.updateSongGroup(songId, Number(e.target.value));
+                        setSong(updated);
+                      } catch (err) {
+                        setErrorMsg(`Move failed: ${err instanceof Error ? err.message : err}`);
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="ml-2 rounded border border-transparent bg-transparent py-0 text-sm font-normal text-gray-500 hover:border-gray-700 hover:text-gray-300 focus:border-indigo-500 focus:outline-none"
+                  >
+                    {user!.groups.map((g) => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                ) : song?.group_name ? (
+                  <span className="ml-2 text-sm font-normal text-gray-500">{song.group_name}</span>
+                ) : null}
+              </h1>
+            )}
+            <p className="mt-0.5 text-sm text-gray-400">
+              {takes.length} take{takes.length !== 1 ? "s" : ""}
+              {song?.first_date && song?.last_date && (
+                <span>
+                  {" "}&middot;{" "}
+                  {song.first_date === song.last_date
+                    ? formatDate(song.first_date)
+                    : `${formatDate(song.first_date)} — ${formatDate(song.last_date)}`}
+                </span>
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-1">
+            {(song?.chart || song?.lyrics) && (
+              <Link
+                to={`/songs/${songId}/perform`}
+                className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500"
+              >
+                Perform
+              </Link>
+            )}
+            {canAdmin(user) && (
+              <button
+                onClick={() => setShowDelete(true)}
+                className="rounded px-3 py-1.5 text-xs text-gray-600 hover:bg-red-950 hover:text-red-400"
+                title="Delete song"
+              >
+                Delete
+              </button>
+            )}
+          </div>
         </div>
-        <p className="mt-1 text-gray-400">
-          {takes.length} take{takes.length !== 1 ? "s" : ""}
-          {song?.first_date && song?.last_date && (
-            <span>
-              {" "}&middot;{" "}
-              {song.first_date === song.last_date
-                ? formatDate(song.first_date)
-                : `${formatDate(song.first_date)} — ${formatDate(song.last_date)}`}
-            </span>
-          )}
-        </p>
       </div>
 
       {/* Song metadata */}
-      <div className="mb-6 space-y-4 rounded-lg border border-gray-800 bg-gray-900 p-4">
+      <div className="mb-4 space-y-4 rounded-lg border border-gray-800 bg-gray-900 p-4">
         <div>
           <EditableField
             label="Chart"
             value={song?.chart ?? ""}
             placeholder="Add chart (e.g. Intro: Am | G | F | E)"
             mono
+            readOnly={!canEdit(user)}
             onSave={(v) => handleSaveField("chart", v)}
           />
           {song?.chart && <RootNoteTabs chart={song.chart} />}
@@ -417,12 +457,14 @@ export default function SongHistory() {
             label="Lyrics"
             value={song?.lyrics ?? ""}
             placeholder="Add lyrics"
+            readOnly={!canEdit(user)}
             onSave={(v) => handleSaveField("lyrics", v)}
           />
           <EditableField
             label="Notes"
             value={song?.notes ?? ""}
             placeholder="Add notes"
+            readOnly={!canEdit(user)}
             onSave={(v) => handleSaveField("notes", v)}
           />
         </div>
@@ -433,7 +475,7 @@ export default function SongHistory() {
       ) : (
         <div className="space-y-2">
           {takes.map((take) => (
-            <TakeRow key={take.id} take={take} onUpdate={refresh} />
+            <TakeRow key={take.id} take={take} onUpdate={refresh} readOnly={!canEdit(user)} />
           ))}
         </div>
       )}

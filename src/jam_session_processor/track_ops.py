@@ -4,7 +4,6 @@ Orchestrates re-export from source files, fingerprinting, DB updates,
 and file renaming when tracks are merged or split.
 """
 
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from jam_session_processor.db import Database, Track
 from jam_session_processor.fingerprint import compute_chroma_fingerprint
 from jam_session_processor.output import generate_output_name
 from jam_session_processor.splitter import DEFAULT_FORMAT, AudioFormat, export_segment
+from jam_session_processor.storage import get_storage
 
 
 def merge_tracks(
@@ -41,10 +41,15 @@ def merge_tracks(
         raise ValueError("Tracks must be adjacent")
 
     cfg = get_config()
+    storage = get_storage()
     session = db.get_session(t1.session_id)
     source_file = cfg.resolve_path(session.source_file)
     session_date = _parse_date(session.date)
     output_dir = cfg.resolve_path(t1.audio_path).parent
+
+    # Ensure source file is local if using remote storage
+    if storage.is_remote:
+        source_file = storage.get(session.source_file, source_file)
 
     # New time range spans both tracks
     new_start = t1.start_sec
@@ -75,20 +80,25 @@ def merge_tracks(
     notes = t1.notes
 
     # Remove old audio files
-    _safe_remove(str(cfg.resolve_path(t1.audio_path)))
-    _safe_remove(str(cfg.resolve_path(t2.audio_path)))
+    storage.delete(t1.audio_path)
+    storage.delete(t2.audio_path)
 
     # Delete both old tracks, create merged track
     db.delete_track(t1.id)
     db.delete_track(t2.id)
+    new_rel_path = cfg.make_relative(new_path)
     new_track_id = db.create_track(
         session_id=session.id,
         track_number=t1.track_number,
         start_sec=new_start,
         end_sec=new_end,
-        audio_path=cfg.make_relative(new_path),
+        audio_path=new_rel_path,
         fingerprint=fp,
     )
+
+    # Upload new file to remote storage
+    if storage.is_remote:
+        storage.put(new_rel_path, new_path)
 
     # Restore tag and notes
     if song_id:
@@ -125,10 +135,15 @@ def split_track(
     absolute_split = track.start_sec + split_at_sec
 
     cfg = get_config()
+    storage = get_storage()
     session = db.get_session(track.session_id)
     source_file = cfg.resolve_path(session.source_file)
     session_date = _parse_date(session.date)
     output_dir = cfg.resolve_path(track.audio_path).parent
+
+    # Ensure source file is local if using remote storage
+    if storage.is_remote:
+        source_file = storage.get(session.source_file, source_file)
 
     total_tracks = len(db.get_tracks_for_session(session.id)) + 1
 
@@ -171,18 +186,22 @@ def split_track(
     notes = track.notes
 
     # Remove old audio file and DB row
-    _safe_remove(str(cfg.resolve_path(track.audio_path)))
+    storage.delete(track.audio_path)
     db.delete_track(track.id)
 
     # Create first half (keeps metadata)
+    rel_path_1 = cfg.make_relative(path_1)
     first_id = db.create_track(
         session_id=session.id,
         track_number=track.track_number,
         start_sec=track.start_sec,
         end_sec=absolute_split,
-        audio_path=cfg.make_relative(path_1),
+        audio_path=rel_path_1,
         fingerprint=fp_1,
     )
+    if storage.is_remote:
+        storage.put(rel_path_1, path_1)
+
     if song_id:
         db.conn.execute("UPDATE tracks SET song_id = ? WHERE id = ?", (song_id, first_id))
         db.conn.commit()
@@ -190,14 +209,17 @@ def split_track(
         db.update_track_notes(first_id, notes)
 
     # Create second half (blank)
+    rel_path_2 = cfg.make_relative(path_2)
     db.create_track(
         session_id=session.id,
         track_number=track.track_number + 1,
         start_sec=absolute_split,
         end_sec=track.end_sec,
-        audio_path=cfg.make_relative(path_2),
+        audio_path=rel_path_2,
         fingerprint=fp_2,
     )
+    if storage.is_remote:
+        storage.put(rel_path_2, path_2)
 
     # Renumber all tracks in the session
     _renumber_tracks(db, session.id, session_date, output_dir, audio_format=audio_format)
@@ -214,7 +236,7 @@ def _renumber_tracks(
 ):
     """Renumber all tracks in a session sequentially by start_sec.
 
-    Updates track_number and renames audio files on disk to match.
+    Updates track_number and renames audio files in storage to match.
     """
     tracks = db.get_tracks_for_session(session_id)
     # Sort by start_sec for correct ordering after merge/split
@@ -222,6 +244,7 @@ def _renumber_tracks(
     total = len(tracks)
 
     cfg = get_config()
+    storage = get_storage()
     for i, track in enumerate(tracks, start=1):
         expected_num = i
         if track.track_number != expected_num:
@@ -234,11 +257,10 @@ def _renumber_tracks(
                 extension=audio_format.extension,
             )
             new_path = output_dir / new_name
-            old_path = cfg.resolve_path(track.audio_path)
-            if old_path.exists() and old_path != new_path:
-                old_path.rename(new_path)
+            new_rel = cfg.make_relative(new_path)
+            storage.rename(track.audio_path, new_rel)
             db.update_track(
-                track.id, track_number=expected_num, audio_path=cfg.make_relative(new_path)
+                track.id, track_number=expected_num, audio_path=new_rel
             )
 
 
@@ -250,11 +272,3 @@ def _parse_date(date_str: str | None) -> datetime | None:
         return datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError:
         return None
-
-
-def _safe_remove(path: str):
-    """Remove a file if it exists, ignore if it doesn't."""
-    try:
-        os.remove(path)
-    except OSError:
-        pass

@@ -10,23 +10,11 @@ services:
       - JAM_STATIC_DIR=/app/static
       - JAM_JWT_SECRET=${JAM_JWT_SECRET}
       - JAM_API_KEY=${JAM_API_KEY}
-    restart: unless-stopped
-
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy-data:/data
-      - caddy-config:/config
-    environment:
-      - JAM_DOMAIN=${JAM_DOMAIN:-localhost}
+      - JAM_R2_ACCOUNT_ID=${JAM_R2_ACCOUNT_ID:-}
+      - JAM_R2_ACCESS_KEY_ID=${JAM_R2_ACCESS_KEY_ID:-}
+      - JAM_R2_SECRET_ACCESS_KEY=${JAM_R2_SECRET_ACCESS_KEY:-}
+      - JAM_R2_BUCKET=${JAM_R2_BUCKET:-}
     restart: unless-stopped
 
 volumes:
   jam-data:
-  caddy-data:
-  caddy-config:

@@ -2,8 +2,23 @@ from unittest.mock import patch
 
 import pytest
 
+from jam_session_processor.config import reset_config
 from jam_session_processor.db import Database
+from jam_session_processor.storage import reset_storage
 from jam_session_processor.track_ops import merge_tracks, split_track
+
+
+@pytest.fixture(autouse=True)
+def _clean_singletons(monkeypatch):
+    monkeypatch.delenv("JAM_R2_BUCKET", raising=False)
+    monkeypatch.delenv("JAM_R2_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("JAM_R2_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("JAM_R2_SECRET_ACCESS_KEY", raising=False)
+    reset_config()
+    reset_storage()
+    yield
+    reset_storage()
+    reset_config()
 
 
 @pytest.fixture

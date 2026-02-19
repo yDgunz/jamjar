@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { isSuperAdmin } from "./api";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import SessionList from "./pages/SessionList";
@@ -7,6 +8,7 @@ import SessionDetail from "./pages/SessionDetail";
 import SongCatalog from "./pages/SongCatalog";
 import SongHistory from "./pages/SongHistory";
 import PerformMode from "./pages/PerformMode";
+import Admin from "./pages/Admin";
 
 function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
@@ -16,7 +18,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       <header className="border-b border-gray-800 px-4 py-3">
         <div className="mx-auto flex max-w-5xl items-center gap-8">
           <span className="text-xl font-bold text-white">
-            <span className="sm:hidden">Jam Sessions</span>
+            <span className="sm:hidden">Jam Recordings</span>
             <span className="hidden sm:inline">Jam Session Processor</span>
           </span>
           <nav className="flex flex-1 gap-4 text-sm">
@@ -27,7 +29,7 @@ function Layout({ children }: { children: React.ReactNode }) {
                 `py-2 px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
               }
             >
-              Sessions
+              Recordings
             </NavLink>
             <NavLink
               to="/songs"
@@ -37,6 +39,16 @@ function Layout({ children }: { children: React.ReactNode }) {
             >
               Songs
             </NavLink>
+            {isSuperAdmin(user) && (
+              <NavLink
+                to="/admin"
+                className={({ isActive }) =>
+                  `py-2 px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
+                }
+              >
+                Admin
+              </NavLink>
+            )}
           </nav>
           {user && (
             <div className="flex items-center gap-3 text-sm">
@@ -51,7 +63,7 @@ function Layout({ children }: { children: React.ReactNode }) {
           )}
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-4 sm:px-6 sm:py-8">
+      <main className="mx-auto max-w-5xl px-4 py-3 sm:px-6 sm:py-4">
         {children}
       </main>
     </div>
@@ -73,6 +85,7 @@ function AuthenticatedApp() {
               <Route path="/sessions/:id" element={<SessionDetail />} />
               <Route path="/songs" element={<SongCatalog />} />
               <Route path="/songs/:id" element={<SongHistory />} />
+              <Route path="/admin" element={<Admin />} />
             </Routes>
           </Layout>
         } />

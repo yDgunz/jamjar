@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { api, formatDate } from "../api";
+import { api, formatDate, canAdmin } from "../api";
 import type { Session } from "../api";
 import { useAuth } from "../context/AuthContext";
-import GroupSelector from "../components/GroupSelector";
 
 function formatMonthHeader(yearMonth: string): string {
   if (yearMonth === "unknown") return "Unknown Date";
@@ -30,14 +29,16 @@ export default function SessionList() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
+  const [groupFilter, setGroupFilter] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("Uploading...");
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadGroupId, setUploadGroupId] = useState<number | null>(
-    user && user.groups.length === 1 ? user.groups[0].id : null,
-  );
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadGroupId, setUploadGroupId] = useState<number | null>(null);
+  const [uploadThreshold, setUploadThreshold] = useState(25);
   const navigate = useNavigate();
+  const multiGroup = user != null && user.groups.length > 1;
 
   useEffect(() => {
     api.listSessions().then((data) => {
@@ -46,50 +47,65 @@ export default function SessionList() {
     });
   }, []);
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const openUploadModal = () => {
+    setSelectedFile(null);
+    setUploadThreshold(25);
+    // Pre-populate group: use filter if set, or auto-select if single group
+    const groups = user?.groups ?? [];
+    if (groups.length === 1) {
+      setUploadGroupId(groups[0].id);
+    } else if (groupFilter !== null) {
+      setUploadGroupId(groupFilter);
+    } else {
+      setUploadGroupId(null);
+    }
+    setUploadError(null);
+    setUploadModalOpen(true);
+  };
 
-    // Multi-group users must select a group first
+  const handleUpload = async () => {
+    if (!selectedFile) return;
+
     const groups = user?.groups ?? [];
     const groupId = groups.length === 1 ? groups[0].id : uploadGroupId;
     if (groups.length > 1 && !groupId) {
-      setUploadError("Select a group before uploading");
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      setUploadError("Select a group");
       return;
     }
 
+    setUploadModalOpen(false);
     setUploading(true);
     setUploadStatus("Uploading...");
     setUploadError(null);
     const timer = setTimeout(() => setUploadStatus("Processing \u2014 this may take a minute..."), 2000);
     try {
-      const session = await api.uploadSession(file, groupId ?? undefined);
+      const threshold = uploadThreshold !== 25 ? -uploadThreshold : undefined;
+      const session = await api.uploadSession(selectedFile, groupId ?? undefined, threshold);
       navigate(`/sessions/${session.id}`);
     } catch (err: unknown) {
       setUploadError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       clearTimeout(timer);
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
-  const filtered = filter.trim()
-    ? sessions.filter((s) => {
-        const q = filter.toLowerCase();
-        return (s.name || s.source_file).toLowerCase().includes(q)
-          || (s.song_names || "").toLowerCase().includes(q);
-      })
-    : sessions;
+  const filtered = sessions.filter((s) => {
+    if (groupFilter !== null && s.group_id !== groupFilter) return false;
+    if (filter.trim()) {
+      const q = filter.toLowerCase();
+      return (s.name || s.source_file).toLowerCase().includes(q)
+        || (s.song_names || "").toLowerCase().includes(q);
+    }
+    return true;
+  });
 
   if (loading) return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
-        <div className="h-8 w-32 animate-pulse rounded bg-gray-800" />
-        <div className="h-10 w-36 animate-pulse rounded bg-gray-800" />
+      <div className="mb-3 flex items-center gap-2">
+        <div className="h-8 w-44 animate-pulse rounded bg-gray-800" />
+        <div className="ml-auto h-8 w-24 animate-pulse rounded bg-gray-800" />
       </div>
-      <div className="mb-4 h-9 w-64 animate-pulse rounded bg-gray-800" />
       <div className="space-y-3">
         {[1, 2, 3, 4].map((i) => (
           <div key={i} className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4">
@@ -122,46 +138,60 @@ export default function SessionList() {
           </div>
         </div>
       )}
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Sessions</h1>
-        <div className="flex items-center gap-3">
-          {uploadError && (
-            <span className="text-sm text-red-400">{uploadError}</span>
-          )}
-          {user && user.groups.length > 1 && (
-            <GroupSelector
-              groups={user.groups}
-              value={uploadGroupId}
-              onChange={setUploadGroupId}
-            />
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".m4a,.wav,.mp3,.flac,.ogg"
-            onChange={handleUpload}
-            className="hidden"
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
-          >
-            {uploading ? "Processing..." : "Upload Session"}
-          </button>
-        </div>
+      <div className="mb-3 flex items-center gap-2">
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter..."
+          className="w-44 rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+        />
+        {multiGroup && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setGroupFilter(null)}
+              className={`rounded px-2.5 py-1.5 text-xs transition ${
+                groupFilter === null
+                  ? "bg-indigo-600 text-white"
+                  : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+              }`}
+            >
+              All
+            </button>
+            {user!.groups.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => setGroupFilter(g.id)}
+                className={`rounded px-2.5 py-1.5 text-xs transition ${
+                  groupFilter === g.id
+                    ? "bg-indigo-600 text-white"
+                    : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+                }`}
+              >
+                {g.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {canAdmin(user) && (
+          <div className="ml-auto flex items-center gap-2">
+            {uploadError && (
+              <span className="text-sm text-red-400">{uploadError}</span>
+            )}
+            <button
+              onClick={openUploadModal}
+              disabled={uploading}
+              className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+            >
+              Upload
+            </button>
+          </div>
+        )}
       </div>
       {sessions.length === 0 && (
         <p className="text-gray-400">
-          No sessions yet. Upload a recording to get started.
+          No recordings yet. Upload a recording to get started.
         </p>
       )}
-      <input
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        placeholder="Filter sessions..."
-        className="mb-4 w-full max-w-sm rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
-      />
       <div className="space-y-6">
         {monthGroups.map(([month, group]) => (
           <div key={month}>
@@ -176,7 +206,12 @@ export default function SessionList() {
                   className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4 transition hover:border-indigo-500 hover:bg-gray-800"
                 >
                   <div>
-                    <div className="font-medium text-white">{s.name || s.source_file}</div>
+                    <div className="font-medium text-white">
+                      {s.name || s.source_file}
+                      {multiGroup && !groupFilter && s.group_name && (
+                        <span className="ml-2 text-xs font-normal text-gray-500">{s.group_name}</span>
+                      )}
+                    </div>
                     <div className="mt-1 text-sm text-gray-400">
                       {formatDate(s.date)}
                     </div>
@@ -207,6 +242,77 @@ export default function SessionList() {
           </div>
         ))}
       </div>
+      {uploadModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          onKeyDown={(e) => { if (e.key === "Escape") setUploadModalOpen(false); }}
+        >
+          <div className="absolute inset-0 bg-black/60" onClick={() => setUploadModalOpen(false)} />
+          <div className="relative mx-4 w-full max-w-sm rounded-lg border border-gray-700 bg-gray-900 px-6 py-5 shadow-xl">
+            <h3 className="text-sm font-semibold text-white">Upload Recording</h3>
+            <div className="mt-4 space-y-4">
+              <div>
+                <input
+                  type="file"
+                  accept=".m4a,.wav,.mp3,.flac,.ogg"
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+                  className="w-full text-sm text-gray-300 file:mr-3 file:rounded file:border-0 file:bg-gray-800 file:px-3 file:py-1.5 file:text-sm file:text-gray-300 hover:file:bg-gray-700"
+                />
+              </div>
+              {multiGroup && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1">Group</label>
+                  <select
+                    value={uploadGroupId ?? ""}
+                    onChange={(e) => setUploadGroupId(e.target.value ? Number(e.target.value) : null)}
+                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="">Select a group...</option>
+                    {user!.groups.map((g) => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">
+                  Threshold (dB)
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-gray-400">&minus;</span>
+                  <input
+                    type="number"
+                    value={uploadThreshold}
+                    onChange={(e) => setUploadThreshold(Number(e.target.value))}
+                    min={0}
+                    step={1}
+                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  />
+                  <span className="text-sm text-gray-500">dB</span>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Higher = more takes, lower = fewer takes
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setUploadModalOpen(false)}
+                className="rounded px-4 py-2 text-sm text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpload}
+                disabled={!selectedFile || (multiGroup && !uploadGroupId)}
+                className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+              >
+                Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
