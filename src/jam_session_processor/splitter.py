@@ -4,7 +4,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_ENERGY_THRESHOLD_DB = -30
+DEFAULT_ENERGY_THRESHOLD_DB = -20
 DEFAULT_MIN_SONG_DURATION_SEC = 120
 ANALYSIS_SAMPLE_RATE = 8000
 WINDOW_SEC = 1

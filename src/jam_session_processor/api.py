@@ -283,7 +283,7 @@ class GroupRequest(BaseModel):
 
 
 class ReprocessRequest(BaseModel):
-    threshold: float = -25.0
+    threshold: float = -20.0
     min_duration: int = 120
     single: bool = False
 
@@ -651,7 +651,7 @@ async def upload_session(request: Request, file: UploadFile):
 
     # Parse optional threshold and single-song mode
     threshold_str = request.query_params.get("threshold")
-    threshold = float(threshold_str) if threshold_str else -25.0
+    threshold = float(threshold_str) if threshold_str else -20.0
     single = request.query_params.get("single") == "true"
 
     # Run processing pipeline

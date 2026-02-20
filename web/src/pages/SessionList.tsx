@@ -36,7 +36,7 @@ export default function SessionList() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadGroupId, setUploadGroupId] = useState<number | null>(null);
-  const [uploadThreshold, setUploadThreshold] = useState(25);
+  const [uploadThreshold, setUploadThreshold] = useState(20);
   const [singleSong, setSingleSong] = useState(false);
   const navigate = useNavigate();
   const multiGroup = user != null && user.groups.length > 1;
@@ -50,7 +50,7 @@ export default function SessionList() {
 
   const openUploadModal = () => {
     setSelectedFile(null);
-    setUploadThreshold(25);
+    setUploadThreshold(20);
     setSingleSong(false);
     // Pre-populate group: use filter if set, or auto-select if single group
     const groups = user?.groups ?? [];
@@ -81,7 +81,7 @@ export default function SessionList() {
     setUploadError(null);
     const timer = setTimeout(() => setUploadStatus("Processing \u2014 this may take a minute..."), 2000);
     try {
-      const threshold = uploadThreshold !== 25 ? -uploadThreshold : undefined;
+      const threshold = uploadThreshold !== 20 ? -uploadThreshold : undefined;
       const session = await api.uploadSession(selectedFile, groupId ?? undefined, threshold, singleSong || undefined);
       navigate(`/sessions/${session.id}`);
     } catch (err: unknown) {

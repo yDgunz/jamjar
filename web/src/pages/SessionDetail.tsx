@@ -84,7 +84,7 @@ export default function SessionDetail() {
   const [notesInput, setNotesInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [threshold, setThreshold] = useState(25);
+  const [threshold, setThreshold] = useState(20);
   const [reprocessing, setReprocessing] = useState(false);
   const [reprocessOpen, setReprocessOpen] = useState(false);
   const [singleSong, setSingleSong] = useState(false);
