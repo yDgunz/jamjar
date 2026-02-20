@@ -348,14 +348,6 @@ No test framework installed. No test files exist. All 2,100+ lines are untested.
 
 ## Roadmap
 
-### Done
-
-- Cloudflare DNS + HTTPS via proxy (orange cloud)
-- R2 audio storage with custom domain (`audio.jam-jar.app`)
-- Storage abstraction layer (`storage.py`) — local filesystem + R2 backends
-- Auth, groups, role-based access
-- CI/CD deploy to VPS via GitHub Actions
-
 ### Now
 
 - Clean up local `input/` and `output/` on Docker volume (save disk after R2 migration)

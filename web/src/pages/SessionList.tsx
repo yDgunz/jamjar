@@ -37,6 +37,7 @@ export default function SessionList() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadGroupId, setUploadGroupId] = useState<number | null>(null);
   const [uploadThreshold, setUploadThreshold] = useState(25);
+  const [singleSong, setSingleSong] = useState(false);
   const navigate = useNavigate();
   const multiGroup = user != null && user.groups.length > 1;
 
@@ -50,6 +51,7 @@ export default function SessionList() {
   const openUploadModal = () => {
     setSelectedFile(null);
     setUploadThreshold(25);
+    setSingleSong(false);
     // Pre-populate group: use filter if set, or auto-select if single group
     const groups = user?.groups ?? [];
     if (groups.length === 1) {
@@ -80,7 +82,7 @@ export default function SessionList() {
     const timer = setTimeout(() => setUploadStatus("Processing \u2014 this may take a minute..."), 2000);
     try {
       const threshold = uploadThreshold !== 25 ? -uploadThreshold : undefined;
-      const session = await api.uploadSession(selectedFile, groupId ?? undefined, threshold);
+      const session = await api.uploadSession(selectedFile, groupId ?? undefined, threshold, singleSong || undefined);
       navigate(`/sessions/${session.id}`);
     } catch (err: unknown) {
       setUploadError(err instanceof Error ? err.message : "Upload failed");
@@ -274,6 +276,16 @@ export default function SessionList() {
                   </select>
                 </div>
               )}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={singleSong}
+                  onChange={(e) => setSingleSong(e.target.checked)}
+                  className="rounded border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0"
+                />
+                <span className="text-sm text-gray-300">Single song recording</span>
+              </label>
+              {!singleSong && (
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1">
                   Threshold (dB)
@@ -294,6 +306,7 @@ export default function SessionList() {
                   Higher = more takes, lower = fewer takes
                 </p>
               </div>
+              )}
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button

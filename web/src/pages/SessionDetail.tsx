@@ -87,6 +87,7 @@ export default function SessionDetail() {
   const [threshold, setThreshold] = useState(25);
   const [reprocessing, setReprocessing] = useState(false);
   const [reprocessOpen, setReprocessOpen] = useState(false);
+  const [singleSong, setSingleSong] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const navigate = useNavigate();
 
@@ -153,7 +154,7 @@ export default function SessionDetail() {
     setReprocessOpen(false);
     setReprocessing(true);
     try {
-      const newTracks = await api.reprocessSession(sessionId, -threshold, 120);
+      const newTracks = await api.reprocessSession(sessionId, -threshold, 120, singleSong || undefined);
       handleTracksChanged(newTracks);
       setSuccessMsg(`Reprocessed: ${newTracks.length} take${newTracks.length !== 1 ? "s" : ""} found`);
     } catch (err) {
@@ -346,6 +347,7 @@ export default function SessionDetail() {
           ) : null}
         </div>
 
+        {tracks.length > 1 && (
         <div className="mt-2 rounded-lg border border-gray-700 bg-gray-800/50 px-4 py-3">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">Full Recording</p>
           <AudioPlayer
@@ -356,15 +358,18 @@ export default function SessionDetail() {
             ])}
           />
         </div>
+        )}
       </div>
 
+      {tracks.length > 1 && (
       <div className="mb-6 mt-8 flex items-center gap-3">
         <div className="h-px flex-1 bg-gray-700" />
         <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Takes</span>
         <div className="h-px flex-1 bg-gray-700" />
       </div>
+      )}
 
-      <div className="space-y-0">
+      <div className={tracks.length > 1 ? "space-y-0" : "mt-2 space-y-0"}>
         {tracks.map((t, i) => (
           <div key={t.id}>
             <TrackRow
@@ -396,25 +401,38 @@ export default function SessionDetail() {
             <p className="mt-2 text-sm text-gray-400">
               Current takes and tags will be replaced.
             </p>
-            <div className="mt-4">
-              <label className="block text-xs font-medium text-gray-400 mb-1">
-                Threshold (dB)
-              </label>
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm text-gray-400">&minus;</span>
+            <div className="mt-4 space-y-4">
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input
-                  type="number"
-                  value={threshold}
-                  onChange={(e) => setThreshold(Number(e.target.value))}
-                  min={0}
-                  step={1}
-                  className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  type="checkbox"
+                  checked={singleSong}
+                  onChange={(e) => setSingleSong(e.target.checked)}
+                  className="rounded border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0"
                 />
-                <span className="text-sm text-gray-500">dB</span>
+                <span className="text-sm text-gray-300">Single song recording</span>
+              </label>
+              {!singleSong && (
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">
+                  Threshold (dB)
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-gray-400">&minus;</span>
+                  <input
+                    type="number"
+                    value={threshold}
+                    onChange={(e) => setThreshold(Number(e.target.value))}
+                    min={0}
+                    step={1}
+                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  />
+                  <span className="text-sm text-gray-500">dB</span>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Higher = more takes, lower = fewer takes
+                </p>
               </div>
-              <p className="mt-1 text-xs text-gray-500">
-                Higher = more takes, lower = fewer takes
-              </p>
+              )}
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button

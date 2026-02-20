@@ -285,6 +285,7 @@ class GroupRequest(BaseModel):
 class ReprocessRequest(BaseModel):
     threshold: float = -25.0
     min_duration: int = 120
+    single: bool = False
 
 
 # --- Response helpers ---
@@ -505,30 +506,34 @@ def reprocess_session(session_id: int, req: ReprocessRequest, request: Request):
         storage.delete(track.audio_path)
         db.delete_track(track.id)
 
-    # Re-detect songs
-    try:
-        result = detect_songs(
-            source,
-            energy_threshold_db=req.threshold,
-            min_song_duration_sec=req.min_duration,
-        )
-    except Exception as e:
-        logger.exception("Reprocess detection failed")
-        raise HTTPException(status_code=500, detail=f"Detection failed: {e}")
+    # Re-detect songs (or use full duration for single-song mode)
+    meta = extract_metadata(source)
+    if req.single:
+        segments = [(0.0, meta.duration_seconds)]
+    else:
+        try:
+            result = detect_songs(
+                source,
+                energy_threshold_db=req.threshold,
+                min_song_duration_sec=req.min_duration,
+            )
+        except Exception as e:
+            logger.exception("Reprocess detection failed")
+            raise HTTPException(status_code=500, detail=f"Detection failed: {e}")
 
-    if not result.segments:
-        return []
+        if not result.segments:
+            return []
+        segments = result.segments
 
     # Re-export and save new tracks
-    meta = extract_metadata(source)
     exported = export_segments(
         source,
-        result.segments,
+        segments,
         output_dir,
         session_date=meta.recording_date,
     )
 
-    for i, ((start, end), audio_path) in enumerate(zip(result.segments, exported), start=1):
+    for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
         fp = compute_chroma_fingerprint(source, start_sec=start, duration_sec=end - start)
         rel_path = cfg.make_relative(audio_path.resolve())
         db.create_track(
@@ -644,14 +649,19 @@ async def upload_session(request: Request, file: UploadFile):
 
     source = dest.resolve()
 
-    # Parse optional threshold
+    # Parse optional threshold and single-song mode
     threshold_str = request.query_params.get("threshold")
     threshold = float(threshold_str) if threshold_str else -25.0
+    single = request.query_params.get("single") == "true"
 
     # Run processing pipeline
     try:
         meta = extract_metadata(source)
-        result = detect_songs(source, energy_threshold_db=threshold)
+        if single:
+            segments = [(0.0, meta.duration_seconds)]
+        else:
+            result = detect_songs(source, energy_threshold_db=threshold)
+            segments = result.segments
     except Exception as e:
         logger.exception("Upload processing failed")
         raise HTTPException(status_code=500, detail=f"Processing failed: {e}")
@@ -671,17 +681,17 @@ async def upload_session(request: Request, file: UploadFile):
 
     session_id = db.create_session(source_rel, group_id=group_id, date=date_str)
 
-    if result.segments:
+    if segments:
         output_dir = cfg.output_dir_for_source(source.stem)
         try:
             exported = export_segments(
                 source,
-                result.segments,
+                segments,
                 output_dir,
                 session_date=meta.recording_date,
             )
             storage = get_storage()
-            for i, ((start, end), audio_path) in enumerate(zip(result.segments, exported), start=1):
+            for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
                 fp = compute_chroma_fingerprint(source, start_sec=start, duration_sec=end - start)
                 rel_path = cfg.make_relative(audio_path.resolve())
                 db.create_track(

@@ -212,11 +212,11 @@ export const api = {
       body: JSON.stringify({ split_at_sec: splitAtSec }),
     }),
 
-  reprocessSession: (sessionId: number, threshold: number, minDuration: number) =>
+  reprocessSession: (sessionId: number, threshold: number, minDuration: number, single?: boolean) =>
     fetchJson<Track[]>(`${BASE}/sessions/${sessionId}/reprocess`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ threshold, min_duration: minDuration }),
+      body: JSON.stringify({ threshold, min_duration: minDuration, ...(single ? { single: true } : {}) }),
     }),
 
   deleteSession: (id: number, deleteFiles = false) =>
@@ -265,12 +265,13 @@ export const api = {
   getSongTracks: (songId: number) =>
     fetchJson<SongTrack[]>(`${BASE}/songs/${songId}/tracks`),
 
-  uploadSession: (file: File, groupId?: number, threshold?: number) => {
+  uploadSession: (file: File, groupId?: number, threshold?: number, single?: boolean) => {
     const form = new FormData();
     form.append("file", file);
     const params = new URLSearchParams();
     if (groupId !== undefined) params.set("group_id", String(groupId));
     if (threshold !== undefined) params.set("threshold", String(threshold));
+    if (single) params.set("single", "true");
     const qs = params.toString();
     return fetchJson<Session>(`${BASE}/sessions/upload${qs ? `?${qs}` : ""}`, {
       method: "POST",
