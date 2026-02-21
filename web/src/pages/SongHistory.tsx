@@ -5,40 +5,12 @@ import type { Song, SongTrack } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
 import Modal, { Toast } from "../components/Modal";
 import { useAuth } from "../context/AuthContext";
-import { parseChartSections, renderSectionTab } from "../utils/chordUtils";
+import { annotateEStringRoots } from "../utils/chordUtils";
 
 function formatTime(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-function RootNoteTabs({ chart }: { chart: string }) {
-  const [open, setOpen] = useState(false);
-  const sections = parseChartSections(chart);
-  if (sections.length === 0) return null;
-
-  return (
-    <div className="mt-2">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 text-xs font-medium text-gray-500 uppercase tracking-wide hover:text-gray-300"
-      >
-        <span className={`inline-block transition-transform ${open ? "rotate-90" : ""}`}>&#9654;</span>
-        Root note tabs
-      </button>
-      {open && (
-        <div className="mt-2 space-y-3">
-          {sections.map((s, i) => (
-            <div key={i}>
-              {s.label && <div className="text-xs font-medium text-gray-500 mb-0.5">{s.label}</div>}
-              <div className="overflow-x-auto"><pre className="font-mono text-sm text-gray-400 leading-relaxed">{renderSectionTab(s)}</pre></div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function EditableField({
@@ -77,9 +49,11 @@ function EditableField({
 
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
-        {label}
-      </label>
+      {label && (
+        <label className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
+          {label}
+        </label>
+      )}
       {editing && !readOnly ? (
         <div>
           <textarea
@@ -211,6 +185,7 @@ export default function SongHistory() {
   const [nameInput, setNameInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
+  const [showRoots, setShowRoots] = useState(false);
 
   useEffect(() => {
     Promise.all([api.getSong(songId), api.getSongTracks(songId)]).then(
@@ -383,15 +358,29 @@ export default function SongHistory() {
       {/* Song metadata */}
       <div className="mb-4 space-y-4 rounded-lg border border-gray-800 bg-gray-900 p-4">
         <div>
-          <EditableField
-            label="Chart"
-            value={song?.chart ?? ""}
-            placeholder="Add chart (e.g. Intro: Am | G | F | E)"
-            mono
-            readOnly={!canEdit(user)}
-            onSave={(v) => handleSaveField("chart", v)}
-          />
-          {song?.chart && <RootNoteTabs chart={song.chart} />}
+          <div className="flex items-center gap-2 mb-1">
+            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Chart</label>
+            {song?.chart && (
+              <button
+                onClick={() => setShowRoots((v) => !v)}
+                className={`text-xs px-2 py-0.5 rounded ${showRoots ? "bg-indigo-600/20 text-indigo-400" : "text-gray-500 hover:text-gray-300"}`}
+              >
+                Root notes
+              </button>
+            )}
+          </div>
+          {showRoots && song?.chart ? (
+            <pre className="font-mono text-sm whitespace-pre-wrap text-gray-300">{annotateEStringRoots(song.chart)}</pre>
+          ) : (
+            <EditableField
+              label=""
+              value={song?.chart ?? ""}
+              placeholder="Add chart (e.g. Intro: Am | G | F | E)"
+              mono
+              readOnly={!canEdit(user)}
+              onSave={(v) => handleSaveField("chart", v)}
+            />
+          )}
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <EditableField

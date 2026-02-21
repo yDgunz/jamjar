@@ -2,10 +2,11 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router";
 import { api } from "../api";
 import type { Song } from "../api";
-import { transposeChartText, formatTranspose } from "../utils/chordUtils";
+import { transposeChartText, formatTranspose, annotateEStringRoots } from "../utils/chordUtils";
 
 const FONT_SIZES = ["text-base", "text-lg", "text-xl", "text-2xl", "text-3xl"];
-const SCROLL_SPEEDS = [20, 35, 55, 80, 120]; // pixels per second
+const SPEED_MULTIPLIERS = [0.5, 0.75, 1, 1.5, 2]; // multipliers around baseline
+const TARGET_DURATION = 150; // baseline seconds — tuned so 1x feels natural for a ~3:30 song
 const LS_FONT_KEY = "perform-font-size";
 const LS_SPEED_KEY = "perform-scroll-speed";
 
@@ -26,12 +27,14 @@ export default function PerformMode() {
   const [fontIdx, setFontIdx] = useState(() => loadInt(LS_FONT_KEY, 2, FONT_SIZES.length - 1));
   const [transpose, setTranspose] = useState(0);
   const [scrolling, setScrolling] = useState(false);
-  const [speedIdx, setSpeedIdx] = useState(() => loadInt(LS_SPEED_KEY, 2, SCROLL_SPEEDS.length - 1));
+  const [speedIdx, setSpeedIdx] = useState(() => loadInt(LS_SPEED_KEY, 2, SPEED_MULTIPLIERS.length - 1));
+  const [showRoots, setShowRoots] = useState(false);
   const [headerVisible, setHeaderVisible] = useState(true);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
+  const scrollAccumRef = useRef<number>(0);
   const headerTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const touchStartRef = useRef<{ y: number; time: number } | null>(null);
 
@@ -55,33 +58,48 @@ export default function PerformMode() {
     return () => { wakeLock?.release(); };
   }, []);
 
-  // Auto-scroll animation
-  const scrollStep = useCallback((timestamp: number) => {
-    if (!scrollRef.current) return;
-    if (lastTimeRef.current) {
-      const dt = (timestamp - lastTimeRef.current) / 1000;
-      scrollRef.current.scrollTop += SCROLL_SPEEDS[speedIdx] * dt;
+  // Keep speedIdx in a ref so the animation loop always reads the current value
+  const speedIdxRef = useRef(speedIdx);
+  useEffect(() => { speedIdxRef.current = speedIdx; }, [speedIdx]);
 
-      // Stop at bottom
-      const el = scrollRef.current;
-      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 1) {
-        setScrolling(false);
-        return;
-      }
-    }
-    lastTimeRef.current = timestamp;
-    animRef.current = requestAnimationFrame(scrollStep);
-  }, [speedIdx]);
-
+  // Auto-scroll animation loop
   useEffect(() => {
-    if (scrolling) {
-      lastTimeRef.current = 0;
-      animRef.current = requestAnimationFrame(scrollStep);
-    } else {
-      cancelAnimationFrame(animRef.current);
+    if (!scrolling) return;
+    lastTimeRef.current = 0;
+    scrollAccumRef.current = 0;
+
+    function step(timestamp: number) {
+      const el = scrollRef.current;
+      if (!el) return;
+
+      if (lastTimeRef.current) {
+        const dt = (timestamp - lastTimeRef.current) / 1000;
+
+        const scrollable = el.scrollHeight - el.clientHeight;
+        const speed = scrollable > 0
+          ? (scrollable / TARGET_DURATION) * SPEED_MULTIPLIERS[speedIdxRef.current]
+          : 30;
+
+        // Accumulate sub-pixel amounts; only scroll whole pixels
+        scrollAccumRef.current += speed * dt;
+        if (scrollAccumRef.current >= 1) {
+          const px = Math.floor(scrollAccumRef.current);
+          scrollAccumRef.current -= px;
+          el.scrollTop += px;
+        }
+
+        if (el.scrollTop + el.clientHeight >= el.scrollHeight - 1) {
+          setScrolling(false);
+          return;
+        }
+      }
+      lastTimeRef.current = timestamp;
+      animRef.current = requestAnimationFrame(step);
     }
+
+    animRef.current = requestAnimationFrame(step);
     return () => cancelAnimationFrame(animRef.current);
-  }, [scrolling, scrollStep]);
+  }, [scrolling]);
 
   // Auto-hide header during scroll
   useEffect(() => {
@@ -96,8 +114,9 @@ export default function PerformMode() {
 
   // Tap body to pause scrolling / reveal header
   const handleBodyTap = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    // Ignore taps on the header controls
+    // Ignore taps on the header controls or bottom scroll button
     if ((e.target as HTMLElement).closest("header")) return;
+    if ((e.target as HTMLElement).closest("[data-scroll-btn]")) return;
 
     if (scrolling) {
       e.preventDefault();
@@ -138,40 +157,67 @@ export default function PerformMode() {
   const hasChart = !!song.chart;
   const hasLyrics = !!song.lyrics;
   const bothPresent = hasChart && hasLyrics;
-  const chartText = hasChart ? transposeChartText(song.chart, transpose) : "";
+  const transposedChart = hasChart ? transposeChartText(song.chart, transpose) : "";
+  const chartText = hasChart && showRoots ? annotateEStringRoots(transposedChart) : transposedChart;
   const lyricsText = hasLyrics ? transposeChartText(song.lyrics, transpose) : "";
 
   return (
     <div
       ref={scrollRef}
-      className="min-h-screen overflow-y-auto bg-gray-950 text-gray-100"
+      className="h-dvh overflow-y-auto bg-gray-950 text-gray-100"
       onClick={handleBodyTap}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
       {/* Header — auto-hides during scroll */}
       <header
-        className={`sticky top-0 z-10 border-b border-gray-800 bg-gray-950/95 px-4 py-2 backdrop-blur transition-all duration-300 ${
+        className={`sticky top-0 z-10 border-b border-gray-800 bg-gray-950/95 px-3 py-2.5 backdrop-blur transition-all duration-300 ${
           headerVisible ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0"
         }`}
       >
-        {/* Top row: back, title, font size */}
+        {/* Title row */}
         <div className="flex items-center gap-2">
           <Link
             to={`/songs/${songId}`}
-            className="shrink-0 text-gray-400 hover:text-white"
+            className="shrink-0 p-2 text-lg text-gray-400 hover:text-white"
             title="Back to song"
           >
             &larr;
           </Link>
-          <h1 className="min-w-0 flex-1 truncate text-center text-base font-bold sm:text-lg">
+          <h1 className="min-w-0 flex-1 truncate text-center text-base font-bold">
             {song.name}
           </h1>
-          <div className="flex shrink-0 items-center gap-0.5">
+          <div className="w-9 shrink-0" />
+        </div>
+
+        {/* Controls row */}
+        <div className="mt-2 flex items-center justify-center gap-3">
+          {/* Transpose */}
+          {hasChart && (
+            <div className="flex items-center">
+              <button
+                onClick={() => setTranspose((t) => ((t - 1) % 12 + 12) % 12)}
+                className="rounded-lg px-3 py-2 text-base text-gray-400 active:bg-gray-800 hover:bg-gray-800 hover:text-white"
+                title="Transpose down"
+              >
+                T-
+              </button>
+              <button
+                onClick={() => setTranspose((t) => (t + 1) % 12)}
+                className="rounded-lg px-3 py-2 text-base text-gray-400 active:bg-gray-800 hover:bg-gray-800 hover:text-white"
+                title="Transpose up"
+              >
+                T+
+              </button>
+            </div>
+          )}
+
+          {/* Font size */}
+          <div className="flex items-center">
             <button
               onClick={() => setFontIdx((i) => Math.max(0, i - 1))}
               disabled={fontIdx === 0}
-              className="rounded px-1.5 py-1 text-sm text-gray-400 hover:bg-gray-800 hover:text-white disabled:opacity-30"
+              className="rounded-lg px-3 py-2 text-base text-gray-400 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
               title="Decrease font size"
             >
               A-
@@ -179,79 +225,49 @@ export default function PerformMode() {
             <button
               onClick={() => setFontIdx((i) => Math.min(FONT_SIZES.length - 1, i + 1))}
               disabled={fontIdx === FONT_SIZES.length - 1}
-              className="rounded px-1.5 py-1 text-sm text-gray-400 hover:bg-gray-800 hover:text-white disabled:opacity-30"
+              className="rounded-lg px-3 py-2 text-base text-gray-400 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
               title="Increase font size"
             >
               A+
             </button>
           </div>
-        </div>
 
-        {/* Bottom row: transpose + auto-scroll */}
-        <div className="mt-1.5 flex items-center justify-between gap-3">
-          {/* Transpose */}
-          {hasChart && (
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setTranspose((t) => ((t - 1) % 12 + 12) % 12)}
-                className="rounded px-1.5 py-0.5 text-xs text-gray-400 hover:bg-gray-800 hover:text-white"
-                title="Transpose down"
-              >
-                -
-              </button>
-              <span className="min-w-[3.5rem] text-center text-xs text-gray-500">
-                {transpose === 0 ? "Original" : formatTranspose(transpose > 6 ? transpose - 12 : transpose)}
-              </span>
-              <button
-                onClick={() => setTranspose((t) => (t + 1) % 12)}
-                className="rounded px-1.5 py-0.5 text-xs text-gray-400 hover:bg-gray-800 hover:text-white"
-                title="Transpose up"
-              >
-                +
-              </button>
-              {transpose !== 0 && (
-                <button
-                  onClick={() => setTranspose(0)}
-                  className="ml-1 rounded px-1.5 py-0.5 text-xs text-gray-600 hover:text-gray-400"
-                  title="Reset transposition"
-                >
-                  reset
-                </button>
-              )}
-            </div>
-          )}
-          {!hasChart && <div />}
-
-          {/* Auto-scroll */}
-          <div className="flex items-center gap-1">
+          {/* Scroll speed */}
+          <div className="flex items-center">
             <button
               onClick={() => setSpeedIdx((i) => Math.max(0, i - 1))}
               disabled={speedIdx === 0}
-              className="rounded px-1.5 py-0.5 text-xs text-gray-400 hover:bg-gray-800 hover:text-white disabled:opacity-30"
+              className="rounded-lg px-3 py-2 text-gray-400 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
               title="Slower scroll"
             >
-              &laquo;
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                <path fillRule="evenodd" d="M9.47 15.28a.75.75 0 0 0 1.06 0l4.25-4.25a.75.75 0 1 0-1.06-1.06L10 13.69 6.28 9.97a.75.75 0 0 0-1.06 1.06l4.25 4.25ZM5.22 6.03l4.25 4.25a.75.75 0 0 0 1.06 0l4.25-4.25a.75.75 0 0 0-1.06-1.06L10 8.69 6.28 4.97a.75.75 0 0 0-1.06 1.06Z" clipRule="evenodd" />
+              </svg>
             </button>
             <button
-              onClick={() => setScrolling((s) => !s)}
-              className={`rounded px-2.5 py-0.5 text-xs font-medium ${
-                scrolling
-                  ? "bg-indigo-600 text-white hover:bg-indigo-500"
-                  : "text-gray-400 hover:bg-gray-800 hover:text-white"
-              }`}
-              title={scrolling ? "Pause scroll" : "Start auto-scroll"}
-            >
-              {scrolling ? "Pause" : "Scroll"}
-            </button>
-            <button
-              onClick={() => setSpeedIdx((i) => Math.min(SCROLL_SPEEDS.length - 1, i + 1))}
-              disabled={speedIdx === SCROLL_SPEEDS.length - 1}
-              className="rounded px-1.5 py-0.5 text-xs text-gray-400 hover:bg-gray-800 hover:text-white disabled:opacity-30"
+              onClick={() => setSpeedIdx((i) => Math.min(SPEED_MULTIPLIERS.length - 1, i + 1))}
+              disabled={speedIdx === SPEED_MULTIPLIERS.length - 1}
+              className="rounded-lg px-3 py-2 text-gray-400 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
               title="Faster scroll"
             >
-              &raquo;
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                <path fillRule="evenodd" d="M9.47 4.72a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 1 1-1.06 1.06L10 6.31l-3.72 3.72a.75.75 0 1 1-1.06-1.06l4.25-4.25Zm-4.25 9.25 4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 1 1-1.06 1.06L10 11.31l-3.72 3.72a.75.75 0 0 1-1.06-1.06Z" clipRule="evenodd" />
+              </svg>
             </button>
           </div>
+
+          {/* Root notes toggle */}
+          {hasChart && (
+            <button
+              onClick={() => setShowRoots((v) => !v)}
+              className={`rounded-lg px-3 py-2 text-base active:bg-gray-800 ${
+                showRoots ? "text-indigo-400" : "text-gray-400 hover:bg-gray-800 hover:text-white"
+              }`}
+              title={showRoots ? "Hide root note frets" : "Show root note frets"}
+            >
+              #
+            </button>
+          )}
         </div>
       </header>
 
@@ -291,6 +307,30 @@ export default function PerformMode() {
           </p>
         )}
       </div>
+
+      {/* Bottom-right scroll toggle */}
+      {(hasChart || hasLyrics) && (
+        <button
+          data-scroll-btn
+          onClick={(e) => { e.stopPropagation(); setScrolling((s) => !s); }}
+          className={`fixed bottom-6 right-4 z-10 flex h-16 w-16 items-center justify-center rounded-full transition-all duration-200 ${
+            scrolling
+              ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"
+              : "bg-gray-800/80 text-gray-400 shadow-lg shadow-black/30 backdrop-blur-sm"
+          }`}
+          title={scrolling ? "Pause scroll" : "Start auto-scroll"}
+        >
+          {scrolling ? (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-7 w-7">
+              <path fillRule="evenodd" d="M6.75 5.25a.75.75 0 0 1 .75.75v12a.75.75 0 0 1-1.5 0V6a.75.75 0 0 1 .75-.75Zm10.5 0a.75.75 0 0 1 .75.75v12a.75.75 0 0 1-1.5 0V6a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-7 w-7">
+              <path fillRule="evenodd" d="M12 3.75a.75.75 0 0 1 .75.75v13.19l5.47-5.47a.75.75 0 1 1 1.06 1.06l-6.75 6.75a.75.75 0 0 1-1.06 0l-6.75-6.75a.75.75 0 1 1 1.06-1.06l5.47 5.47V4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+            </svg>
+          )}
+        </button>
+      )}
     </div>
   );
 }

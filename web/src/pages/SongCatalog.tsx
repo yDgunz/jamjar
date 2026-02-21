@@ -79,50 +79,26 @@ export default function SongCatalog() {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h1 className="text-lg font-bold">Songs</h1>
         {user && user.groups.length > 1 && (
-          <>
-            <div className="mx-1 hidden h-4 w-px bg-gray-700 sm:block" />
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setGroupFilter(null)}
-                className={`rounded px-2.5 py-1.5 text-xs transition ${
-                  groupFilter === null
-                    ? "bg-indigo-600 text-white"
-                    : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
-                }`}
-              >
-                All
-              </button>
-              {user.groups.map((g) => (
-                <button
-                  key={g.id}
-                  onClick={() => setGroupFilter(g.id)}
-                  className={`rounded px-2.5 py-1.5 text-xs transition ${
-                    groupFilter === g.id
-                      ? "bg-indigo-600 text-white"
-                      : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
-                  }`}
-                >
-                  {g.name}
-                </button>
-              ))}
-            </div>
-          </>
+          <select
+            value={groupFilter ?? ""}
+            onChange={(e) => setGroupFilter(e.target.value ? Number(e.target.value) : null)}
+            className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+          >
+            <option value="">All groups</option>
+            {user.groups.map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
         )}
-        <div className="ml-auto flex items-center gap-1">
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="ml-auto rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+        >
           {sortOptions.map((opt) => (
-            <button
-              key={opt.key}
-              onClick={() => setSortBy(opt.key)}
-              className={`rounded px-2.5 py-1.5 text-xs transition ${
-                sortBy === opt.key
-                  ? "bg-indigo-600 text-white"
-                  : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
-              }`}
-            >
-              {opt.label}
-            </button>
+            <option key={opt.key} value={opt.key}>{opt.label}</option>
           ))}
-        </div>
+        </select>
       </div>
       <div className="space-y-3">
         {sorted.map((song) => (
