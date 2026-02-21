@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS songs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
+    artist TEXT NOT NULL DEFAULT '',
     chart TEXT NOT NULL DEFAULT '',
     lyrics TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
@@ -128,6 +129,7 @@ class Song:
     id: int
     group_id: int
     name: str
+    artist: str = ""
     chart: str = ""
     lyrics: str = ""
     notes: str = ""
@@ -194,6 +196,13 @@ class Database:
         }
         if "fingerprint" in track_cols:
             self.conn.execute("ALTER TABLE tracks DROP COLUMN fingerprint")
+            self.conn.commit()
+
+        song_cols = {
+            row["name"] for row in self.conn.execute("PRAGMA table_info(songs)").fetchall()
+        }
+        if "artist" not in song_cols:
+            self.conn.execute("ALTER TABLE songs ADD COLUMN artist TEXT NOT NULL DEFAULT ''")
             self.conn.commit()
 
     def close(self):
@@ -546,7 +555,7 @@ class Database:
     def list_songs(self, group_ids: list[int] | None = None) -> list[Song]:
         if group_ids is not None and not group_ids:
             return []
-        base = """SELECT s.id, s.group_id, s.name, s.chart, s.lyrics, s.notes,
+        base = """SELECT s.id, s.group_id, s.name, s.artist, s.chart, s.lyrics, s.notes,
                       COUNT(t.id) as take_count,
                       MIN(ses.date) as first_date, MAX(ses.date) as last_date
                FROM songs s
@@ -564,7 +573,7 @@ class Database:
 
     def get_song(self, song_id: int) -> Song | None:
         row = self.conn.execute(
-            """SELECT s.id, s.group_id, s.name, s.chart, s.lyrics, s.notes,
+            """SELECT s.id, s.group_id, s.name, s.artist, s.chart, s.lyrics, s.notes,
                       COUNT(t.id) as take_count,
                       MIN(ses.date) as first_date, MAX(ses.date) as last_date
                FROM songs s
@@ -578,10 +587,12 @@ class Database:
             return None
         return Song(**row)
 
-    def update_song_details(self, song_id: int, chart: str, lyrics: str, notes: str):
+    def update_song_details(
+        self, song_id: int, chart: str, lyrics: str, notes: str, artist: str = ""
+    ):
         self.conn.execute(
-            "UPDATE songs SET chart = ?, lyrics = ?, notes = ? WHERE id = ?",
-            (chart, lyrics, notes, song_id),
+            "UPDATE songs SET artist = ?, chart = ?, lyrics = ?, notes = ? WHERE id = ?",
+            (artist, chart, lyrics, notes, song_id),
         )
         self.conn.commit()
 

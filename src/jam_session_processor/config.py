@@ -23,6 +23,7 @@ class Config:
     max_upload_mb: int
     jwt_secret: str
     api_key: str
+    r2_enabled: bool
     r2_account_id: str
     r2_access_key_id: str
     r2_secret_access_key: str
@@ -79,6 +80,7 @@ def _build_config() -> Config:
         max_upload_mb=int(os.environ.get("JAM_MAX_UPLOAD_MB", "500")),
         jwt_secret=os.environ.get("JAM_JWT_SECRET", ""),
         api_key=os.environ.get("JAM_API_KEY", ""),
+        r2_enabled=os.environ.get("JAM_R2_ENABLED", "").lower() in ("1", "true", "yes"),
         r2_account_id=os.environ.get("JAM_R2_ACCOUNT_ID", ""),
         r2_access_key_id=os.environ.get("JAM_R2_ACCESS_KEY_ID", ""),
         r2_secret_access_key=os.environ.get("JAM_R2_SECRET_ACCESS_KEY", ""),

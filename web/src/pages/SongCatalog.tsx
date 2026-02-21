@@ -114,6 +114,9 @@ export default function SongCatalog() {
                   <span className="ml-2 text-xs font-normal text-gray-500">{song.group_name}</span>
                 )}
               </div>
+              {song.artist && (
+                <div className="text-sm text-gray-500">{song.artist}</div>
+              )}
               <div className="mt-1 text-sm text-gray-400">
                 {song.last_date
                   ? `Last played ${formatDate(song.last_date)}`

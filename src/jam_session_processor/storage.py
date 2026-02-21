@@ -189,7 +189,7 @@ def get_storage() -> Storage:
     global _storage
     if _storage is None:
         cfg = get_config()
-        if cfg.r2_bucket:
+        if cfg.r2_enabled and cfg.r2_bucket:
             _storage = R2Storage()
         else:
             _storage = LocalStorage()

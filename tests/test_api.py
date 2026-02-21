@@ -992,3 +992,115 @@ def test_upload_job_failure_records_error(auth_client, tmp_path):
 
     assert result["status"] == "failed"
     assert "ffmpeg not found" in result["error"]
+
+
+# --- Artist + fetch-lyrics tests ---
+
+
+def test_song_artist_round_trip(seeded_client):
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Fat Cat"})
+
+    songs = client.get("/api/songs").json()
+    song_id = songs[0]["id"]
+    assert songs[0]["artist"] == ""
+
+    resp = client.put(
+        f"/api/songs/{song_id}/details",
+        json={"artist": "Cool Band", "chart": "", "lyrics": "", "notes": ""},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["artist"] == "Cool Band"
+
+    resp = client.get(f"/api/songs/{song_id}")
+    assert resp.json()["artist"] == "Cool Band"
+
+
+def test_fetch_lyrics_success(seeded_client):
+    from unittest.mock import MagicMock, patch
+
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Imagine"})
+
+    songs = client.get("/api/songs").json()
+    song_id = songs[0]["id"]
+
+    # Set artist first
+    client.put(
+        f"/api/songs/{song_id}/details",
+        json={"artist": "John Lennon", "chart": "", "lyrics": "", "notes": ""},
+    )
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = [
+        {"plainLyrics": "Imagine there's no heaven...", "syncedLyrics": None}
+    ]
+
+    with patch("requests.get", return_value=mock_resp) as mock_get:
+        resp = client.post(f"/api/songs/{song_id}/fetch-lyrics")
+        mock_get.assert_called_once_with(
+            "https://lrclib.net/api/search",
+            params={"track_name": "Imagine", "artist_name": "John Lennon"},
+            timeout=10,
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["lyrics"] == "Imagine there's no heaven..."
+
+
+def test_fetch_lyrics_not_found(seeded_client):
+    from unittest.mock import MagicMock, patch
+
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Nonexistent Song"})
+
+    songs = client.get("/api/songs").json()
+    song_id = songs[0]["id"]
+
+    client.put(
+        f"/api/songs/{song_id}/details",
+        json={"artist": "Nobody", "chart": "", "lyrics": "", "notes": ""},
+    )
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = []
+
+    with patch("requests.get", return_value=mock_resp):
+        resp = client.post(f"/api/songs/{song_id}/fetch-lyrics")
+
+    assert resp.status_code == 404
+
+
+def test_fetch_lyrics_timeout(seeded_client):
+    from unittest.mock import patch
+
+    import requests as http_requests
+
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Slow Song"})
+
+    songs = client.get("/api/songs").json()
+    song_id = songs[0]["id"]
+
+    client.put(
+        f"/api/songs/{song_id}/details",
+        json={"artist": "Slow Band", "chart": "", "lyrics": "", "notes": ""},
+    )
+
+    with patch("requests.get", side_effect=http_requests.Timeout):
+        resp = client.post(f"/api/songs/{song_id}/fetch-lyrics")
+
+    assert resp.status_code == 502
+
+
+def test_fetch_lyrics_no_artist(seeded_client):
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "No Artist Song"})
+
+    songs = client.get("/api/songs").json()
+    song_id = songs[0]["id"]
+
+    resp = client.post(f"/api/songs/{song_id}/fetch-lyrics")
+    assert resp.status_code == 400

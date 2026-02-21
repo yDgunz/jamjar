@@ -186,12 +186,16 @@ export default function SongHistory() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
   const [showRoots, setShowRoots] = useState(false);
+  const [editingArtist, setEditingArtist] = useState(false);
+  const [artistInput, setArtistInput] = useState("");
+  const [fetchingLyrics, setFetchingLyrics] = useState(false);
 
   useEffect(() => {
     Promise.all([api.getSong(songId), api.getSongTracks(songId)]).then(
       ([songData, trackData]) => {
         setSong(songData);
         setNameInput(songData.name);
+        setArtistInput(songData.artist);
         setTakes(trackData);
         setLoading(false);
       }
@@ -203,6 +207,7 @@ export default function SongHistory() {
     api.getSong(songId).then((s) => {
       setSong(s);
       setNameInput(s.name);
+      setArtistInput(s.artist);
     });
   };
 
@@ -228,13 +233,43 @@ export default function SongHistory() {
     if (!song) return;
     try {
       const updated = await api.updateSongDetails(songId, {
+        artist: field === "artist" ? value : song.artist,
         chart: field === "chart" ? value : song.chart,
         lyrics: field === "lyrics" ? value : song.lyrics,
         notes: field === "notes" ? value : song.notes,
       });
       setSong(updated);
+      if (field === "artist") setArtistInput(updated.artist);
     } catch (err) {
       setErrorMsg(`Save failed: ${err instanceof Error ? err.message : err}`);
+    }
+  };
+
+  const handleSaveArtist = async () => {
+    const trimmed = artistInput.trim();
+    setEditingArtist(false);
+    if (trimmed !== (song?.artist ?? "")) {
+      await handleSaveField("artist", trimmed);
+    }
+  };
+
+  const handleFetchLyrics = async () => {
+    if (!song) return;
+    if (song.lyrics && !confirm("Overwrite existing lyrics with fetched lyrics?")) return;
+    setFetchingLyrics(true);
+    try {
+      const result = await api.fetchLyrics(songId);
+      const updated = await api.updateSongDetails(songId, {
+        artist: song.artist,
+        chart: song.chart,
+        lyrics: result.lyrics,
+        notes: song.notes,
+      });
+      setSong(updated);
+    } catch (err) {
+      setErrorMsg(`Fetch lyrics failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setFetchingLyrics(false);
     }
   };
 
@@ -321,6 +356,34 @@ export default function SongHistory() {
                 ) : null}
               </h1>
             )}
+            {editingArtist && canEdit(user) ? (
+              <input
+                autoFocus
+                value={artistInput}
+                onChange={(e) => setArtistInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveArtist();
+                  if (e.key === "Escape") { setEditingArtist(false); setArtistInput(song?.artist ?? ""); }
+                }}
+                onBlur={handleSaveArtist}
+                placeholder="Artist name"
+                className="mt-0.5 w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-sm text-gray-300 placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+              />
+            ) : song?.artist ? (
+              <p
+                onClick={() => canEdit(user) && setEditingArtist(true)}
+                className={`mt-0.5 text-sm text-gray-400 ${canEdit(user) ? "cursor-pointer hover:text-gray-300" : ""}`}
+              >
+                {song.artist}
+              </p>
+            ) : canEdit(user) ? (
+              <button
+                onClick={() => setEditingArtist(true)}
+                className="mt-0.5 text-sm text-gray-600 hover:text-gray-400"
+              >
+                + add artist
+              </button>
+            ) : null}
             <p className="mt-0.5 text-sm text-gray-400">
               {takes.length} track{takes.length !== 1 ? "s" : ""}
               {song?.first_date && song?.last_date && (
@@ -383,13 +446,32 @@ export default function SongHistory() {
           )}
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <EditableField
-            label="Lyrics"
-            value={song?.lyrics ?? ""}
-            placeholder="Add lyrics"
-            readOnly={!canEdit(user)}
-            onSave={(v) => handleSaveField("lyrics", v)}
-          />
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Lyrics</label>
+              {canEdit(user) && (
+                <button
+                  onClick={handleFetchLyrics}
+                  disabled={!song?.artist || fetchingLyrics}
+                  title={!song?.artist ? "Set artist first" : "Fetch lyrics from lyrics.ovh"}
+                  className={`text-xs px-2 py-0.5 rounded ${
+                    !song?.artist || fetchingLyrics
+                      ? "text-gray-600 cursor-not-allowed"
+                      : "text-gray-500 hover:text-gray-300"
+                  }`}
+                >
+                  {fetchingLyrics ? "Fetching..." : "Fetch lyrics"}
+                </button>
+              )}
+            </div>
+            <EditableField
+              label=""
+              value={song?.lyrics ?? ""}
+              placeholder="Add lyrics"
+              readOnly={!canEdit(user)}
+              onSave={(v) => handleSaveField("lyrics", v)}
+            />
+          </div>
           <EditableField
             label="Notes"
             value={song?.notes ?? ""}

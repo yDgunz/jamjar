@@ -66,27 +66,37 @@ def upload(file: Path, server: str, group: str, api_key: str):
         click.echo(f"Error: Invalid file type '{ext}'. Allowed: {allowed}")
         raise SystemExit(1)
 
-    # Look up group_id from the server
-    url = f"{server.rstrip('/')}/api/sessions/upload"
+    base = server.rstrip("/")
+    url = f"{base}/api/sessions/upload"
     file_size = file.stat().st_size
     size_mb = file_size / (1024 * 1024)
     click.echo(f"Uploading {file.name} ({size_mb:.1f} MB) to {server} (group: {group})...")
 
-    # First resolve group name to group_id via a local DB lookup
-    db = _get_db()
-    grp = db.get_group_by_name(group)
-    db.close()
-    if not grp:
-        click.echo(f"Error: Group '{group}' not found in local database")
+    # Resolve group name to group_id via the remote server
+    headers = {"X-API-Key": api_key}
+    try:
+        groups_resp = requests.get(f"{base}/api/admin/groups", headers=headers, timeout=10)
+    except requests.ConnectionError:
+        click.echo(f"Error: Could not connect to {server}")
         raise SystemExit(1)
+    if groups_resp.status_code != 200:
+        click.echo(f"Error: Failed to fetch groups (status {groups_resp.status_code})")
+        raise SystemExit(1)
+    groups_data = groups_resp.json()
+    matched = [g for g in groups_data if g["name"] == group]
+    if not matched:
+        available = ", ".join(g["name"] for g in groups_data)
+        click.echo(f"Error: Group '{group}' not found on server. Available: {available}")
+        raise SystemExit(1)
+    group_id = matched[0]["id"]
 
     try:
         with open(file, "rb") as f:
             resp = requests.post(
                 url,
                 files={"file": (file.name, f)},
-                headers={"X-API-Key": api_key},
-                params={"group_id": grp.id},
+                headers=headers,
+                params={"group_id": group_id},
                 timeout=600,
             )
     except requests.ConnectionError:
@@ -96,7 +106,7 @@ def upload(file: Path, server: str, group: str, api_key: str):
         click.echo("Error: Upload timed out (10 minutes)")
         raise SystemExit(1)
 
-    if resp.status_code != 200:
+    if resp.status_code not in (200, 202):
         detail = ""
         try:
             detail = resp.json().get("detail", "")
@@ -109,10 +119,43 @@ def upload(file: Path, server: str, group: str, api_key: str):
         raise SystemExit(1)
 
     data = resp.json()
-    click.echo(f"Session created (id={data['id']})")
-    click.echo(f"  Date: {data.get('date') or 'unknown'}")
-    click.echo(f"  Tracks: {data.get('track_count', 0)}")
-    click.echo(f"  Source: {data.get('source_file', '')}")
+
+    if resp.status_code == 202:
+        # Async processing — poll job until complete
+        import time
+
+        job_id = data.get("id")
+        session_id = data.get("session_id")
+        click.echo(f"Uploaded. Session id={session_id}, processing (job {job_id})...")
+
+        job_url = f"{base}/api/jobs/{job_id}"
+        while True:
+            time.sleep(3)
+            try:
+                job_resp = requests.get(job_url, headers=headers, timeout=10)
+                job_data = job_resp.json()
+            except Exception:
+                click.echo("  Waiting...")
+                continue
+
+            status = job_data.get("status", "unknown")
+            progress = job_data.get("progress", "")
+            if progress:
+                click.echo(f"  {status}: {progress}")
+            else:
+                click.echo(f"  {status}")
+
+            if status == "completed":
+                click.echo(f"Done. Session id={session_id}")
+                break
+            elif status == "failed":
+                click.echo(f"Error: Processing failed — {job_data.get('error', 'unknown')}")
+                raise SystemExit(1)
+    else:
+        click.echo(f"Session created (id={data['id']})")
+        click.echo(f"  Date: {data.get('date') or 'unknown'}")
+        click.echo(f"  Tracks: {data.get('track_count', 0)}")
+        click.echo(f"  Source: {data.get('source_file', '')}")
 
 
 # --- Admin commands ---

@@ -1,15 +1,14 @@
 # Roadmap
 
-## Now
-
-- Batch upload and background job processing (async upload/reprocess, progress tracking)
-
 ## Next
 
-- Performance mode enhancements (auto-scroll, transposition, setlists)
+- Setlists
 
 ## Later
 
+- Support for "add to home page"
+- Offline mode
+- Import lyrics/chart from external source
 - Star tracks
 - Shareable link
 - Database migrations (Alembic, evaluate Postgres)

@@ -229,6 +229,7 @@ class SongResponse(BaseModel):
     group_id: int
     group_name: str = ""
     name: str
+    artist: str = ""
     chart: str = ""
     lyrics: str = ""
     notes: str = ""
@@ -271,6 +272,7 @@ class SplitRequest(BaseModel):
 
 
 class SongDetailsRequest(BaseModel):
+    artist: str = ""
     chart: str = ""
     lyrics: str = ""
     notes: str = ""
@@ -919,9 +921,44 @@ def update_song_details(song_id: int, req: SongDetailsRequest, request: Request)
     db = get_db()
     _get_song_with_access(db, song_id, request)
     _require_role(request, "editor")
-    db.update_song_details(song_id, req.chart, req.lyrics, req.notes)
+    db.update_song_details(song_id, req.chart, req.lyrics, req.notes, req.artist)
     song = db.get_song(song_id)
     return _song_response(song)
+
+
+@app.post("/api/songs/{song_id}/fetch-lyrics")
+def fetch_lyrics(song_id: int, request: Request):
+    import requests as http_requests
+
+    db = get_db()
+    song = _get_song_with_access(db, song_id, request)
+    _require_role(request, "editor")
+    if not song.artist:
+        raise HTTPException(status_code=400, detail="Song has no artist set")
+    try:
+        resp = http_requests.get(
+            "https://lrclib.net/api/search",
+            params={"track_name": song.name, "artist_name": song.artist},
+            timeout=10,
+        )
+    except http_requests.Timeout:
+        raise HTTPException(status_code=502, detail="Lyrics service timed out")
+    except http_requests.RequestException:
+        raise HTTPException(status_code=502, detail="Failed to reach lyrics service")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Lyrics service returned an error")
+    results = resp.json()
+    if not results:
+        raise HTTPException(status_code=404, detail="Lyrics not found")
+    # Pick the first result that has plain lyrics
+    lyrics = ""
+    for result in results:
+        if result.get("plainLyrics"):
+            lyrics = result["plainLyrics"]
+            break
+    if not lyrics:
+        raise HTTPException(status_code=404, detail="Lyrics not found")
+    return {"lyrics": lyrics}
 
 
 @app.delete("/api/songs/{song_id}")
