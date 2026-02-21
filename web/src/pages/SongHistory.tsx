@@ -12,7 +12,7 @@ function formatTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-// Standard bass tuning EADG — maps each note to its lowest fret position
+// Maps each note to its position on the E or A string
 const BASS_POSITIONS: Record<string, { string: string; fret: number }> = {
   E:  { string: "E", fret: 0 },
   F:  { string: "E", fret: 1 },
@@ -24,8 +24,8 @@ const BASS_POSITIONS: Record<string, { string: string; fret: number }> = {
   B:  { string: "A", fret: 2 },
   C:  { string: "A", fret: 3 },
   "C#": { string: "A", fret: 4 }, Db: { string: "A", fret: 4 },
-  D:  { string: "D", fret: 0 },
-  "D#": { string: "D", fret: 1 }, Eb: { string: "D", fret: 1 },
+  D:  { string: "A", fret: 5 },
+  "D#": { string: "A", fret: 6 }, Eb: { string: "A", fret: 6 },
 };
 
 interface ChartSection {
@@ -58,7 +58,7 @@ function parseChartSections(chart: string): ChartSection[] {
 
 function renderSectionTab(section: ChartSection): string {
   const { chords } = section;
-  const strings = ["G", "D", "A", "E"];
+  const strings = ["A", "E"];
   const colW = Math.max(...chords.map((c) => c.name.length), 2) + 1;
 
   const lines = strings.map((s) => {
@@ -68,8 +68,7 @@ function renderSectionTab(section: ChartSection): string {
     });
     return `${s}|${cells.join("")}`;
   });
-  const legend = "  " + chords.map((c) => c.name.padStart(colW)).join("");
-  return lines.join("\n") + "\n" + legend;
+  return lines.join("\n");
 }
 
 function RootNoteTabs({ chart }: { chart: string }) {

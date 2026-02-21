@@ -1,6 +1,8 @@
+import asyncio
 import logging
 import os as _os
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -281,6 +283,16 @@ class GroupRequest(BaseModel):
     group_id: int
 
 
+class JobResponse(BaseModel):
+    id: str
+    type: str
+    group_id: int
+    status: str
+    progress: str
+    session_id: int | None
+    error: str | None
+
+
 class ReprocessRequest(BaseModel):
     threshold: float = -20.0
     min_duration: int = 120
@@ -543,20 +555,116 @@ def reprocess_session(session_id: int, req: ReprocessRequest, request: Request):
         if storage.is_remote:
             storage.put(rel_path, audio_path.resolve())
 
+    # Clean up local files after successful R2 upload
+    if storage.is_remote:
+        for audio_path in exported:
+            audio_path.resolve().unlink(missing_ok=True)
+        source.unlink(missing_ok=True)
+
     return [_track_response(t) for t in db.get_tracks_for_session(session_id)]
 
 
 ALLOWED_EXTENSIONS = {".m4a", ".wav", ".mp3", ".flac", ".ogg"}
 
 
-@app.post("/api/sessions/upload", response_model=SessionResponse)
-async def upload_session(request: Request, file: UploadFile):
-    """Upload an audio file and run the full processing pipeline."""
+# --- Job endpoints ---
+
+
+@app.get("/api/jobs/{job_id}", response_model=JobResponse)
+def get_job(job_id: str, request: Request):
+    db = get_db()
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _require_group_access(request, job.group_id)
+    return JobResponse(
+        id=job.id,
+        type=job.type,
+        group_id=job.group_id,
+        status=job.status,
+        progress=job.progress,
+        session_id=job.session_id,
+        error=job.error,
+    )
+
+
+def _process_upload(
+    job_id: str,
+    source: Path,
+    group_id: int,
+    threshold: float,
+    single: bool,
+    filename: str,
+):
+    """Run the processing pipeline in a background thread."""
     from jam_session_processor.metadata import extract_metadata
     from jam_session_processor.output import export_segments
     from jam_session_processor.splitter import detect_songs
     from jam_session_processor.storage import get_storage
 
+    db = get_db()
+    cfg = get_config()
+
+    try:
+        db.update_job_progress(job_id, "Analyzing audio...")
+        meta = extract_metadata(source)
+
+        if single:
+            segments = [(0.0, meta.duration_seconds)]
+        else:
+            db.update_job_progress(job_id, "Detecting songs...")
+            result = detect_songs(source, energy_threshold_db=threshold)
+            segments = result.segments
+
+        date_str = meta.recording_date.strftime("%Y-%m-%d") if meta.recording_date else None
+        source_rel = cfg.make_relative(source)
+
+        # Check for duplicate session
+        existing = db.find_session_by_source(source_rel, group_id)
+        if existing:
+            db.fail_job(job_id, f"A session with the filename '{filename}' already exists")
+            return
+
+        session_id = db.create_session(source_rel, group_id=group_id, date=date_str)
+
+        if segments:
+            db.update_job_progress(job_id, "Exporting tracks...")
+            output_dir = cfg.output_dir_for_source(source.stem)
+            exported = export_segments(
+                source,
+                segments,
+                output_dir,
+                session_date=meta.recording_date,
+            )
+            storage = get_storage()
+            for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
+                db.update_job_progress(job_id, f"Saving track {i} of {len(segments)}...")
+                rel_path = cfg.make_relative(audio_path.resolve())
+                db.create_track(
+                    session_id,
+                    track_number=i,
+                    start_sec=start,
+                    end_sec=end,
+                    audio_path=rel_path,
+                )
+                if storage.is_remote:
+                    storage.put(rel_path, audio_path.resolve())
+            if storage.is_remote:
+                storage.put(source_rel, source)
+                # Clean up local files after successful R2 upload
+                for audio_path in exported:
+                    audio_path.resolve().unlink(missing_ok=True)
+                source.unlink(missing_ok=True)
+
+        db.complete_job(job_id, session_id)
+    except Exception as e:
+        logger.exception("Background upload processing failed")
+        db.fail_job(job_id, str(e))
+
+
+@app.post("/api/sessions/upload", response_model=JobResponse, status_code=202)
+async def upload_session(request: Request, file: UploadFile):
+    """Upload an audio file and start background processing. Returns a job to poll."""
     _require_role(request, "admin")
 
     # Determine group_id
@@ -649,62 +757,25 @@ async def upload_session(request: Request, file: UploadFile):
     threshold = float(threshold_str) if threshold_str else -20.0
     single = request.query_params.get("single") == "true"
 
-    # Run processing pipeline
-    try:
-        meta = extract_metadata(source)
-        if single:
-            segments = [(0.0, meta.duration_seconds)]
-        else:
-            result = detect_songs(source, energy_threshold_db=threshold)
-            segments = result.segments
-    except Exception as e:
-        logger.exception("Upload processing failed")
-        raise HTTPException(status_code=500, detail=f"Processing failed: {e}")
-
-    date_str = meta.recording_date.strftime("%Y-%m-%d") if meta.recording_date else None
-
+    # Create job and start background processing
     db = get_db()
-    source_rel = cfg.make_relative(source)
+    job_id = uuid4().hex[:16]
+    job = db.create_job(job_id, group_id)
 
-    # Check for duplicate session
-    existing = db.find_session_by_source(source_rel, group_id)
-    if existing:
-        raise HTTPException(
-            status_code=409,
-            detail=f"A session with the filename '{file.filename}' already exists",
-        )
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(
+        None, _process_upload, job_id, source, group_id, threshold, single, file.filename
+    )
 
-    session_id = db.create_session(source_rel, group_id=group_id, date=date_str)
-
-    if segments:
-        output_dir = cfg.output_dir_for_source(source.stem)
-        try:
-            exported = export_segments(
-                source,
-                segments,
-                output_dir,
-                session_date=meta.recording_date,
-            )
-            storage = get_storage()
-            for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
-                rel_path = cfg.make_relative(audio_path.resolve())
-                db.create_track(
-                    session_id,
-                    track_number=i,
-                    start_sec=start,
-                    end_sec=end,
-                    audio_path=rel_path,
-                )
-                if storage.is_remote:
-                    storage.put(rel_path, audio_path.resolve())
-            if storage.is_remote:
-                storage.put(source_rel, source)
-        except Exception as e:
-            logger.exception("Upload export/fingerprint failed")
-            raise HTTPException(status_code=500, detail=f"Export failed: {e}")
-
-    session = db.get_session(session_id)
-    return _session_response(session)
+    return JobResponse(
+        id=job.id,
+        type=job.type,
+        group_id=job.group_id,
+        status=job.status,
+        progress=job.progress,
+        session_id=job.session_id,
+        error=job.error,
+    )
 
 
 # --- Track endpoints ---

@@ -466,3 +466,62 @@ def test_rename_song_scoped_to_group(db):
 
     # Group2's "Song A" should be unchanged
     assert db.get_song(songs_g2[0].id).name == "Song A"
+
+
+# --- Job tests ---
+
+
+def test_create_and_get_job(db, group_id):
+    job = db.create_job("abc123", group_id)
+    assert job.id == "abc123"
+    assert job.type == "upload"
+    assert job.group_id == group_id
+    assert job.status == "pending"
+    assert job.progress == ""
+    assert job.session_id is None
+    assert job.error is None
+
+    fetched = db.get_job("abc123")
+    assert fetched.id == "abc123"
+
+
+def test_get_job_not_found(db):
+    assert db.get_job("nonexistent") is None
+
+
+def test_update_job_progress(db, group_id):
+    db.create_job("job1", group_id)
+    db.update_job_progress("job1", "Analyzing audio...")
+
+    job = db.get_job("job1")
+    assert job.status == "processing"
+    assert job.progress == "Analyzing audio..."
+
+
+def test_complete_job(db, group_id):
+    db.create_job("job1", group_id)
+    sid = db.create_session("test.m4a", group_id)
+    db.complete_job("job1", sid)
+
+    job = db.get_job("job1")
+    assert job.status == "completed"
+    assert job.session_id == sid
+
+
+def test_fail_job(db, group_id):
+    db.create_job("job1", group_id)
+    db.fail_job("job1", "Something went wrong")
+
+    job = db.get_job("job1")
+    assert job.status == "failed"
+    assert job.error == "Something went wrong"
+    assert job.session_id is None
+
+
+def test_job_cascade_on_group_delete(db):
+    gid = db.create_group("TempBand")
+    db.create_job("job1", gid)
+    assert db.get_job("job1") is not None
+
+    db.delete_group(gid)
+    assert db.get_job("job1") is None

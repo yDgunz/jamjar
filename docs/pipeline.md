@@ -12,8 +12,8 @@
 
 Processing runs server-side via two API endpoints:
 
-- **`POST /api/sessions/upload`** — upload a new audio file; runs the full pipeline (metadata → detection → export → DB)
-- **`POST /api/sessions/{id}/reprocess`** — re-run detection on an existing session with new threshold/min-duration parameters
+- **`POST /api/sessions/upload`** — upload a new audio file; saves the file and returns a job ID (HTTP 202). Processing runs in a background thread. The frontend polls `GET /api/jobs/{id}` for real-time progress updates until the job completes or fails. When R2 storage is configured, local files are cleaned up after successful upload.
+- **`POST /api/sessions/{id}/reprocess`** — re-run detection on an existing session with new threshold/min-duration parameters (synchronous)
 
 Both support `single=true` to skip song detection and import the whole file as one track.
 

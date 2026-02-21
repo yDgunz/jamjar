@@ -55,13 +55,25 @@ source_file                start_sec, end_sec             created_at
 notes                      duration_sec                   UNIQUE(group_id, name)
 created_at                 audio_path, notes
                            created_at
+
+jobs
+──────────────
+id (PK, TEXT)
+type
+group_id (FK→groups)
+status (pending→processing→completed|failed)
+progress
+session_id (FK→sessions, nullable)
+error
+created_at, updated_at
 ```
 
 - **Multi-tenancy:** groups own sessions and songs; users belong to groups via `user_groups`
 - **Roles:** `superadmin`, `admin`, `editor`, `readonly` — enforced in API middleware
-- `groups → sessions/songs`: one-to-many, CASCADE delete
+- `groups → sessions/songs/jobs`: one-to-many, CASCADE delete
 - `sessions → tracks`: one-to-many, CASCADE delete
 - `tracks → songs`: many-to-one (nullable), SET NULL on delete
+- `jobs → sessions`: many-to-one (nullable), SET NULL on delete
 - Songs are created on first tag and reused across sessions within a group
 
 ### REST API
@@ -69,7 +81,8 @@ created_at                 audio_path, notes
 All `/api` endpoints require authentication (JWT cookie or API key header). Role requirements noted in parentheses.
 
 **Auth:** `POST /api/auth/login` | `POST /api/auth/logout` | `GET /api/auth/me`
-**Sessions:** `GET /api/sessions` | `GET /api/sessions/{id}` | `GET /api/sessions/{id}/tracks` | `GET /api/sessions/{id}/audio` | `PUT /api/sessions/{id}/name` | `PUT /api/sessions/{id}/notes` | `PUT /api/sessions/{id}/date` | `PUT /api/sessions/{id}/group` (admin) | `DELETE /api/sessions/{id}` (admin) | `POST /api/sessions/{id}/reprocess` (admin) | `POST /api/sessions/upload` (admin)
+**Sessions:** `GET /api/sessions` | `GET /api/sessions/{id}` | `GET /api/sessions/{id}/tracks` | `GET /api/sessions/{id}/audio` | `PUT /api/sessions/{id}/name` | `PUT /api/sessions/{id}/notes` | `PUT /api/sessions/{id}/date` | `PUT /api/sessions/{id}/group` (admin) | `DELETE /api/sessions/{id}` (admin) | `POST /api/sessions/{id}/reprocess` (admin) | `POST /api/sessions/upload` (admin, returns 202 + job)
+**Jobs:** `GET /api/jobs/{id}` — poll for upload progress (status: pending → processing → completed/failed)
 **Tracks:** `POST /api/tracks/{id}/tag` | `DELETE /api/tracks/{id}/tag` | `PUT /api/tracks/{id}/notes` | `GET /api/tracks/{id}/audio` | `POST /api/tracks/{id}/merge` (admin) | `POST /api/tracks/{id}/split` (admin)
 **Songs:** `GET /api/songs` | `GET /api/songs/{id}` | `GET /api/songs/{id}/tracks` | `PUT /api/songs/{id}/details` | `PUT /api/songs/{id}/name` | `PUT /api/songs/{id}/group` (admin) | `DELETE /api/songs/{id}` (admin)
 **Admin:** `GET/POST /api/admin/users` | `DELETE /api/admin/users/{id}` | `PUT .../password` | `PUT .../role` | `POST/DELETE .../groups/{id}` | `GET/POST /api/admin/groups` | `DELETE /api/admin/groups/{id}` (all superadmin)
@@ -94,6 +107,12 @@ jam-session list-users / list-groups       # list entities
 jam-session reset-password EMAIL           # change password
 jam-session set-role EMAIL ROLE            # change user role
 jam-session reset-db                       # wipe all data (with confirmation)
+
+# Nuke DB + files, re-seed test data, and restart the server
+./scripts/nuke-and-restart.sh
+
+# Seed the database with test data only (no restart)
+python scripts/seed-db.py
 
 # Run all tests
 pytest

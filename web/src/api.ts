@@ -97,6 +97,16 @@ export interface SongTrack {
   session_name: string;
 }
 
+export interface Job {
+  id: string;
+  type: string;
+  group_id: number;
+  status: "pending" | "processing" | "completed" | "failed";
+  progress: string;
+  session_id: number | null;
+  error: string | null;
+}
+
 export interface AdminUser {
   id: number;
   email: string;
@@ -272,11 +282,13 @@ export const api = {
     if (threshold !== undefined) params.set("threshold", String(threshold));
     if (single) params.set("single", "true");
     const qs = params.toString();
-    return fetchJson<Session>(`${BASE}/sessions/upload${qs ? `?${qs}` : ""}`, {
+    return fetchJson<Job>(`${BASE}/sessions/upload${qs ? `?${qs}` : ""}`, {
       method: "POST",
       body: form,
     });
   },
+
+  getJob: (jobId: string) => fetchJson<Job>(`${BASE}/jobs/${jobId}`),
 
   // Admin
   adminListUsers: () => fetchJson<AdminUser[]>(`${BASE}/admin/users`),

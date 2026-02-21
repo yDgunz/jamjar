@@ -1,3 +1,5 @@
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -6,6 +8,19 @@ from jam_session_processor.auth import hash_password
 from jam_session_processor.config import reset_config
 from jam_session_processor.db import Database
 from jam_session_processor.storage import reset_storage
+
+
+def _poll_job(client, job_id, headers=None, timeout=10):
+    """Poll a job until it completes or fails. Returns the final job dict."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        resp = client.get(f"/api/jobs/{job_id}", headers=headers or {})
+        assert resp.status_code == 200
+        job = resp.json()
+        if job["status"] in ("completed", "failed"):
+            return job
+        time.sleep(0.1)
+    raise TimeoutError(f"Job {job_id} did not complete within {timeout}s")
 
 
 @pytest.fixture
@@ -550,9 +565,21 @@ def test_upload_session(auth_client, tmp_path):
             "/api/sessions/upload",
             files={"file": ("test-session.m4a", BytesIO(b"\x00" * 100), "audio/mp4")},
         )
+        assert resp.status_code == 202
+        job = resp.json()
+        assert job["status"] == "pending"
+        assert job["group_id"] == gid
 
-    assert resp.status_code == 200
-    data = resp.json()
+        # Poll for completion
+        result = _poll_job(client, job["id"])
+
+    assert result["status"] == "completed"
+    assert result["session_id"] is not None
+
+    # Verify session was created correctly
+    session_resp = client.get(f"/api/sessions/{result['session_id']}")
+    assert session_resp.status_code == 200
+    data = session_resp.json()
     assert data["track_count"] == 2
     assert "test-session" in data["source_file"]
     assert data["group_id"] == gid
@@ -590,9 +617,10 @@ def test_upload_duplicate(auth_client, tmp_path):
             "/api/sessions/upload",
             files={"file": ("dup.m4a", BytesIO(b"\x00" * 50), "audio/mp4")},
         )
-    assert resp.status_code == 200
+        assert resp.status_code == 202
+        _poll_job(client, resp.json()["id"])
 
-    # Second upload of same filename should 409
+    # Second upload of same filename should 409 (file already on disk)
     resp = client.post(
         "/api/sessions/upload",
         files={"file": ("dup.m4a", BytesIO(b"\x00" * 50), "audio/mp4")},
@@ -633,6 +661,7 @@ def test_upload_with_api_key(client, tmp_path):
     mock_meta = MagicMock()
     mock_meta.recording_date = None
 
+    headers = {"X-API-Key": "test-api-key"}
     with (
         patch("jam_session_processor.splitter.detect_songs", return_value=mock_result),
         patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta),
@@ -640,10 +669,12 @@ def test_upload_with_api_key(client, tmp_path):
         resp = client.post(
             f"/api/sessions/upload?group_id={gid}",
             files={"file": ("apikey.m4a", BytesIO(b"\x00" * 50), "audio/mp4")},
-            headers={"X-API-Key": "test-api-key"},
+            headers=headers,
         )
+        assert resp.status_code == 202
+        result = _poll_job(client, resp.json()["id"], headers=headers)
 
-    assert resp.status_code == 200
+    assert result["status"] == "completed"
 
 
 def test_upload_api_key_missing_group_id(client, tmp_path):
@@ -911,3 +942,53 @@ def test_admin_create_user_with_role(client, tmp_path):
     )
     assert resp.status_code == 201
     assert resp.json()["role"] == "readonly"
+
+
+# --- Job endpoint tests ---
+
+
+def test_get_job_not_found(auth_client):
+    client, uid, gid = auth_client
+    resp = client.get("/api/jobs/nonexistent")
+    assert resp.status_code == 404
+
+
+def test_get_job_group_access_enforced(client, tmp_path):
+    db = api._db
+    # User 1 in Group A
+    uid1 = db.create_user("user1@example.com", hash_password("pw"), role="admin")
+    gid_a = db.create_group("GroupA")
+    db.assign_user_to_group(uid1, gid_a)
+    # User 2 in Group B
+    uid2 = db.create_user("user2@example.com", hash_password("pw"), role="admin")
+    gid_b = db.create_group("GroupB")
+    db.assign_user_to_group(uid2, gid_b)
+
+    # Create job in Group A
+    job = db.create_job("testjob123", gid_a)
+
+    # Login as user 2 (Group B) — should not see Group A job
+    client.post("/api/auth/login", json={"email": "user2@example.com", "password": "pw"})
+    resp = client.get(f"/api/jobs/{job.id}")
+    assert resp.status_code == 404
+
+
+def test_upload_job_failure_records_error(auth_client, tmp_path):
+    from io import BytesIO
+    from unittest.mock import patch
+
+    client, uid, gid = auth_client
+
+    with patch(
+        "jam_session_processor.metadata.extract_metadata",
+        side_effect=RuntimeError("ffmpeg not found"),
+    ):
+        resp = client.post(
+            "/api/sessions/upload",
+            files={"file": ("fail.m4a", BytesIO(b"\x00" * 100), "audio/mp4")},
+        )
+        assert resp.status_code == 202
+        result = _poll_job(client, resp.json()["id"])
+
+    assert result["status"] == "failed"
+    assert "ffmpeg not found" in result["error"]

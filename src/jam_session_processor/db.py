@@ -58,6 +58,18 @@ CREATE TABLE IF NOT EXISTS tracks (
     notes TEXT DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL DEFAULT 'upload',
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending',
+    progress TEXT NOT NULL DEFAULT '',
+    session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -123,6 +135,19 @@ class Song:
     last_date: str | None = None
 
 
+@dataclass
+class Job:
+    id: str
+    type: str
+    group_id: int
+    status: str
+    progress: str
+    session_id: int | None
+    error: str | None
+    created_at: str
+    updated_at: str
+
+
 def clean_session_name(source_file: str) -> str:
     """Generate a clean display name from a source filename.
 
@@ -152,6 +177,7 @@ class Database:
         self._init_schema()
 
     def _init_schema(self):
+        self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
         self.conn.commit()
         self._migrate()
@@ -175,6 +201,7 @@ class Database:
     def reset(self):
         """Drop all tables and recreate the schema."""
         self.conn.executescript("""
+            DROP TABLE IF EXISTS jobs;
             DROP TABLE IF EXISTS tracks;
             DROP TABLE IF EXISTS songs;
             DROP TABLE IF EXISTS sessions;
@@ -547,7 +574,9 @@ class Database:
 
         Raises ValueError if the target group already has a song with the same name.
         """
-        song = self.conn.execute("SELECT name, group_id FROM songs WHERE id = ?", (song_id,)).fetchone()
+        song = self.conn.execute(
+            "SELECT name, group_id FROM songs WHERE id = ?", (song_id,)
+        ).fetchone()
         if not song:
             raise ValueError("Song not found")
         existing = self.conn.execute(
@@ -595,4 +624,44 @@ class Database:
         if existing:
             raise ValueError(f"Song '{new_name}' already exists")
         self.conn.execute("UPDATE songs SET name = ? WHERE id = ?", (new_name, song_id))
+        self.conn.commit()
+
+    # --- Jobs ---
+
+    def create_job(self, job_id: str, group_id: int, job_type: str = "upload") -> Job:
+        self.conn.execute(
+            "INSERT INTO jobs (id, type, group_id) VALUES (?, ?, ?)",
+            (job_id, job_type, group_id),
+        )
+        self.conn.commit()
+        return self.get_job(job_id)
+
+    def get_job(self, job_id: str) -> Job | None:
+        row = self.conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if not row:
+            return None
+        return Job(**row)
+
+    def update_job_progress(self, job_id: str, progress: str):
+        self.conn.execute(
+            "UPDATE jobs SET status = 'processing', progress = ?,"
+            " updated_at = datetime('now') WHERE id = ?",
+            (progress, job_id),
+        )
+        self.conn.commit()
+
+    def complete_job(self, job_id: str, session_id: int):
+        self.conn.execute(
+            "UPDATE jobs SET status = 'completed', session_id = ?,"
+            " updated_at = datetime('now') WHERE id = ?",
+            (session_id, job_id),
+        )
+        self.conn.commit()
+
+    def fail_job(self, job_id: str, error: str):
+        self.conn.execute(
+            "UPDATE jobs SET status = 'failed', error = ?,"
+            " updated_at = datetime('now') WHERE id = ?",
+            (error, job_id),
+        )
         self.conn.commit()
