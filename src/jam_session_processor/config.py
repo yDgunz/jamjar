@@ -68,8 +68,8 @@ def _build_config() -> Config:
     return Config(
         data_dir=data_dir,
         db_path=_resolve("JAM_DB_PATH", "jam_sessions.db"),
-        input_dir=_resolve("JAM_INPUT_DIR", "input"),
-        output_dir=_resolve("JAM_OUTPUT_DIR", "output"),
+        input_dir=_resolve("JAM_INPUT_DIR", "recordings"),
+        output_dir=_resolve("JAM_OUTPUT_DIR", "tracks"),
         cors_origins=[
             o.strip()
             for o in os.environ.get("JAM_CORS_ORIGINS", "http://localhost:5173").split(",")

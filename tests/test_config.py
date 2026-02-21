@@ -32,8 +32,8 @@ def test_defaults_match_current_behavior(monkeypatch, tmp_path):
     cfg = get_config()
     assert cfg.data_dir == tmp_path
     assert cfg.db_path == tmp_path / "jam_sessions.db"
-    assert cfg.input_dir == tmp_path / "input"
-    assert cfg.output_dir == tmp_path / "output"
+    assert cfg.input_dir == tmp_path / "recordings"
+    assert cfg.output_dir == tmp_path / "tracks"
     assert cfg.cors_origins == ["http://localhost:5173"]
     assert cfg.port == 8000
     assert cfg.jwt_secret == ""
