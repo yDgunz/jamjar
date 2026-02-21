@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams, Link, useNavigate } from "react-router";
+import { useParams, Link, useNavigate, useSearchParams } from "react-router";
 import { api, formatDate, canEdit, canAdmin } from "../api";
 import type { Session, Track, Song } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
@@ -72,6 +72,7 @@ function MergeButton({ trackId, nextTrackId, onTracksChanged, onError }: {
 export default function SessionDetail() {
   const { user } = useAuth();
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const [session, setSession] = useState<Session | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [songs, setSongs] = useState<Song[]>([]);
@@ -89,12 +90,51 @@ export default function SessionDetail() {
   const [reprocessOpen, setReprocessOpen] = useState(false);
   const [singleSong, setSingleSong] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState<string | null>(null);
   const navigate = useNavigate();
 
+  const isProcessing = id === "processing";
+  const jobId = searchParams.get("job");
   const sessionId = Number(id);
   const showError = useCallback((msg: string) => setErrorMsg(msg), []);
 
+  // Poll a background upload job until it completes
   useEffect(() => {
+    if (!isProcessing || !jobId) return;
+    let cancelled = false;
+    setProcessingProgress("Processing...");
+    setLoading(false);
+
+    const poll = async () => {
+      while (!cancelled) {
+        try {
+          const job = await api.getJob(jobId);
+          if (cancelled) return;
+          if (job.status === "completed" && job.session_id) {
+            navigate(`/sessions/${job.session_id}`, { replace: true });
+            return;
+          }
+          if (job.status === "failed") {
+            setProcessingProgress(null);
+            setErrorMsg(job.error || "Processing failed");
+            return;
+          }
+          if (job.progress) setProcessingProgress(job.progress);
+        } catch {
+          if (cancelled) return;
+          setProcessingProgress(null);
+          setErrorMsg("Lost connection to server");
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    };
+    poll();
+    return () => { cancelled = true; };
+  }, [isProcessing, jobId, navigate]);
+
+  useEffect(() => {
+    if (isProcessing) return;
     Promise.all([
       api.getSession(sessionId),
       api.getSessionTracks(sessionId),
@@ -108,7 +148,7 @@ export default function SessionDetail() {
       setNotesInput(s?.notes ?? "");
       setLoading(false);
     });
-  }, [sessionId]);
+  }, [sessionId, isProcessing]);
 
   const refresh = () => {
     api.getSessionTracks(sessionId).then(setTracks);
@@ -197,6 +237,38 @@ export default function SessionDetail() {
           </div>
         ))}
       </div>
+    </div>
+  );
+  if (isProcessing) return (
+    <div>
+      <Link to="/" className="text-sm text-indigo-400 hover:text-indigo-300">
+        &larr; All Recordings
+      </Link>
+      <div className="mt-4">
+        <div className="h-7 w-48 animate-pulse rounded bg-gray-800" />
+        <div className="mt-2 h-4 w-32 animate-pulse rounded bg-gray-800" />
+      </div>
+      <div className="mb-6 mt-8 flex items-center gap-3">
+        <div className="h-px flex-1 bg-gray-700" />
+        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Tracks</span>
+        <div className="h-px flex-1 bg-gray-700" />
+      </div>
+      {processingProgress ? (
+        <div className="flex flex-col items-center gap-3 py-12">
+          <svg className="h-6 w-6 animate-spin text-indigo-400" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <p className="text-sm text-gray-400">{processingProgress}</p>
+        </div>
+      ) : errorMsg ? (
+        <div className="py-12 text-center">
+          <p className="text-sm text-red-400">{errorMsg}</p>
+          <Link to="/" className="mt-2 inline-block text-sm text-indigo-400 hover:text-indigo-300">
+            Back to recordings
+          </Link>
+        </div>
+      ) : null}
     </div>
   );
   if (!session) return <p className="text-red-400">Recording not found.</p>;

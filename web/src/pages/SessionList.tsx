@@ -82,26 +82,7 @@ export default function SessionList() {
     try {
       const threshold = uploadThreshold !== 20 ? -uploadThreshold : undefined;
       const job = await api.uploadSession(selectedFile, groupId ?? undefined, threshold, singleSong || undefined);
-      setUploadStatus("Processing...");
-
-      // Poll for job completion
-      const pollInterval = 1000;
-      const poll = async (): Promise<void> => {
-        const updated = await api.getJob(job.id);
-        if (updated.status === "completed" && updated.session_id) {
-          navigate(`/sessions/${updated.session_id}`);
-          return;
-        }
-        if (updated.status === "failed") {
-          throw new Error(updated.error || "Processing failed");
-        }
-        if (updated.progress) {
-          setUploadStatus(updated.progress);
-        }
-        await new Promise((r) => setTimeout(r, pollInterval));
-        return poll();
-      };
-      await poll();
+      navigate(`/sessions/processing?job=${job.id}`);
     } catch (err: unknown) {
       setUploadError(err instanceof Error ? err.message : "Upload failed");
     } finally {
