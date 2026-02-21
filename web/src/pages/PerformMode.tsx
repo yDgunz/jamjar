@@ -187,7 +187,30 @@ export default function PerformMode() {
           <h1 className="min-w-0 flex-1 truncate text-center text-base font-bold">
             {song.name}
           </h1>
-          <div className="w-9 shrink-0" />
+          {(hasChart || hasLyrics) ? (
+            <button
+              data-scroll-btn
+              onClick={(e) => { e.stopPropagation(); setScrolling((s) => !s); }}
+              className={`shrink-0 rounded-lg p-2 transition-colors ${
+                scrolling
+                  ? "text-indigo-400"
+                  : "text-gray-400 hover:bg-gray-800 hover:text-white"
+              }`}
+              title={scrolling ? "Pause scroll" : "Start auto-scroll"}
+            >
+              {scrolling ? (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+                  <path fillRule="evenodd" d="M6.75 5.25a.75.75 0 0 1 .75.75v12a.75.75 0 0 1-1.5 0V6a.75.75 0 0 1 .75-.75Zm10.5 0a.75.75 0 0 1 .75.75v12a.75.75 0 0 1-1.5 0V6a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+                  <path fillRule="evenodd" d="M12 3.75a.75.75 0 0 1 .75.75v13.19l5.47-5.47a.75.75 0 1 1 1.06 1.06l-6.75 6.75a.75.75 0 0 1-1.06 0l-6.75-6.75a.75.75 0 1 1 1.06-1.06l5.47 5.47V4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                </svg>
+              )}
+            </button>
+          ) : (
+            <div className="w-9 shrink-0" />
+          )}
         </div>
 
         {/* Controls row */}
@@ -308,29 +331,6 @@ export default function PerformMode() {
         )}
       </div>
 
-      {/* Bottom-right scroll toggle */}
-      {(hasChart || hasLyrics) && (
-        <button
-          data-scroll-btn
-          onClick={(e) => { e.stopPropagation(); setScrolling((s) => !s); }}
-          className={`fixed bottom-6 right-4 z-10 flex h-16 w-16 items-center justify-center rounded-full transition-all duration-200 ${
-            scrolling
-              ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"
-              : "bg-gray-800/80 text-gray-400 shadow-lg shadow-black/30 backdrop-blur-sm"
-          }`}
-          title={scrolling ? "Pause scroll" : "Start auto-scroll"}
-        >
-          {scrolling ? (
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-7 w-7">
-              <path fillRule="evenodd" d="M6.75 5.25a.75.75 0 0 1 .75.75v12a.75.75 0 0 1-1.5 0V6a.75.75 0 0 1 .75-.75Zm10.5 0a.75.75 0 0 1 .75.75v12a.75.75 0 0 1-1.5 0V6a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-            </svg>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-7 w-7">
-              <path fillRule="evenodd" d="M12 3.75a.75.75 0 0 1 .75.75v13.19l5.47-5.47a.75.75 0 1 1 1.06 1.06l-6.75 6.75a.75.75 0 0 1-1.06 0l-6.75-6.75a.75.75 0 1 1 1.06-1.06l5.47 5.47V4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-            </svg>
-          )}
-        </button>
-      )}
     </div>
   );
 }
