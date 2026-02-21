@@ -909,6 +909,29 @@ def list_songs(request: Request):
     return [_song_response(s) for s in db.list_songs(group_ids)]
 
 
+class CreateSongRequest(BaseModel):
+    name: str
+    group_id: int
+
+
+@app.post("/api/songs", response_model=SongResponse)
+def create_song(req: CreateSongRequest, request: Request):
+    db = get_db()
+    _require_group_access(request, req.group_id)
+    _require_role(request, "editor")
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Song name cannot be empty")
+    existing = db.conn.execute(
+        "SELECT id FROM songs WHERE name = ? AND group_id = ?", (name, req.group_id)
+    ).fetchone()
+    if existing:
+        raise HTTPException(status_code=409, detail="Song already exists in this group")
+    song_id = db._get_or_create_song(name, req.group_id)
+    song = db.get_song(song_id)
+    return _song_response(song)
+
+
 @app.get("/api/songs/{song_id}", response_model=SongResponse)
 def get_song(song_id: int, request: Request):
     db = get_db()

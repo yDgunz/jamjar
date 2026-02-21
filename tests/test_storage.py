@@ -239,6 +239,7 @@ class TestSingleton:
 
     def test_r2_env_returns_r2(self, tmp_path, monkeypatch):
         monkeypatch.setenv("JAM_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("JAM_R2_ENABLED", "true")
         monkeypatch.setenv("JAM_R2_ACCOUNT_ID", "acct")
         monkeypatch.setenv("JAM_R2_ACCESS_KEY_ID", "key")
         monkeypatch.setenv("JAM_R2_SECRET_ACCESS_KEY", "secret")

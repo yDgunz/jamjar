@@ -244,6 +244,13 @@ export const api = {
   // Songs
   listSongs: () => fetchJson<Song[]>(`${BASE}/songs`),
 
+  createSong: (name: string, groupId: number) =>
+    fetchJson<Song>(`${BASE}/songs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, group_id: groupId }),
+    }),
+
   getSong: (songId: number) => fetchJson<Song>(`${BASE}/songs/${songId}`),
 
   updateSongDetails: (
