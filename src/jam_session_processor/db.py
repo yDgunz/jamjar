@@ -628,10 +628,12 @@ class Database:
 
     # --- Jobs ---
 
-    def create_job(self, job_id: str, group_id: int, job_type: str = "upload") -> Job:
+    def create_job(
+        self, job_id: str, group_id: int, job_type: str = "upload", session_id: int | None = None
+    ) -> Job:
         self.conn.execute(
-            "INSERT INTO jobs (id, type, group_id) VALUES (?, ?, ?)",
-            (job_id, job_type, group_id),
+            "INSERT INTO jobs (id, type, group_id, session_id) VALUES (?, ?, ?, ?)",
+            (job_id, job_type, group_id, session_id),
         )
         self.conn.commit()
         return self.get_job(job_id)

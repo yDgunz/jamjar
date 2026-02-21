@@ -590,11 +590,11 @@ def get_job(job_id: str, request: Request):
 
 def _process_upload(
     job_id: str,
+    session_id: int,
     source: Path,
     group_id: int,
     threshold: float,
     single: bool,
-    filename: str,
 ):
     """Run the processing pipeline in a background thread."""
     from jam_session_processor.metadata import extract_metadata
@@ -609,23 +609,17 @@ def _process_upload(
         db.update_job_progress(job_id, "Analyzing audio...")
         meta = extract_metadata(source)
 
+        # Update session date from audio metadata (more accurate than filename)
+        date_str = meta.recording_date.strftime("%Y-%m-%d") if meta.recording_date else None
+        if date_str:
+            db.update_session_date(session_id, date_str)
+
         if single:
             segments = [(0.0, meta.duration_seconds)]
         else:
             db.update_job_progress(job_id, "Detecting songs...")
             result = detect_songs(source, energy_threshold_db=threshold)
             segments = result.segments
-
-        date_str = meta.recording_date.strftime("%Y-%m-%d") if meta.recording_date else None
-        source_rel = cfg.make_relative(source)
-
-        # Check for duplicate session
-        existing = db.find_session_by_source(source_rel, group_id)
-        if existing:
-            db.fail_job(job_id, f"A session with the filename '{filename}' already exists")
-            return
-
-        session_id = db.create_session(source_rel, group_id=group_id, date=date_str)
 
         if segments:
             db.update_job_progress(job_id, "Exporting tracks...")
@@ -637,6 +631,7 @@ def _process_upload(
                 session_date=meta.recording_date,
             )
             storage = get_storage()
+            source_rel = cfg.make_relative(source)
             for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
                 db.update_job_progress(job_id, f"Saving track {i} of {len(segments)}...")
                 rel_path = cfg.make_relative(audio_path.resolve())
@@ -757,14 +752,30 @@ async def upload_session(request: Request, file: UploadFile):
     threshold = float(threshold_str) if threshold_str else -20.0
     single = request.query_params.get("single") == "true"
 
-    # Create job and start background processing
+    # Create session and job synchronously so the page is immediately viewable
+    from jam_session_processor.metadata import parse_date_from_filename
+
     db = get_db()
+    cfg = get_config()
+    source_rel = cfg.make_relative(source)
+
+    existing = db.find_session_by_source(source_rel, group_id)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A session with the filename '{file.filename}' already exists",
+        )
+
+    filename_date = parse_date_from_filename(source.stem)
+    date_str = filename_date.strftime("%Y-%m-%d") if filename_date else None
+    session_id = db.create_session(source_rel, group_id=group_id, date=date_str)
+
     job_id = uuid4().hex[:16]
-    job = db.create_job(job_id, group_id)
+    job = db.create_job(job_id, group_id, session_id=session_id)
 
     loop = asyncio.get_event_loop()
     loop.run_in_executor(
-        None, _process_upload, job_id, source, group_id, threshold, single, file.filename
+        None, _process_upload, job_id, session_id, source, group_id, threshold, single
     )
 
     return JobResponse(

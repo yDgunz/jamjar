@@ -82,7 +82,7 @@ export default function SessionList() {
     try {
       const threshold = uploadThreshold !== 20 ? -uploadThreshold : undefined;
       const job = await api.uploadSession(selectedFile, groupId ?? undefined, threshold, singleSong || undefined);
-      navigate(`/sessions/processing?job=${job.id}`);
+      navigate(`/sessions/${job.session_id}?job=${job.id}`);
     } catch (err: unknown) {
       setUploadError(err instanceof Error ? err.message : "Upload failed");
     } finally {
