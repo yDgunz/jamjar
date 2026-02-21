@@ -21,6 +21,8 @@ recordings/
 
 # Database
 jam_sessions.db
+*.db-shm
+*.db-wal
 
 # Environment
 .env

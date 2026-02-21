@@ -5,70 +5,12 @@ import type { Song, SongTrack } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
 import Modal, { Toast } from "../components/Modal";
 import { useAuth } from "../context/AuthContext";
+import { parseChartSections, renderSectionTab } from "../utils/chordUtils";
 
 function formatTime(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-// Maps each note to its position on the E or A string
-const BASS_POSITIONS: Record<string, { string: string; fret: number }> = {
-  E:  { string: "E", fret: 0 },
-  F:  { string: "E", fret: 1 },
-  "F#": { string: "E", fret: 2 }, Gb: { string: "E", fret: 2 },
-  G:  { string: "E", fret: 3 },
-  "G#": { string: "E", fret: 4 }, Ab: { string: "E", fret: 4 },
-  A:  { string: "A", fret: 0 },
-  "A#": { string: "A", fret: 1 }, Bb: { string: "A", fret: 1 },
-  B:  { string: "A", fret: 2 },
-  C:  { string: "A", fret: 3 },
-  "C#": { string: "A", fret: 4 }, Db: { string: "A", fret: 4 },
-  D:  { string: "A", fret: 5 },
-  "D#": { string: "A", fret: 6 }, Eb: { string: "A", fret: 6 },
-};
-
-interface ChartSection {
-  label: string;
-  chords: { name: string; root: string; string: string; fret: number }[];
-}
-
-function parseChartSections(chart: string): ChartSection[] {
-  const sections: ChartSection[] = [];
-  for (const line of chart.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    // Split "Label: chords" or just "chords"
-    const colonIdx = trimmed.indexOf(":");
-    const label = colonIdx >= 0 ? trimmed.slice(0, colonIdx).trim() : "";
-    const chordsStr = colonIdx >= 0 ? trimmed.slice(colonIdx + 1) : trimmed;
-    // Extract chords separated by | or whitespace
-    const chordMatches = chordsStr.match(/\b([A-G][#b]?[^|\s]*)/g);
-    if (!chordMatches || chordMatches.length === 0) continue;
-    const chords = chordMatches.map((name) => {
-      const rootMatch = name.match(/^([A-G][#b]?)/);
-      const root = rootMatch ? rootMatch[1] : name;
-      const pos = BASS_POSITIONS[root];
-      return { name, root, string: pos?.string ?? "", fret: pos?.fret ?? -1 };
-    }).filter((c) => c.fret >= 0);
-    if (chords.length > 0) sections.push({ label, chords });
-  }
-  return sections;
-}
-
-function renderSectionTab(section: ChartSection): string {
-  const { chords } = section;
-  const strings = ["A", "E"];
-  const colW = Math.max(...chords.map((c) => c.name.length), 2) + 1;
-
-  const lines = strings.map((s) => {
-    const cells = chords.map((c) => {
-      const val = c.string === s ? String(c.fret) : "–";
-      return val.padStart(colW);
-    });
-    return `${s}|${cells.join("")}`;
-  });
-  return lines.join("\n");
 }
 
 function RootNoteTabs({ chart }: { chart: string }) {
