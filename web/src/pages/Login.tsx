@@ -37,11 +37,11 @@ export default function Login() {
           )}
           <div>
             <label htmlFor="email" className="mb-1 block text-sm text-gray-400">
-              Email
+              Username
             </label>
             <input
               id="email"
-              type="email"
+              type="text"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required

@@ -353,8 +353,8 @@ export default function Admin() {
             <h3 className="text-sm font-semibold text-white">Add User</h3>
             <form onSubmit={handleAddUser} className="mt-4 space-y-3">
               <input
-                type="email"
-                placeholder="Email"
+                type="text"
+                placeholder="Username"
                 value={newEmail}
                 onChange={(e) => setNewEmail(e.target.value)}
                 required

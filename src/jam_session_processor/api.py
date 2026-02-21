@@ -149,7 +149,7 @@ def login(req: LoginRequest):
     db = get_db()
     user = db.get_user_by_email(req.email)
     if not user or not verify_password(req.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(status_code=401, detail="Invalid username or password")
     token = create_jwt(user.id, user.email)
     groups = db.get_user_groups(user.id)
     response = JSONResponse(
@@ -1099,7 +1099,7 @@ def admin_create_user(req: CreateUserRequest, request: Request):
     _require_role(request, "superadmin")
     db = get_db()
     if db.get_user_by_email(req.email):
-        raise HTTPException(status_code=400, detail="Email already exists")
+        raise HTTPException(status_code=400, detail="Username already exists")
     from jam_session_processor.db import VALID_ROLES
 
     if req.role not in VALID_ROLES:
