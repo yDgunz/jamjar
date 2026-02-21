@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router";
 import { api } from "../api";
 import type { Song } from "../api";
-import { transposeChartText, formatTranspose, annotateEStringRoots } from "../utils/chordUtils";
+import { transposeChartText, annotateEStringRoots } from "../utils/chordUtils";
 
 const FONT_SIZES = ["text-base", "text-lg", "text-xl", "text-2xl", "text-3xl"];
 const SPEED_MULTIPLIERS = [0.5, 0.75, 1, 1.5, 2]; // multipliers around baseline
@@ -35,7 +35,7 @@ export default function PerformMode() {
   const animRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
   const scrollAccumRef = useRef<number>(0);
-  const headerTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const headerTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const touchStartRef = useRef<{ y: number; time: number } | null>(null);
 
   useEffect(() => {

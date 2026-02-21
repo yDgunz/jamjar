@@ -92,7 +92,7 @@ export default function SongCatalog() {
         )}
         <select
           value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
+          onChange={(e) => setSortBy(e.target.value as SortKey)}
           className="ml-auto rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
         >
           {sortOptions.map((opt) => (
