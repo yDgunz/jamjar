@@ -38,32 +38,6 @@ def test_generate_output_name_with_song_name():
     assert name == "2026-02-14_1_00m00s-05m00s_Fat-Cat.m4a"
 
 
-def test_generate_output_name_with_fingerprint():
-    name = generate_output_name(
-        datetime(2026, 2, 14),
-        track_number=1,
-        total_tracks=5,
-        start_sec=0.0,
-        end_sec=300.0,
-        fingerprint="abc123",
-    )
-    assert name == "2026-02-14_1_00m00s-05m00s_abc123.m4a"
-
-
-def test_generate_output_name_song_name_overrides_fingerprint():
-    name = generate_output_name(
-        datetime(2026, 2, 14),
-        track_number=1,
-        total_tracks=5,
-        start_sec=0.0,
-        end_sec=300.0,
-        fingerprint="abc123",
-        song_name="Fat-Cat",
-    )
-    assert "Fat-Cat" in name
-    assert "abc123" not in name
-
-
 def test_generate_output_name_no_date():
     name = generate_output_name(None, track_number=1, total_tracks=1)
     assert name == "unknown-date_1.m4a"

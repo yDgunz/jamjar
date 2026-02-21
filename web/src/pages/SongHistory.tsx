@@ -216,7 +216,7 @@ function TakeRow({ take, onUpdate, readOnly }: { take: SongTrack; onUpdate: () =
         </span>
       </div>
 
-      <AudioPlayer src={api.trackAudioUrl(take.id)} />
+      <AudioPlayer src={api.trackAudioUrl(take.id)} durationSec={take.duration_sec} />
 
       {/* Notes */}
       <div className="mt-2">
@@ -406,7 +406,7 @@ export default function SongHistory() {
               </h1>
             )}
             <p className="mt-0.5 text-sm text-gray-400">
-              {takes.length} take{takes.length !== 1 ? "s" : ""}
+              {takes.length} track{takes.length !== 1 ? "s" : ""}
               {song?.first_date && song?.last_date && (
                 <span>
                   {" "}&middot;{" "}
@@ -471,7 +471,7 @@ export default function SongHistory() {
       </div>
 
       {takes.length === 0 ? (
-        <p className="text-gray-500">No takes found for this song.</p>
+        <p className="text-gray-500">No tracks found for this song.</p>
       ) : (
         <div className="space-y-2">
           {takes.map((take) => (
@@ -482,7 +482,7 @@ export default function SongHistory() {
       <Modal
         open={showDelete}
         title="Delete song"
-        message={`Delete "${song?.name}"? ${takes.length > 0 ? `${takes.length} take${takes.length !== 1 ? "s" : ""} will be untagged.` : "This song has no takes."}`}
+        message={`Delete "${song?.name}"? ${takes.length > 0 ? `${takes.length} track${takes.length !== 1 ? "s" : ""} will be untagged.` : "This song has no tracks."}`}
         confirmLabel="Delete"
         variant="danger"
         onConfirm={handleDelete}

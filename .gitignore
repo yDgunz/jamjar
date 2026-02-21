@@ -10,6 +10,8 @@ build/
 input/
 output/
 references/
+tracks/
+recordings/
 
 # IDE / OS
 .DS_Store

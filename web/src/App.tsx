@@ -16,17 +16,17 @@ function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
       <header className="border-b border-gray-800 px-4 py-3">
-        <div className="mx-auto flex max-w-5xl items-center gap-8">
+        <div className="mx-auto flex max-w-5xl items-center gap-x-3 sm:gap-x-8">
           <NavLink to="/" className="flex items-center gap-1.5 text-xl font-bold text-white hover:text-indigo-300 transition">
             <span className="text-2xl" role="img" aria-label="jar">🫙</span>
-            <span>JamJar</span>
+            <span className="hidden sm:inline">JamJar</span>
           </NavLink>
-          <nav className="flex flex-1 gap-4 text-sm">
+          <nav className="flex flex-1 gap-1 text-sm sm:gap-4">
             <NavLink
               to="/"
               end
               className={({ isActive }) =>
-                `py-2 px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
+                `py-2 px-2 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
               }
             >
               Recordings
@@ -34,7 +34,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             <NavLink
               to="/songs"
               className={({ isActive }) =>
-                `py-2 px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
+                `py-2 px-2 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
               }
             >
               Songs
@@ -43,7 +43,7 @@ function Layout({ children }: { children: React.ReactNode }) {
               <NavLink
                 to="/admin"
                 className={({ isActive }) =>
-                  `py-2 px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
+                  `py-2 px-2 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
                 }
               >
                 Admin
@@ -52,7 +52,7 @@ function Layout({ children }: { children: React.ReactNode }) {
           </nav>
           {user && (
             <div className="flex items-center gap-3 text-sm">
-              <span className="text-gray-400">{user.name || user.email}</span>
+              <span className="hidden text-gray-400 sm:inline">{user.name || user.email}</span>
               <button
                 onClick={logout}
                 className="text-gray-500 transition hover:text-gray-300"

@@ -218,7 +218,6 @@ class TrackResponse(BaseModel):
     start_sec: float
     end_sec: float
     duration_sec: float
-    fingerprint: str
     notes: str
 
 
@@ -470,7 +469,6 @@ def get_session_tracks(session_id: int, request: Request):
 )
 def reprocess_session(session_id: int, req: ReprocessRequest, request: Request):
     """Re-run song detection on a session with new parameters."""
-    from jam_session_processor.fingerprint import compute_chroma_fingerprint
     from jam_session_processor.metadata import extract_metadata
     from jam_session_processor.output import export_segments
     from jam_session_processor.splitter import detect_songs
@@ -534,7 +532,6 @@ def reprocess_session(session_id: int, req: ReprocessRequest, request: Request):
     )
 
     for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
-        fp = compute_chroma_fingerprint(source, start_sec=start, duration_sec=end - start)
         rel_path = cfg.make_relative(audio_path.resolve())
         db.create_track(
             session_id,
@@ -542,7 +539,6 @@ def reprocess_session(session_id: int, req: ReprocessRequest, request: Request):
             start_sec=start,
             end_sec=end,
             audio_path=rel_path,
-            fingerprint=fp,
         )
         if storage.is_remote:
             storage.put(rel_path, audio_path.resolve())
@@ -556,7 +552,6 @@ ALLOWED_EXTENSIONS = {".m4a", ".wav", ".mp3", ".flac", ".ogg"}
 @app.post("/api/sessions/upload", response_model=SessionResponse)
 async def upload_session(request: Request, file: UploadFile):
     """Upload an audio file and run the full processing pipeline."""
-    from jam_session_processor.fingerprint import compute_chroma_fingerprint
     from jam_session_processor.metadata import extract_metadata
     from jam_session_processor.output import export_segments
     from jam_session_processor.splitter import detect_songs
@@ -676,7 +671,7 @@ async def upload_session(request: Request, file: UploadFile):
     if existing:
         raise HTTPException(
             status_code=409,
-            detail=f"Session for this file already exists (id={existing.id})",
+            detail=f"A session with the filename '{file.filename}' already exists",
         )
 
     session_id = db.create_session(source_rel, group_id=group_id, date=date_str)
@@ -692,7 +687,6 @@ async def upload_session(request: Request, file: UploadFile):
             )
             storage = get_storage()
             for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
-                fp = compute_chroma_fingerprint(source, start_sec=start, duration_sec=end - start)
                 rel_path = cfg.make_relative(audio_path.resolve())
                 db.create_track(
                     session_id,
@@ -700,7 +694,6 @@ async def upload_session(request: Request, file: UploadFile):
                     start_sec=start,
                     end_sec=end,
                     audio_path=rel_path,
-                    fingerprint=fp,
                 )
                 if storage.is_remote:
                     storage.put(rel_path, audio_path.resolve())

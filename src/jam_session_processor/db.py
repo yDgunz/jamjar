@@ -54,7 +54,6 @@ CREATE TABLE IF NOT EXISTS tracks (
     start_sec REAL NOT NULL,
     end_sec REAL NOT NULL,
     duration_sec REAL NOT NULL,
-    fingerprint TEXT DEFAULT '',
     audio_path TEXT NOT NULL,
     notes TEXT DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -106,7 +105,6 @@ class Track:
     start_sec: float
     end_sec: float
     duration_sec: float
-    fingerprint: str
     audio_path: str
     notes: str
     created_at: str = ""
@@ -162,6 +160,13 @@ class Database:
         cols = {row["name"] for row in self.conn.execute("PRAGMA table_info(users)").fetchall()}
         if "role" not in cols:
             self.conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'editor'")
+            self.conn.commit()
+
+        track_cols = {
+            row["name"] for row in self.conn.execute("PRAGMA table_info(tracks)").fetchall()
+        }
+        if "fingerprint" in track_cols:
+            self.conn.execute("ALTER TABLE tracks DROP COLUMN fingerprint")
             self.conn.commit()
 
     def close(self):
@@ -402,14 +407,13 @@ class Database:
         start_sec: float,
         end_sec: float,
         audio_path: str,
-        fingerprint: str = "",
     ) -> int:
         duration_sec = end_sec - start_sec
         cur = self.conn.execute(
             """INSERT INTO tracks
-               (session_id, track_number, start_sec, end_sec, duration_sec, fingerprint, audio_path)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (session_id, track_number, start_sec, end_sec, duration_sec, fingerprint, audio_path),
+               (session_id, track_number, start_sec, end_sec, duration_sec, audio_path)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (session_id, track_number, start_sec, end_sec, duration_sec, audio_path),
         )
         self.conn.commit()
         return cur.lastrowid
@@ -464,14 +468,13 @@ class Database:
 
     def update_track(self, track_id: int, **kwargs):
         """Update arbitrary columns on a track. Valid keys: track_number, start_sec,
-        end_sec, duration_sec, audio_path, fingerprint, song_id, notes."""
+        end_sec, duration_sec, audio_path, song_id, notes."""
         allowed = {
             "track_number",
             "start_sec",
             "end_sec",
             "duration_sec",
             "audio_path",
-            "fingerprint",
             "song_id",
             "notes",
         }

@@ -191,23 +191,23 @@ export default function Admin() {
               key={user.id}
               className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-3"
             >
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="min-w-0 flex-1">
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-white">{user.email}</span>
                   {user.name && (
-                    <span className="ml-2 text-sm text-gray-400">{user.name}</span>
+                    <span className="text-sm text-gray-400">{user.name}</span>
                   )}
                   <select
                     value={user.role}
                     onChange={(e) => handleRoleChange(user.id, e.target.value)}
-                    className="ml-2 rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-xs text-gray-300 focus:border-indigo-500 focus:outline-none"
+                    className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-xs text-gray-300 focus:border-indigo-500 focus:outline-none"
                   >
                     {ROLES.map((r) => (
                       <option key={r} value={r}>{r}</option>
                     ))}
                   </select>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {user.groups.map((g) => (
                     <span
                       key={g.id}
@@ -241,8 +241,7 @@ export default function Admin() {
                         ))}
                     </select>
                   )}
-                </div>
-                <div className="flex items-center gap-1.5">
+                  <div className="h-3 w-px bg-gray-700" />
                   {resetUserId === user.id ? (
                     <form
                       onSubmit={(e) => {

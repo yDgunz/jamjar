@@ -302,10 +302,7 @@ def seeded_client_with_source(auth_client, tmp_path):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"RIFF" + b"\x00" * 100)
 
-    with (
-        patch("jam_session_processor.track_ops.export_segment", side_effect=mock_export),
-        patch("jam_session_processor.track_ops.compute_chroma_fingerprint", return_value="mockfp"),
-    ):
+    with patch("jam_session_processor.track_ops.export_segment", side_effect=mock_export):
         reset_storage()
         yield client
 
@@ -375,9 +372,6 @@ def test_reprocess_session(auth_client, tmp_path):
     with (
         patch("jam_session_processor.splitter.detect_songs", return_value=mock_result),
         patch("jam_session_processor.output.export_segments", side_effect=mock_export),
-        patch(
-            "jam_session_processor.fingerprint.compute_chroma_fingerprint", return_value="mockfp"
-        ),
         patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta),
     ):
         resp = client.post(
@@ -550,9 +544,6 @@ def test_upload_session(auth_client, tmp_path):
     with (
         patch("jam_session_processor.splitter.detect_songs", return_value=mock_result),
         patch("jam_session_processor.output.export_segments", side_effect=mock_export),
-        patch(
-            "jam_session_processor.fingerprint.compute_chroma_fingerprint", return_value="mockfp"
-        ),
         patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta),
     ):
         resp = client.post(

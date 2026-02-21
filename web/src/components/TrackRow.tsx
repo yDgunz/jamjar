@@ -14,13 +14,14 @@ function formatTime(sec: number): string {
 
 interface Props {
   track: Track;
+  trackCount: number;
   songs: Song[];
   onUpdate: () => void;
   onTracksChanged: (tracks: Track[]) => void;
   onError: (msg: string) => void;
 }
 
-export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onError }: Props) {
+export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksChanged, onError }: Props) {
   const { user } = useAuth();
   const [tagging, setTagging] = useState(false);
   const [tagInput, setTagInput] = useState(track.song_name ?? "");
@@ -171,16 +172,16 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
             onClick={() => setTagging(true)}
             className="text-sm font-medium text-gray-500 hover:text-indigo-400"
           >
-            Take {track.track_number}
+            Track {track.track_number}
           </button>
         ) : (
           <span className="text-sm font-medium text-gray-500">Take {track.track_number}</span>
         )}
 
-        {!tagging && (
+        {!tagging && trackCount > 1 && (
           <>
             <span className="text-xs text-gray-500">
-              {track.song_name ? `Take ${track.track_number} · ` : ""}{formatTime(track.start_sec)} - {formatTime(track.end_sec)}
+              {track.song_name ? `Track ${track.track_number} · ` : ""}{formatTime(track.start_sec)} - {formatTime(track.end_sec)}
             </span>
             <span className="text-xs text-gray-600">
               ({formatTime(track.duration_sec)})
@@ -192,6 +193,7 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
       {/* Audio player */}
       <AudioPlayer
         src={api.trackAudioUrl(track.id)}
+        durationSec={track.duration_sec}
         onPlayStateChange={(playing, time) => { setPlayerPlaying(playing); setPlayerTime(time); }}
         onTimeUpdate={(time) => setPlayerTime(time)}
       />
@@ -213,8 +215,8 @@ export default function TrackRow({ track, songs, onUpdate, onTracksChanged, onEr
       )}
       <Modal
         open={confirmingSplit}
-        title="Split take"
-        message={`Split this take into two at ${formatTime(playerTime)}? The first half will keep the current song tag and notes.`}
+        title="Split track"
+        message={`Split this track into two at ${formatTime(playerTime)}? The first half will keep the current song tag and notes.`}
         confirmLabel="Split"
         onConfirm={handleSplit}
         onCancel={() => setConfirmingSplit(false)}

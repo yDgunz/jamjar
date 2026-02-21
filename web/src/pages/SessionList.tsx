@@ -140,12 +140,12 @@ export default function SessionList() {
           </div>
         </div>
       )}
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter..."
-          className="w-44 rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+          className="w-36 rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:w-44 sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
         />
         {multiGroup && (
           <div className="flex items-center gap-1">
@@ -207,8 +207,8 @@ export default function SessionList() {
                   to={`/sessions/${s.id}`}
                   className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4 transition hover:border-indigo-500 hover:bg-gray-800"
                 >
-                  <div>
-                    <div className="font-medium text-white">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium text-white">
                       {s.name || s.source_file}
                       {multiGroup && !groupFilter && s.group_name && (
                         <span className="ml-2 text-xs font-normal text-gray-500">{s.group_name}</span>
@@ -232,8 +232,8 @@ export default function SessionList() {
                       </div>
                     )}
                   </div>
-                  <div className="text-right text-sm text-gray-400">
-                    <div>{s.track_count} take{s.track_count !== 1 ? "s" : ""}</div>
+                  <div className="hidden shrink-0 text-right text-sm text-gray-400 sm:block">
+                    <div>{s.track_count} track{s.track_count !== 1 ? "s" : ""}</div>
                     <div>
                       {s.tagged_count}/{s.track_count} tagged
                     </div>
@@ -303,7 +303,7 @@ export default function SessionList() {
                   <span className="text-sm text-gray-500">dB</span>
                 </div>
                 <p className="mt-1 text-xs text-gray-500">
-                  Higher = more takes, lower = fewer takes
+                  Higher = more tracks, lower = fewer tracks
                 </p>
               </div>
               )}

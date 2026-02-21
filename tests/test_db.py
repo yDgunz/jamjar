@@ -341,11 +341,10 @@ def test_update_track(db, group_id):
     sid = db.create_session("session1.m4a", group_id)
     tid = db.create_track(sid, track_number=1, start_sec=0.0, end_sec=300.0, audio_path="t.wav")
 
-    db.update_track(tid, track_number=5, audio_path="new.wav", fingerprint="abc123")
+    db.update_track(tid, track_number=5, audio_path="new.wav")
     track = db.get_track(tid)
     assert track.track_number == 5
     assert track.audio_path == "new.wav"
-    assert track.fingerprint == "abc123"
     # Original values unchanged
     assert track.start_sec == 0.0
 

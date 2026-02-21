@@ -9,7 +9,6 @@ Creates: 2 groups, 3 users, 15 sessions, 8 songs, ~55 tracks.
 Audio files are NOT created — paths are placeholders for UI/API testing.
 """
 
-import hashlib
 import random
 import sys
 from pathlib import Path
@@ -319,12 +318,6 @@ SESSIONS = [
 ]
 
 
-def fake_fingerprint(song_name: str | None, session_date: str, track_num: int) -> str:
-    """Generate a deterministic fake fingerprint."""
-    seed = f"{song_name or 'unknown'}-{session_date}-{track_num}"
-    return hashlib.sha256(seed.encode()).hexdigest()[:16]
-
-
 def fake_audio_path(source_stem: str, track_num: int, start: int, end: int) -> str:
     """Generate a plausible output path (no real file created)."""
     return f"output/{source_stem}/{source_stem}_track{track_num:02d}_{start}-{end}.m4a"
@@ -380,7 +373,6 @@ def seed(db: Database):
         source_stem = Path(source_file).stem
 
         for i, (start, end, song_name, track_notes) in enumerate(tracks, 1):
-            fp = fake_fingerprint(song_name, date, i)
             audio_path = fake_audio_path(source_stem, i, start, end)
             track_id = db.create_track(
                 session_id=session_id,
@@ -388,7 +380,6 @@ def seed(db: Database):
                 start_sec=float(start),
                 end_sec=float(end),
                 audio_path=audio_path,
-                fingerprint=fp,
             )
             if track_notes:
                 db.update_track_notes(track_id, track_notes)

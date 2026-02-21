@@ -51,7 +51,6 @@ def session_with_tracks(db, group_id, tmp_path):
             start_sec=(i - 1) * 300.0,
             end_sec=i * 300.0,
             audio_path=str(audio),
-            fingerprint=f"fp{i}",
         )
         tracks.append(tid)
 
@@ -64,13 +63,8 @@ def _mock_export(file_path, output_path, start_sec, end_sec, **kwargs):
     output_path.write_bytes(b"RIFF" + b"\x00" * 100)
 
 
-def _mock_fingerprint(file_path, start_sec=0, duration_sec=0):
-    return "mockfp"
-
-
 @patch("jam_session_processor.track_ops.export_segment", side_effect=_mock_export)
-@patch("jam_session_processor.track_ops.compute_chroma_fingerprint", side_effect=_mock_fingerprint)
-def test_merge_adjacent_tracks(mock_fp, mock_export, db, session_with_tracks):
+def test_merge_adjacent_tracks(mock_export, db, session_with_tracks):
     sid, tids, output_dir = session_with_tracks
 
     result = merge_tracks(db, tids[0], tids[1])
@@ -84,9 +78,7 @@ def test_merge_adjacent_tracks(mock_fp, mock_export, db, session_with_tracks):
 
 
 @patch("jam_session_processor.track_ops.export_segment", side_effect=_mock_export)
-@patch("jam_session_processor.track_ops.compute_chroma_fingerprint", side_effect=_mock_fingerprint)
 def test_merge_preserves_first_track_metadata(
-    mock_fp,
     mock_export,
     db,
     group_id,
@@ -103,8 +95,7 @@ def test_merge_preserves_first_track_metadata(
 
 
 @patch("jam_session_processor.track_ops.export_segment", side_effect=_mock_export)
-@patch("jam_session_processor.track_ops.compute_chroma_fingerprint", side_effect=_mock_fingerprint)
-def test_merge_swaps_order_if_reversed(mock_fp, mock_export, db, session_with_tracks):
+def test_merge_swaps_order_if_reversed(mock_export, db, session_with_tracks):
     """Passing track2, track1 should still merge correctly."""
     sid, tids, output_dir = session_with_tracks
 
@@ -142,8 +133,7 @@ def test_merge_different_sessions_fails(db, group_id, tmp_path):
 
 
 @patch("jam_session_processor.track_ops.export_segment", side_effect=_mock_export)
-@patch("jam_session_processor.track_ops.compute_chroma_fingerprint", side_effect=_mock_fingerprint)
-def test_split_track(mock_fp, mock_export, db, session_with_tracks):
+def test_split_track(mock_export, db, session_with_tracks):
     sid, tids, output_dir = session_with_tracks
 
     # Split track 1 (0-300s) at 150s
@@ -161,9 +151,7 @@ def test_split_track(mock_fp, mock_export, db, session_with_tracks):
 
 
 @patch("jam_session_processor.track_ops.export_segment", side_effect=_mock_export)
-@patch("jam_session_processor.track_ops.compute_chroma_fingerprint", side_effect=_mock_fingerprint)
 def test_split_preserves_first_half_metadata(
-    mock_fp,
     mock_export,
     db,
     group_id,
@@ -204,8 +192,7 @@ def test_split_nonexistent_track_fails(db):
 
 
 @patch("jam_session_processor.track_ops.export_segment", side_effect=_mock_export)
-@patch("jam_session_processor.track_ops.compute_chroma_fingerprint", side_effect=_mock_fingerprint)
-def test_merge_deletes_old_audio_files(mock_fp, mock_export, db, session_with_tracks):
+def test_merge_deletes_old_audio_files(mock_export, db, session_with_tracks):
     sid, tids, output_dir = session_with_tracks
 
     # Get audio paths before merge

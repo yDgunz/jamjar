@@ -37,7 +37,7 @@ function MergeButton({ trackId, nextTrackId, onTracksChanged, onError }: {
           onClick={() => setConfirming(true)}
           disabled={loading}
           className="flex items-center gap-1.5 rounded px-3 py-2 text-xs text-gray-600 transition hover:bg-gray-800 hover:text-gray-300 disabled:opacity-50"
-          title="Merge with take above"
+          title="Merge with track above"
         >
           {loading ? (
             <>
@@ -59,8 +59,8 @@ function MergeButton({ trackId, nextTrackId, onTracksChanged, onError }: {
       </div>
       <Modal
         open={confirming}
-        title="Merge takes"
-        message="Merge these two takes into one? The first take's song tag and notes will be kept."
+        title="Merge tracks"
+        message="Merge these two tracks into one? The first track's song tag and notes will be kept."
         confirmLabel="Merge"
         onConfirm={handleMerge}
         onCancel={() => setConfirming(false)}
@@ -156,7 +156,7 @@ export default function SessionDetail() {
     try {
       const newTracks = await api.reprocessSession(sessionId, -threshold, 120, singleSong || undefined);
       handleTracksChanged(newTracks);
-      setSuccessMsg(`Reprocessed: ${newTracks.length} take${newTracks.length !== 1 ? "s" : ""} found`);
+      setSuccessMsg(`Reprocessed: ${newTracks.length} track${newTracks.length !== 1 ? "s" : ""} found`);
     } catch (err) {
       showError(`Reprocess failed: ${err instanceof Error ? err.message : err}`);
     } finally {
@@ -289,8 +289,11 @@ export default function SessionDetail() {
               ) : (
                 <span>{formatDate(session.date)}</span>
               )}
-              {" "}&middot; {session.track_count} take{session.track_count !== 1 ? "s" : ""} &middot;{" "}
+              {" "}&middot; {session.track_count} track{session.track_count !== 1 ? "s" : ""} &middot;{" "}
               {session.tagged_count} tagged
+              {session.source_file && (
+                <span className="text-gray-500"> &middot; {session.source_file}</span>
+              )}
             </p>
           </div>
           {canAdmin(user) && (
@@ -353,8 +356,8 @@ export default function SessionDetail() {
           <AudioPlayer
             src={api.sessionAudioUrl(sessionId)}
             markers={tracks.flatMap((t): Marker[] => [
-              { timeSec: t.start_sec, label: `Take ${t.track_number} start` },
-              { timeSec: t.end_sec, label: `Take ${t.track_number} end` },
+              { timeSec: t.start_sec, label: `Track ${t.track_number} start` },
+              { timeSec: t.end_sec, label: `Track ${t.track_number} end` },
             ])}
           />
         </div>
@@ -364,7 +367,7 @@ export default function SessionDetail() {
       {tracks.length > 1 && (
       <div className="mb-6 mt-8 flex items-center gap-3">
         <div className="h-px flex-1 bg-gray-700" />
-        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Takes</span>
+        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Tracks</span>
         <div className="h-px flex-1 bg-gray-700" />
       </div>
       )}
@@ -374,6 +377,7 @@ export default function SessionDetail() {
           <div key={t.id}>
             <TrackRow
               track={t}
+              trackCount={tracks.length}
               songs={songs}
               onUpdate={refresh}
               onTracksChanged={handleTracksChanged}
@@ -399,7 +403,7 @@ export default function SessionDetail() {
           <div className="relative mx-4 w-full max-w-sm rounded-lg border border-gray-700 bg-gray-900 px-6 py-5 shadow-xl">
             <h3 className="text-sm font-semibold text-white">Reprocess</h3>
             <p className="mt-2 text-sm text-gray-400">
-              Current takes and tags will be replaced.
+              Current tracks and tags will be replaced.
             </p>
             <div className="mt-4 space-y-4">
               <label className="flex items-center gap-2 cursor-pointer">
@@ -429,7 +433,7 @@ export default function SessionDetail() {
                   <span className="text-sm text-gray-500">dB</span>
                 </div>
                 <p className="mt-1 text-xs text-gray-500">
-                  Higher = more takes, lower = fewer takes
+                  Higher = more tracks, lower = fewer tracks
                 </p>
               </div>
               )}
@@ -454,7 +458,7 @@ export default function SessionDetail() {
       <Modal
         open={confirmDelete}
         title="Delete recording"
-        message="Delete this recording and all its takes? This cannot be undone."
+        message="Delete this recording and all its tracks? This cannot be undone."
         confirmLabel="Delete"
         variant="danger"
         onConfirm={handleDelete}

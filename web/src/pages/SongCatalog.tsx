@@ -62,7 +62,7 @@ export default function SongCatalog() {
   if (songs.length === 0) {
     return (
       <p className="text-gray-400">
-        No songs tagged yet. Tag takes from a{" "}
+        No songs tagged yet. Tag tracks from a{" "}
         <Link to="/" className="text-indigo-400 hover:text-indigo-300">recording</Link> to build your catalog.
       </p>
     );
@@ -71,16 +71,16 @@ export default function SongCatalog() {
   const sortOptions: { key: SortKey; label: string }[] = [
     { key: "name", label: "Name" },
     { key: "last_played", label: "Last played" },
-    { key: "takes", label: "Most takes" },
+    { key: "takes", label: "Most tracks" },
   ];
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <h1 className="text-lg font-bold">Songs</h1>
         {user && user.groups.length > 1 && (
           <>
-            <div className="mx-1 h-4 w-px bg-gray-700" />
+            <div className="mx-1 hidden h-4 w-px bg-gray-700 sm:block" />
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setGroupFilter(null)}
@@ -131,8 +131,8 @@ export default function SongCatalog() {
             to={`/songs/${song.id}`}
             className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4 transition hover:border-indigo-500 hover:bg-gray-800"
           >
-            <div>
-              <div className="font-medium text-white">
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium text-white">
                 {song.name}
                 {user && user.groups.length > 1 && !groupFilter && song.group_name && (
                   <span className="ml-2 text-xs font-normal text-gray-500">{song.group_name}</span>
@@ -144,8 +144,8 @@ export default function SongCatalog() {
                   : "No date info"}
               </div>
             </div>
-            <div className="text-right text-sm text-gray-400">
-              {song.take_count} take{song.take_count !== 1 ? "s" : ""}
+            <div className="shrink-0 text-right text-sm text-gray-400">
+              {song.take_count} track{song.take_count !== 1 ? "s" : ""}
             </div>
           </Link>
         ))}

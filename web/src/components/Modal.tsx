@@ -90,7 +90,7 @@ export function Toast({
       : "border-green-800 bg-green-950 text-green-300";
 
   return (
-    <div className={`fixed bottom-4 right-4 z-50 rounded-lg border px-4 py-3 text-sm shadow-lg ${colors}`}>
+    <div className={`fixed bottom-4 left-4 right-4 z-50 rounded-lg border px-4 py-3 text-sm shadow-lg sm:left-auto sm:max-w-sm ${colors}`}>
       <div className="flex items-center gap-2">
         <span>{message}</span>
         <button onClick={onClose} className="ml-2 opacity-60 hover:opacity-100">

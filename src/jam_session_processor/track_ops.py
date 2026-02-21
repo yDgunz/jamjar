@@ -1,7 +1,7 @@
 """Service layer for merge and split track operations.
 
-Orchestrates re-export from source files, fingerprinting, DB updates,
-and file renaming when tracks are merged or split.
+Orchestrates re-export from source files, DB updates, and file renaming
+when tracks are merged or split.
 """
 
 from datetime import datetime
@@ -9,7 +9,6 @@ from pathlib import Path
 
 from jam_session_processor.config import get_config
 from jam_session_processor.db import Database, Track
-from jam_session_processor.fingerprint import compute_chroma_fingerprint
 from jam_session_processor.output import generate_output_name
 from jam_session_processor.splitter import DEFAULT_FORMAT, AudioFormat, export_segment
 from jam_session_processor.storage import get_storage
@@ -68,13 +67,6 @@ def merge_tracks(
     new_path = output_dir / filename
     export_segment(source_file, new_path, new_start, new_end, audio_format=audio_format)
 
-    # Compute fingerprint for new file
-    fp = compute_chroma_fingerprint(
-        source_file,
-        start_sec=new_start,
-        duration_sec=new_end - new_start,
-    )
-
     # Preserve first track's metadata
     song_id = t1.song_id
     notes = t1.notes
@@ -93,7 +85,6 @@ def merge_tracks(
         start_sec=new_start,
         end_sec=new_end,
         audio_path=new_rel_path,
-        fingerprint=fp,
     )
 
     # Upload new file to remote storage
@@ -158,11 +149,6 @@ def split_track(
     )
     path_1 = output_dir / filename_1
     export_segment(source_file, path_1, track.start_sec, absolute_split, audio_format=audio_format)
-    fp_1 = compute_chroma_fingerprint(
-        source_file,
-        start_sec=track.start_sec,
-        duration_sec=split_at_sec,
-    )
 
     # Export second half
     filename_2 = generate_output_name(
@@ -175,11 +161,6 @@ def split_track(
     )
     path_2 = output_dir / filename_2
     export_segment(source_file, path_2, absolute_split, track.end_sec, audio_format=audio_format)
-    fp_2 = compute_chroma_fingerprint(
-        source_file,
-        start_sec=absolute_split,
-        duration_sec=track.end_sec - absolute_split,
-    )
 
     # Preserve first track's metadata
     song_id = track.song_id
@@ -197,7 +178,6 @@ def split_track(
         start_sec=track.start_sec,
         end_sec=absolute_split,
         audio_path=rel_path_1,
-        fingerprint=fp_1,
     )
     if storage.is_remote:
         storage.put(rel_path_1, path_1)
@@ -216,7 +196,6 @@ def split_track(
         start_sec=absolute_split,
         end_sec=track.end_sec,
         audio_path=rel_path_2,
-        fingerprint=fp_2,
     )
     if storage.is_remote:
         storage.put(rel_path_2, path_2)

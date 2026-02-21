@@ -21,6 +21,7 @@ export interface Marker {
 
 interface Props {
   src: string;
+  durationSec?: number;
   markers?: Marker[];
   onPlayStateChange?: (playing: boolean, currentTime: number) => void;
   onTimeUpdate?: (currentTime: number) => void;
@@ -28,12 +29,13 @@ interface Props {
 
 const SKIP_SECONDS = 30;
 
-export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpdate }: Props) {
+export default function AudioPlayer({ src, durationSec, markers, onPlayStateChange, onTimeUpdate }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
+  const [loaded, setLoaded] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState(durationSec ?? 0);
 
   // Register/unregister audio element
   useEffect(() => {
@@ -44,10 +46,20 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
 
   // Reset state when src changes
   useEffect(() => {
+    setLoaded(false);
     setPlaying(false);
     setCurrentTime(0);
-    setDuration(0);
-  }, [src]);
+    setDuration(durationSec ?? 0);
+  }, [src, durationSec]);
+
+  // Load audio src on first interaction
+  const ensureLoaded = useCallback(() => {
+    const audio = audioRef.current;
+    if (!loaded && audio) {
+      audio.src = src;
+      setLoaded(true);
+    }
+  }, [loaded, src]);
 
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
@@ -55,13 +67,15 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
     if (playing) {
       audio.pause();
     } else {
+      ensureLoaded();
       audio.play();
     }
-  }, [playing]);
+  }, [playing, ensureLoaded]);
 
   const restart = () => {
     const audio = audioRef.current;
     if (!audio) return;
+    ensureLoaded();
     audio.currentTime = 0;
   };
 
@@ -84,14 +98,24 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
     if (audio) setDuration(audio.duration);
   };
 
-  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+  const seekToClientX = useCallback((clientX: number) => {
     const audio = audioRef.current;
     const bar = progressRef.current;
     if (!audio || !bar || !duration) return;
     const rect = bar.getBoundingClientRect();
-    const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const fraction = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    ensureLoaded();
     audio.currentTime = fraction * duration;
-    if (!playing) audio.play();
+  }, [duration, ensureLoaded]);
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    seekToClientX(e.clientX);
+    if (!playing) audioRef.current?.play();
+  };
+
+  const handleTouchSeek = (e: React.TouchEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    seekToClientX(e.touches[0].clientX);
   };
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -116,7 +140,7 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
     <div
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      className="flex flex-wrap items-center gap-3 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+      className="flex flex-wrap items-center gap-3 rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500/50"
     >
       {/* Restart button */}
       <button
@@ -156,8 +180,8 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
           title={`Skip ahead ${SKIP_SECONDS}s`}
         >
           <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-            <polygon points="4,3 14,12 4,21" />
-            <rect x="16" y="3" width="3" height="18" />
+            <polygon points="2,3 12,12 2,21" />
+            <polygon points="12,3 22,12 12,21" />
           </svg>
           <span>{SKIP_SECONDS}s</span>
         </button>
@@ -168,11 +192,13 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
         {formatTime(currentTime)} / {formatTime(duration)}
       </span>
 
-      {/* Progress bar — hidden on mobile */}
+      {/* Progress bar */}
       <div
         ref={progressRef}
         onClick={handleSeek}
-        className="relative hidden flex-1 cursor-pointer py-3 sm:block"
+        onTouchStart={handleTouchSeek}
+        onTouchMove={handleTouchSeek}
+        className="relative basis-full cursor-pointer py-3 sm:basis-0 sm:flex-1"
       >
         <div className="relative h-2 rounded-full bg-gray-800">
           <div
@@ -194,8 +220,7 @@ export default function AudioPlayer({ src, markers, onPlayStateChange, onTimeUpd
       {/* Hidden audio element */}
       <audio
         ref={audioRef}
-        src={src}
-        preload="metadata"
+        preload="none"
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onPlay={() => { pauseAllExcept(audioRef.current!); setPlaying(true); onPlayStateChange?.(true, audioRef.current?.currentTime ?? 0); }}

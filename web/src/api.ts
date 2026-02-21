@@ -68,7 +68,6 @@ export interface Track {
   start_sec: number;
   end_sec: number;
   duration_sec: number;
-  fingerprint: string;
   notes: string;
 }
 
