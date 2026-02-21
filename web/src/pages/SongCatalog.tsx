@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { api, formatDate, canEdit } from "../api";
 import type { Song } from "../api";
@@ -16,8 +16,6 @@ export default function SongCatalog() {
   const [newName, setNewName] = useState("");
   const [newGroupId, setNewGroupId] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<number | null>(null);
-  const createInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.listSongs().then((data) => {
@@ -56,18 +54,6 @@ export default function SongCatalog() {
       setErrorMsg(null);
     } catch (err) {
       setErrorMsg(`Failed to create song: ${err instanceof Error ? err.message : err}`);
-    }
-  };
-
-  const handleDelete = async (songId: number) => {
-    try {
-      await api.deleteSong(songId);
-      setSongs((prev) => prev.filter((s) => s.id !== songId));
-      setDeleting(null);
-      setErrorMsg(null);
-    } catch (err) {
-      setErrorMsg(`Failed to delete: ${err instanceof Error ? err.message : err}`);
-      setDeleting(null);
     }
   };
 
@@ -120,134 +106,100 @@ export default function SongCatalog() {
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortKey)}
-          className="ml-auto rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+          className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
         >
           {sortOptions.map((opt) => (
             <option key={opt.key} value={opt.key}>{opt.label}</option>
           ))}
         </select>
-      </div>
-
-      {errorMsg && (
-        <div className="mb-3 rounded bg-red-900/50 px-3 py-2 text-sm text-red-300">
-          {errorMsg}
-          <button onClick={() => setErrorMsg(null)} className="ml-2 text-red-400 hover:text-red-200">&times;</button>
-        </div>
-      )}
-
-      {canEdit(user) && (
-        <div className="mb-3">
-          {creating ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                ref={createInputRef}
-                autoFocus
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleCreate();
-                  if (e.key === "Escape") { setCreating(false); setNewName(""); }
-                }}
-                placeholder="Song name"
-                className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
-              />
-              {user && user.groups.length > 1 && (
-                <select
-                  value={newGroupId ?? defaultGroupId ?? ""}
-                  onChange={(e) => setNewGroupId(Number(e.target.value))}
-                  className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
-                >
-                  <option value="" disabled>Group</option>
-                  {user.groups.map((g) => (
-                    <option key={g.id} value={g.id}>{g.name}</option>
-                  ))}
-                </select>
-              )}
-              <button
-                onClick={handleCreate}
-                className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
-              >
-                Add
-              </button>
-              <button
-                onClick={() => { setCreating(false); setNewName(""); }}
-                className="rounded px-3 py-1.5 text-sm text-gray-400 hover:text-white"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
+        {canEdit(user) && (
+          <div className="ml-auto flex items-center gap-2">
+            {errorMsg && (
+              <span className="text-sm text-red-400">{errorMsg}</span>
+            )}
             <button
               onClick={() => setCreating(true)}
-              className="rounded border border-dashed border-gray-700 px-3 py-1.5 text-sm text-gray-400 hover:border-indigo-500 hover:text-indigo-400"
+              className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500"
             >
-              + New song
+              New Song
             </button>
+          </div>
+        )}
+      </div>
+
+      {creating && canEdit(user) && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <input
+            autoFocus
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleCreate();
+              if (e.key === "Escape") { setCreating(false); setNewName(""); }
+            }}
+            placeholder="Song name"
+            className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+          />
+          {user && user.groups.length > 1 && (
+            <select
+              value={newGroupId ?? defaultGroupId ?? ""}
+              onChange={(e) => setNewGroupId(Number(e.target.value))}
+              className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="" disabled>Group</option>
+              {user.groups.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
           )}
+          <button
+            onClick={handleCreate}
+            className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
+          >
+            Add
+          </button>
+          <button
+            onClick={() => { setCreating(false); setNewName(""); }}
+            className="rounded px-3 py-1.5 text-sm text-gray-400 hover:text-white"
+          >
+            Cancel
+          </button>
         </div>
       )}
 
       {songs.length === 0 && !creating ? (
         <p className="text-gray-400">
-          No songs yet. Create one above or tag tracks from a{" "}
+          No songs yet. Create one or tag tracks from a{" "}
           <Link to="/" className="text-indigo-400 hover:text-indigo-300">recording</Link>.
         </p>
       ) : (
         <div className="space-y-3">
           {sorted.map((song) => (
-            <div key={song.id} className="group relative">
-              <Link
-                to={`/songs/${song.id}`}
-                className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4 transition hover:border-indigo-500 hover:bg-gray-800"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium text-white">
-                    {song.name}
-                    {user && user.groups.length > 1 && !groupFilter && song.group_name && (
-                      <span className="ml-2 text-xs font-normal text-gray-500">{song.group_name}</span>
-                    )}
-                  </div>
-                  {song.artist && (
-                    <div className="text-sm text-gray-500">{song.artist}</div>
+            <Link
+              key={song.id}
+              to={`/songs/${song.id}`}
+              className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4 transition hover:border-indigo-500 hover:bg-gray-800"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium text-white">
+                  {song.name}
+                  {user && user.groups.length > 1 && !groupFilter && song.group_name && (
+                    <span className="ml-2 text-xs font-normal text-gray-500">{song.group_name}</span>
                   )}
-                  <div className="mt-1 text-sm text-gray-400">
-                    {song.last_date
-                      ? `Last played ${formatDate(song.last_date)}`
-                      : "No date info"}
-                  </div>
                 </div>
-                <div className="shrink-0 text-right text-sm text-gray-400">
-                  {song.take_count} track{song.take_count !== 1 ? "s" : ""}
+                {song.artist && (
+                  <div className="text-sm text-gray-500">{song.artist}</div>
+                )}
+                <div className="mt-1 text-sm text-gray-400">
+                  {song.last_date
+                    ? `Last played ${formatDate(song.last_date)}`
+                    : "No date info"}
                 </div>
-              </Link>
-              {canEdit(user) && deleting === song.id ? (
-                <div className="absolute right-2 top-2 flex items-center gap-1 rounded bg-gray-800 px-2 py-1 shadow">
-                  <span className="text-xs text-gray-300">Delete?</span>
-                  <button
-                    onClick={() => handleDelete(song.id)}
-                    className="rounded px-2 py-0.5 text-xs font-medium text-red-400 hover:bg-red-900/40"
-                  >
-                    Yes
-                  </button>
-                  <button
-                    onClick={() => setDeleting(null)}
-                    className="rounded px-2 py-0.5 text-xs text-gray-400 hover:text-white"
-                  >
-                    No
-                  </button>
-                </div>
-              ) : canEdit(user) ? (
-                <button
-                  onClick={(e) => { e.preventDefault(); setDeleting(song.id); }}
-                  className="absolute right-2 top-2 hidden rounded p-1 text-gray-600 hover:text-red-400 group-hover:block"
-                  title="Delete song"
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              ) : null}
-            </div>
+              </div>
+              <div className="shrink-0 text-right text-sm text-gray-400">
+                {song.take_count} track{song.take_count !== 1 ? "s" : ""}
+              </div>
+            </Link>
           ))}
         </div>
       )}
