@@ -113,21 +113,23 @@ export default function SessionDetail() {
     });
   }, [sessionId]);
 
-  // Poll a background upload job until tracks are ready
+  // Poll a background job until tracks are ready.
+  // Triggered by ?job= URL param (after upload) or session.active_job_id (navigating back).
+  const activeJobId = jobId || session?.active_job_id;
+
   useEffect(() => {
-    if (!jobId) return;
+    if (!activeJobId) return;
     let cancelled = false;
     setProcessingProgress("Processing...");
 
     const poll = async () => {
       while (!cancelled) {
         try {
-          const job = await api.getJob(jobId);
+          const job = await api.getJob(activeJobId);
           if (cancelled) return;
           if (job.status === "completed") {
             setProcessingProgress(null);
-            // Remove job param from URL and refresh session data
-            setSearchParams({}, { replace: true });
+            if (jobId) setSearchParams({}, { replace: true });
             const [s, t] = await Promise.all([
               api.getSession(sessionId),
               api.getSessionTracks(sessionId),
@@ -142,7 +144,7 @@ export default function SessionDetail() {
           if (job.status === "failed") {
             setProcessingProgress(null);
             setErrorMsg(job.error || "Processing failed");
-            setSearchParams({}, { replace: true });
+            if (jobId) setSearchParams({}, { replace: true });
             return;
           }
           if (job.progress) setProcessingProgress(job.progress);
@@ -157,7 +159,7 @@ export default function SessionDetail() {
     };
     poll();
     return () => { cancelled = true; };
-  }, [jobId, sessionId, setSearchParams]);
+  }, [activeJobId, sessionId, jobId, setSearchParams]);
 
   const refresh = () => {
     api.getSessionTracks(sessionId).then(setTracks);
@@ -349,7 +351,8 @@ export default function SessionDetail() {
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setReprocessOpen(true)}
-                className="rounded px-2 py-1.5 text-xs text-gray-500 transition hover:text-gray-300"
+                disabled={!!processingProgress}
+                className="rounded px-2 py-1.5 text-xs text-gray-500 transition hover:text-gray-300 disabled:opacity-30 disabled:hover:text-gray-500"
               >
                 Reprocess
               </button>
@@ -413,11 +416,13 @@ export default function SessionDetail() {
         )}
       </div>
 
+      {(tracks.length > 1 || processingProgress) && (
       <div className="mb-6 mt-8 flex items-center gap-3">
         <div className="h-px flex-1 bg-gray-700" />
         <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Tracks</span>
         <div className="h-px flex-1 bg-gray-700" />
       </div>
+      )}
 
       {processingProgress ? (
         <div className="flex flex-col items-center gap-3 py-12">

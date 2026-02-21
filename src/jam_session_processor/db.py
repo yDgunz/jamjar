@@ -105,6 +105,7 @@ class Session:
     track_count: int = 0
     tagged_count: int = 0
     song_names: str = ""
+    active_job_id: str | None = None
 
 
 @dataclass
@@ -345,7 +346,12 @@ class Database:
                       COUNT(t.song_id) as tagged_count,
                       COALESCE((SELECT GROUP_CONCAT(DISTINCT s2.name)
                                 FROM tracks t2 JOIN songs s2 ON t2.song_id = s2.id
-                                WHERE t2.session_id = s.id), '') as song_names
+                                WHERE t2.session_id = s.id), '') as song_names,
+                      (SELECT j.id FROM jobs j
+                       WHERE j.session_id = s.id
+                         AND j.status IN ('pending', 'processing')
+                       ORDER BY j.created_at DESC LIMIT 1
+                      ) as active_job_id
                FROM sessions s
                LEFT JOIN tracks t ON t.session_id = s.id
                WHERE s.id = ?
@@ -364,7 +370,12 @@ class Database:
                       COUNT(t.song_id) as tagged_count,
                       COALESCE((SELECT GROUP_CONCAT(DISTINCT s2.name)
                                 FROM tracks t2 JOIN songs s2 ON t2.song_id = s2.id
-                                WHERE t2.session_id = s.id), '') as song_names
+                                WHERE t2.session_id = s.id), '') as song_names,
+                      (SELECT j.id FROM jobs j
+                       WHERE j.session_id = s.id
+                         AND j.status IN ('pending', 'processing')
+                       ORDER BY j.created_at DESC LIMIT 1
+                      ) as active_job_id
                FROM sessions s
                LEFT JOIN tracks t ON t.session_id = s.id"""
         if group_ids is not None:
@@ -384,7 +395,12 @@ class Database:
                       COUNT(t.song_id) as tagged_count,
                       COALESCE((SELECT GROUP_CONCAT(DISTINCT s2.name)
                                 FROM tracks t2 JOIN songs s2 ON t2.song_id = s2.id
-                                WHERE t2.session_id = s.id), '') as song_names
+                                WHERE t2.session_id = s.id), '') as song_names,
+                      (SELECT j.id FROM jobs j
+                       WHERE j.session_id = s.id
+                         AND j.status IN ('pending', 'processing')
+                       ORDER BY j.created_at DESC LIMIT 1
+                      ) as active_job_id
                FROM sessions s
                LEFT JOIN tracks t ON t.session_id = s.id
                WHERE s.source_file = ? AND s.group_id = ?

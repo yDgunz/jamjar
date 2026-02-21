@@ -57,6 +57,7 @@ export interface Session {
   track_count: number;
   tagged_count: number;
   song_names: string;
+  active_job_id: string | null;
 }
 
 export interface Track {

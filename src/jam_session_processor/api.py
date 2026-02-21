@@ -209,6 +209,7 @@ class SessionResponse(BaseModel):
     track_count: int
     tagged_count: int
     song_names: str = ""
+    active_job_id: str | None = None
 
 
 class TrackResponse(BaseModel):
