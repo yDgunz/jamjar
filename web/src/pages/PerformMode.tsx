@@ -5,10 +5,11 @@ import type { Song } from "../api";
 import { transposeChartText, annotateEStringRoots } from "../utils/chordUtils";
 
 const FONT_SIZES = ["text-xs", "text-sm", "text-base", "text-lg", "text-xl", "text-2xl", "text-3xl"];
-const SPEED_MULTIPLIERS = [0.5, 0.75, 1, 1.5, 2]; // multipliers around baseline
+const SPEED_MULTIPLIERS = [0.5, 0.75, 1, 1.5, 2, 3, 4]; // multipliers around baseline
 const TARGET_DURATION = 150; // baseline seconds — tuned so 1x feels natural for a ~3:30 song
 const LS_FONT_KEY = "perform-font-size";
 const LS_SPEED_KEY = "perform-scroll-speed";
+const LS_WRAP_KEY = "perform-wrap-text";
 
 function loadInt(key: string, def: number, max: number): number {
   const stored = localStorage.getItem(key);
@@ -29,6 +30,7 @@ export default function PerformMode() {
   const [scrolling, setScrolling] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(() => loadInt(LS_SPEED_KEY, 2, SPEED_MULTIPLIERS.length - 1));
   const [showRoots, setShowRoots] = useState(false);
+  const [wrapText, setWrapText] = useState(() => localStorage.getItem(LS_WRAP_KEY) !== "0");
   const [headerVisible, setHeaderVisible] = useState(true);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -49,6 +51,7 @@ export default function PerformMode() {
   // Persist settings
   useEffect(() => { localStorage.setItem(LS_FONT_KEY, String(fontIdx)); }, [fontIdx]);
   useEffect(() => { localStorage.setItem(LS_SPEED_KEY, String(speedIdx)); }, [speedIdx]);
+  useEffect(() => { localStorage.setItem(LS_WRAP_KEY, wrapText ? "1" : "0"); }, [wrapText]);
 
   // Screen wake lock
   useEffect(() => {
@@ -132,17 +135,38 @@ export default function PerformMode() {
     return () => clearTimeout(headerTimeoutRef.current);
   }, [scrolling]);
 
-  // Tap body to pause scrolling / reveal header
+  // Tap body — zone-based scroll controls
+  // Bottom third: start scrolling / speed up
+  // Middle third: stop scrolling
+  // Top third: slow down / show header
   const handleBodyTap = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    // Ignore taps on the header controls or bottom scroll button
+    // Ignore taps on the header controls or scroll button
     if ((e.target as HTMLElement).closest("header")) return;
     if ((e.target as HTMLElement).closest("[data-scroll-btn]")) return;
 
+    const clientY = "touches" in e ? e.changedTouches[0].clientY : (e as React.MouseEvent).clientY;
+    const zone = clientY / window.innerHeight;
+
     if (scrolling) {
       e.preventDefault();
-      setScrolling(false);
-    } else if (!headerVisible) {
-      setHeaderVisible(true);
+      if (zone > 2 / 3) {
+        // Bottom third — speed up
+        setSpeedIdx((i) => Math.min(SPEED_MULTIPLIERS.length - 1, i + 1));
+      } else if (zone > 1 / 3) {
+        // Middle third — stop
+        setScrolling(false);
+      } else {
+        // Top third — slow down
+        setSpeedIdx((i) => Math.max(0, i - 1));
+      }
+    } else {
+      if (zone > 2 / 3) {
+        // Bottom third — start scrolling
+        setScrolling(true);
+      } else if (!headerVisible) {
+        // Top or middle — show header if hidden
+        setHeaderVisible(true);
+      }
     }
   }, [scrolling, headerVisible]);
 
@@ -251,6 +275,20 @@ export default function PerformMode() {
               >
                 #
               </button>
+              <button
+                onClick={() => setWrapText((v) => !v)}
+                className={`rounded-xl px-4 py-2.5 active:bg-gray-800 ${
+                  wrapText ? "bg-indigo-600/20 text-indigo-400" : "text-gray-300 hover:bg-gray-800 hover:text-white"
+                }`}
+                title={wrapText ? "Disable word wrap" : "Enable word wrap"}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <path d="M3 12h15a3 3 0 1 1 0 6h-4" />
+                  <polyline points="16 16 14 18 16 20" />
+                  <line x1="3" y1="18" x2="10" y2="18" />
+                </svg>
+              </button>
             </div>
           )}
 
@@ -303,7 +341,7 @@ export default function PerformMode() {
       <div className={`p-4 sm:p-6 ${FONT_SIZES[fontIdx]}`}>
         {hasSheet ? (
           <div className="mx-auto max-w-3xl">
-            <pre className="whitespace-pre overflow-x-auto font-mono leading-relaxed text-gray-200">
+            <pre className={`${wrapText ? "whitespace-pre-wrap" : "whitespace-pre overflow-x-auto"} font-mono leading-relaxed text-gray-200`}>
               {sheetText}
             </pre>
           </div>

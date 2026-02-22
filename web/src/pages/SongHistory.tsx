@@ -88,14 +88,31 @@ function EditableField({
         </div>
       ) : value ? (
         readOnly ? (
-          <p className={`text-sm text-gray-300 ${mono ? "font-mono whitespace-pre overflow-x-auto" : "whitespace-pre-wrap"}`}>{value}</p>
+          mono ? (
+            <div className="overflow-x-auto">
+              <p className="text-sm text-gray-300 font-mono whitespace-pre">{value}</p>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-300 whitespace-pre-wrap">{value}</p>
+          )
         ) : (
-          <button
-            onClick={() => setEditing(true)}
-            className={`text-left text-sm text-gray-300 hover:text-white ${mono ? "font-mono whitespace-pre overflow-x-auto" : "whitespace-pre-wrap"}`}
-          >
-            {value}
-          </button>
+          mono ? (
+            <div className="overflow-x-auto">
+              <button
+                onClick={() => setEditing(true)}
+                className="text-left text-sm text-gray-300 hover:text-white font-mono whitespace-pre"
+              >
+                {value}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setEditing(true)}
+              className="text-left text-sm text-gray-300 hover:text-white whitespace-pre-wrap"
+            >
+              {value}
+            </button>
+          )
         )
       ) : readOnly ? null : (
         <button
@@ -442,7 +459,9 @@ export default function SongHistory() {
             )}
           </div>
           {showRoots && song?.sheet ? (
-            <pre className="font-mono text-sm whitespace-pre overflow-x-auto text-gray-300">{annotateEStringRoots(song.sheet)}</pre>
+            <div className="overflow-x-auto">
+              <pre className="font-mono text-sm whitespace-pre text-gray-300">{annotateEStringRoots(song.sheet)}</pre>
+            </div>
           ) : (
             <EditableField
               label=""
