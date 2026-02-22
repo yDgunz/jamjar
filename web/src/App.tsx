@@ -9,6 +9,7 @@ import SessionDetail from "./pages/SessionDetail";
 import SongCatalog from "./pages/SongCatalog";
 import SongHistory from "./pages/SongHistory";
 import PerformMode from "./pages/PerformMode";
+import Tuner from "./pages/Tuner";
 import Admin from "./pages/Admin";
 
 function Layout({ children }: { children: React.ReactNode }) {
@@ -46,6 +47,14 @@ function Layout({ children }: { children: React.ReactNode }) {
             >
               Songs
             </NavLink>
+            <NavLink
+              to="/tuner"
+              className={({ isActive }) =>
+                `py-2 px-2 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
+              }
+            >
+              Tuner
+            </NavLink>
             {isSuperAdmin(user) && (
               <NavLink
                 to="/admin"
@@ -81,8 +90,9 @@ function AuthenticatedApp() {
   return (
     <AuthProvider>
       <Routes>
-        {/* Full-screen route — no app chrome */}
+        {/* Full-screen routes — no app chrome */}
         <Route path="/songs/:id/perform" element={<PerformMode />} />
+        <Route path="/tuner" element={<Tuner />} />
 
         {/* Normal layout routes */}
         <Route path="*" element={
