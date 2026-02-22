@@ -290,7 +290,7 @@ export default function SessionDetail() {
                 className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-indigo-400" : ""}`}
                 title={canEdit(user) ? "Click to rename" : undefined}
               >
-                {session.name || session.source_file}
+                {session.name || `Session ${session.id}`}
                 {session.group_name && user && user.groups.length > 1 && canAdmin(user) ? (
                   <select
                     value={session.group_id}
@@ -342,9 +342,6 @@ export default function SessionDetail() {
               )}
               {" "}&middot; {session.track_count} track{session.track_count !== 1 ? "s" : ""} &middot;{" "}
               {session.tagged_count} tagged
-              {session.source_file && (
-                <span className="text-gray-500"> &middot; {session.source_file}</span>
-              )}
             </p>
           </div>
           {canAdmin(user) && (

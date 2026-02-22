@@ -106,7 +106,7 @@ export default function SessionList() {
     if (groupFilter !== null && s.group_id !== groupFilter) return false;
     if (filter.trim()) {
       const q = filter.toLowerCase();
-      return (s.name || s.source_file).toLowerCase().includes(q)
+      return (s.name || "").toLowerCase().includes(q)
         || (s.song_names || "").toLowerCase().includes(q);
     }
     return true;
@@ -230,7 +230,7 @@ export default function SessionList() {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium text-white">
-                      {s.name || s.source_file}
+                      {s.name || `Session ${s.id}`}
                       {multiGroup && !groupFilter && s.group_name && (
                         <span className="ml-2 text-xs font-normal text-gray-500">{s.group_name}</span>
                       )}

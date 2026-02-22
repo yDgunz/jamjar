@@ -124,7 +124,7 @@ function TakeRow({ take, onUpdate, readOnly }: { take: SongTrack; onUpdate: () =
           to={`/sessions/${take.session_id}`}
           className="text-sm font-medium text-gray-300 hover:text-indigo-400"
         >
-          {take.session_name || take.source_file}
+          {take.session_name || `Session ${take.session_id}`}
         </Link>
         <span className="text-xs text-gray-500">
           {formatDate(take.session_date)} &middot; {formatTime(take.duration_sec)}
