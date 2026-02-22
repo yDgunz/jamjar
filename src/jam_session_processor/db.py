@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     name TEXT NOT NULL DEFAULT '',
     date TEXT,
     source_file TEXT NOT NULL,
+    duration_sec REAL,
     notes TEXT DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -101,6 +102,7 @@ class Session:
     name: str
     date: str | None
     source_file: str
+    duration_sec: float | None
     notes: str
     created_at: str
     track_count: int = 0
@@ -196,6 +198,13 @@ class Database:
         }
         if "fingerprint" in track_cols:
             self.conn.execute("ALTER TABLE tracks DROP COLUMN fingerprint")
+            self.conn.commit()
+
+        session_cols = {
+            row["name"] for row in self.conn.execute("PRAGMA table_info(sessions)").fetchall()
+        }
+        if "duration_sec" not in session_cols:
+            self.conn.execute("ALTER TABLE sessions ADD COLUMN duration_sec REAL")
             self.conn.commit()
 
         song_cols = {
@@ -449,6 +458,43 @@ class Database:
             "UPDATE sessions SET group_id = ? WHERE id = ?", (new_group_id, session_id)
         )
         self.conn.commit()
+
+    def update_session_source_file(self, session_id: int, source_file: str):
+        self.conn.execute(
+            "UPDATE sessions SET source_file = ? WHERE id = ?", (source_file, session_id)
+        )
+        self.conn.commit()
+
+    def update_session_duration(self, session_id: int, duration_sec: float):
+        self.conn.execute(
+            "UPDATE sessions SET duration_sec = ? WHERE id = ?", (duration_sec, session_id)
+        )
+        self.conn.commit()
+
+    def find_duplicate_session(self, group_id: int, duration_sec: float) -> Session | None:
+        """Find a session in the same group with exactly matching duration."""
+        row = self.conn.execute(
+            """SELECT s.*,
+                      COUNT(t.id) as track_count,
+                      COUNT(t.song_id) as tagged_count,
+                      COALESCE((SELECT GROUP_CONCAT(DISTINCT s2.name)
+                                FROM tracks t2 JOIN songs s2 ON t2.song_id = s2.id
+                                WHERE t2.session_id = s.id), '') as song_names,
+                      (SELECT j.id FROM jobs j
+                       WHERE j.session_id = s.id
+                         AND j.status IN ('pending', 'processing')
+                       ORDER BY j.created_at DESC LIMIT 1
+                      ) as active_job_id
+               FROM sessions s
+               LEFT JOIN tracks t ON t.session_id = s.id
+               WHERE s.group_id = ? AND s.duration_sec = ?
+               GROUP BY s.id
+               LIMIT 1""",
+            (group_id, duration_sec),
+        ).fetchone()
+        if not row:
+            return None
+        return Session(**row)
 
     # --- Tracks ---
 

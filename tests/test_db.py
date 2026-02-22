@@ -525,3 +525,60 @@ def test_job_cascade_on_group_delete(db):
 
     db.delete_group(gid)
     assert db.get_job("job1") is None
+
+
+# --- Session duration + duplicate detection tests ---
+
+
+def test_update_session_duration(db, group_id):
+    sid = db.create_session("test.m4a", group_id, date="2026-02-03")
+    session = db.get_session(sid)
+    assert session.duration_sec is None
+
+    db.update_session_duration(sid, 3456.789)
+    session = db.get_session(sid)
+    assert session.duration_sec == 3456.789
+
+
+def test_find_duplicate_session(db, group_id):
+    sid = db.create_session("test.m4a", group_id, date="2026-02-03")
+    db.update_session_duration(sid, 3456.789)
+
+    dup = db.find_duplicate_session(group_id, 3456.789)
+    assert dup is not None
+    assert dup.id == sid
+
+
+def test_find_duplicate_session_no_match(db, group_id):
+    sid = db.create_session("test.m4a", group_id, date="2026-02-03")
+    db.update_session_duration(sid, 3456.789)
+
+    dup = db.find_duplicate_session(group_id, 9999.0)
+    assert dup is None
+
+
+def test_find_duplicate_session_different_group(db):
+    gid1 = db.create_group("Band1")
+    gid2 = db.create_group("Band2")
+
+    sid = db.create_session("test.m4a", gid1, date="2026-02-03")
+    db.update_session_duration(sid, 3456.789)
+
+    # Same duration but different group — no match
+    dup = db.find_duplicate_session(gid2, 3456.789)
+    assert dup is None
+
+
+def test_find_duplicate_session_null_duration(db, group_id):
+    """Sessions without duration should not match."""
+    db.create_session("test.m4a", group_id, date="2026-02-03")
+
+    dup = db.find_duplicate_session(group_id, 3456.789)
+    assert dup is None
+
+
+def test_update_session_source_file(db, group_id):
+    sid = db.create_session("original.m4a", group_id, date="2026-02-03")
+    db.update_session_source_file(sid, "recordings/1.m4a")
+    session = db.get_session(sid)
+    assert session.source_file == "recordings/1.m4a"

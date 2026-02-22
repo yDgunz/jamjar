@@ -1,4 +1,3 @@
-from datetime import datetime
 from pathlib import Path
 
 from jam_session_processor.splitter import DEFAULT_FORMAT, AudioFormat, export_segment
@@ -11,7 +10,6 @@ def _format_timestamp(sec: float) -> str:
 
 
 def generate_output_name(
-    session_date: datetime | None,
     track_number: int,
     total_tracks: int,
     start_sec: float | None = None,
@@ -19,9 +17,8 @@ def generate_output_name(
     song_name: str = "",
     extension: str = ".m4a",
 ) -> str:
-    date_str = session_date.strftime("%Y-%m-%d") if session_date else "unknown-date"
     width = len(str(total_tracks))
-    name = f"{date_str}_{track_number:0{width}d}"
+    name = f"{track_number:0{width}d}"
     if start_sec is not None and end_sec is not None:
         name += f"_{_format_timestamp(start_sec)}-{_format_timestamp(end_sec)}"
     if song_name:
@@ -33,7 +30,6 @@ def export_segments(
     file_path: Path,
     segments: list[tuple[float, float]],
     output_dir: Path,
-    session_date: datetime | None = None,
     on_progress: callable = None,
     audio_format: AudioFormat = DEFAULT_FORMAT,
 ) -> list[Path]:
@@ -42,7 +38,6 @@ def export_segments(
 
     for i, (start, end) in enumerate(segments, start=1):
         name = generate_output_name(
-            session_date,
             i,
             len(segments),
             start,

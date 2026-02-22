@@ -55,6 +55,10 @@ class Config:
         """Return the output subdirectory for a given source file stem."""
         return self.output_dir / stem
 
+    def output_dir_for_session(self, session_id: int) -> Path:
+        """Return the output subdirectory for a given session ID."""
+        return self.output_dir / str(session_id)
+
 
 def _build_config() -> Config:
     data_dir = Path(os.environ.get("JAM_DATA_DIR", ".")).resolve()

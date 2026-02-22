@@ -205,6 +205,7 @@ class SessionResponse(BaseModel):
     name: str
     date: str | None
     source_file: str
+    duration_sec: float | None = None
     notes: str
     track_count: int
     tagged_count: int
@@ -512,7 +513,7 @@ def reprocess_session(session_id: int, req: ReprocessRequest, request: Request):
     if existing_tracks:
         output_dir = cfg.resolve_path(existing_tracks[0].audio_path).parent
     else:
-        output_dir = cfg.output_dir_for_source(source.stem)
+        output_dir = cfg.output_dir_for_session(session_id)
 
     # Delete old tracks and their audio files
     for track in existing_tracks:
@@ -543,7 +544,6 @@ def reprocess_session(session_id: int, req: ReprocessRequest, request: Request):
         source,
         segments,
         output_dir,
-        session_date=meta.recording_date,
     )
 
     for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
@@ -612,6 +612,10 @@ def _process_upload(
         db.update_job_progress(job_id, "Analyzing audio...")
         meta = extract_metadata(source)
 
+        # Save duration for duplicate detection
+        if meta.duration_seconds:
+            db.update_session_duration(session_id, meta.duration_seconds)
+
         # Update session date from audio metadata (more accurate than filename)
         date_str = meta.recording_date.strftime("%Y-%m-%d") if meta.recording_date else None
         if date_str:
@@ -626,15 +630,16 @@ def _process_upload(
 
         if segments:
             db.update_job_progress(job_id, "Exporting tracks...")
-            output_dir = cfg.output_dir_for_source(source.stem)
+            output_dir = cfg.output_dir_for_session(session_id)
             exported = export_segments(
                 source,
                 segments,
                 output_dir,
-                session_date=meta.recording_date,
             )
             storage = get_storage()
-            source_rel = cfg.make_relative(source)
+            # Rename source to session-ID-based key for R2
+            source_ext = source.suffix
+            new_source_rel = f"recordings/{session_id}{source_ext}"
             for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
                 db.update_job_progress(job_id, f"Saving track {i} of {len(segments)}...")
                 rel_path = cfg.make_relative(audio_path.resolve())
@@ -648,7 +653,8 @@ def _process_upload(
                 if storage.is_remote:
                     storage.put(rel_path, audio_path.resolve())
             if storage.is_remote:
-                storage.put(source_rel, source)
+                storage.put(new_source_rel, source)
+                db.update_session_source_file(session_id, new_source_rel)
                 # Clean up local files after successful R2 upload
                 for audio_path in exported:
                     audio_path.resolve().unlink(missing_ok=True)
@@ -754,9 +760,10 @@ async def upload_session(request: Request, file: UploadFile):
     threshold_str = request.query_params.get("threshold")
     threshold = float(threshold_str) if threshold_str else -20.0
     single = request.query_params.get("single") == "true"
+    force = request.query_params.get("force") == "true"
 
     # Create session and job synchronously so the page is immediately viewable
-    from jam_session_processor.metadata import parse_date_from_filename
+    from jam_session_processor.metadata import extract_metadata, parse_date_from_filename
 
     db = get_db()
     cfg = get_config()
@@ -768,6 +775,26 @@ async def upload_session(request: Request, file: UploadFile):
             status_code=409,
             detail=f"A session with the filename '{file.filename}' already exists",
         )
+
+    # Duration-based duplicate detection
+    if not force:
+        try:
+            meta_check = extract_metadata(source)
+            if meta_check.duration_seconds:
+                dup = db.find_duplicate_session(group_id, meta_check.duration_seconds)
+                if dup:
+                    dest.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"Possible duplicate: a session with the same duration"
+                            f" already exists ('{dup.name}', {dup.date})"
+                        ),
+                    )
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # If metadata extraction fails here, let the background job handle it
 
     filename_date = parse_date_from_filename(source.stem)
     date_str = filename_date.strftime("%Y-%m-%d") if filename_date else None

@@ -546,6 +546,7 @@ def test_upload_session(auth_client, tmp_path):
 
     mock_meta = MagicMock()
     mock_meta.recording_date = None
+    mock_meta.duration_seconds = 400.0
 
     def mock_export(file_path, segments, output_dir, **kwargs):
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -598,7 +599,7 @@ def test_upload_invalid_type(auth_client, tmp_path):
     assert "Invalid file type" in resp.json()["detail"]
 
 
-def test_upload_duplicate(auth_client, tmp_path):
+def test_upload_duplicate_filename(auth_client, tmp_path):
     from io import BytesIO
     from unittest.mock import MagicMock, patch
 
@@ -608,6 +609,7 @@ def test_upload_duplicate(auth_client, tmp_path):
     mock_result = SplitResult(segments=[], total_duration_sec=100.0)
     mock_meta = MagicMock()
     mock_meta.recording_date = None
+    mock_meta.duration_seconds = 100.0
 
     with (
         patch("jam_session_processor.splitter.detect_songs", return_value=mock_result),
@@ -626,6 +628,71 @@ def test_upload_duplicate(auth_client, tmp_path):
         files={"file": ("dup.m4a", BytesIO(b"\x00" * 50), "audio/mp4")},
     )
     assert resp.status_code == 409
+
+
+def test_upload_duplicate_duration(auth_client, tmp_path):
+    """Second upload with same duration should return 409."""
+    from io import BytesIO
+    from unittest.mock import MagicMock, patch
+
+    from jam_session_processor.splitter import SplitResult
+
+    client, uid, gid = auth_client
+    mock_result = SplitResult(segments=[], total_duration_sec=5432.1)
+    mock_meta = MagicMock()
+    mock_meta.recording_date = None
+    mock_meta.duration_seconds = 5432.1
+
+    with (
+        patch("jam_session_processor.splitter.detect_songs", return_value=mock_result),
+        patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta),
+    ):
+        resp = client.post(
+            "/api/sessions/upload",
+            files={"file": ("first.m4a", BytesIO(b"\x00" * 50), "audio/mp4")},
+        )
+        assert resp.status_code == 202
+        _poll_job(client, resp.json()["id"])
+
+        # Different filename but same duration — should 409
+        resp = client.post(
+            "/api/sessions/upload",
+            files={"file": ("second.m4a", BytesIO(b"\x00" * 50), "audio/mp4")},
+        )
+        assert resp.status_code == 409
+        assert "duplicate" in resp.json()["detail"].lower()
+
+
+def test_upload_duplicate_duration_force(auth_client, tmp_path):
+    """Upload with force=true should bypass duration duplicate check."""
+    from io import BytesIO
+    from unittest.mock import MagicMock, patch
+
+    from jam_session_processor.splitter import SplitResult
+
+    client, uid, gid = auth_client
+    mock_result = SplitResult(segments=[], total_duration_sec=5432.1)
+    mock_meta = MagicMock()
+    mock_meta.recording_date = None
+    mock_meta.duration_seconds = 5432.1
+
+    with (
+        patch("jam_session_processor.splitter.detect_songs", return_value=mock_result),
+        patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta),
+    ):
+        resp = client.post(
+            "/api/sessions/upload",
+            files={"file": ("first.m4a", BytesIO(b"\x00" * 50), "audio/mp4")},
+        )
+        assert resp.status_code == 202
+        _poll_job(client, resp.json()["id"])
+
+        # Same duration but force=true — should succeed
+        resp = client.post(
+            "/api/sessions/upload?force=true",
+            files={"file": ("second.m4a", BytesIO(b"\x00" * 50), "audio/mp4")},
+        )
+        assert resp.status_code == 202
 
 
 def test_upload_too_large(auth_client, monkeypatch):
@@ -660,6 +727,7 @@ def test_upload_with_api_key(client, tmp_path):
     mock_result = SplitResult(segments=[], total_duration_sec=100.0)
     mock_meta = MagicMock()
     mock_meta.recording_date = None
+    mock_meta.duration_seconds = 100.0
 
     headers = {"X-API-Key": "test-api-key"}
     with (

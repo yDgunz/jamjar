@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { Link, useNavigate } from "react-router";
-import { api, formatDate, canAdmin } from "../api";
+import { api, ApiError, formatDate, canAdmin } from "../api";
 import type { Session } from "../api";
 import { useAuth } from "../context/AuthContext";
 
@@ -40,6 +40,7 @@ export default function SessionList() {
   const [uploadGroupId, setUploadGroupId] = useState<number | null>(null);
   const [uploadThreshold, setUploadThreshold] = useState(20);
   const [singleSong, setSingleSong] = useState(false);
+  const [duplicateDetected, setDuplicateDetected] = useState(false);
   const navigate = useNavigate();
   const multiGroup = user != null && user.groups.length > 1;
 
@@ -64,10 +65,11 @@ export default function SessionList() {
       setUploadGroupId(null);
     }
     setUploadError(null);
+    setDuplicateDetected(false);
     setUploadModalOpen(true);
   };
 
-  const handleUpload = async () => {
+  const doUpload = async (force?: boolean) => {
     if (!selectedFile) return;
 
     const groups = user?.groups ?? [];
@@ -81,16 +83,24 @@ export default function SessionList() {
     setUploading(true);
     setUploadStatus("Uploading...");
     setUploadError(null);
+    setDuplicateDetected(false);
     try {
       const threshold = uploadThreshold !== 20 ? -uploadThreshold : undefined;
-      const job = await api.uploadSession(selectedFile, groupId ?? undefined, threshold, singleSong || undefined);
+      const job = await api.uploadSession(selectedFile, groupId ?? undefined, threshold, singleSong || undefined, force || undefined);
       navigate(`/sessions/${job.session_id}?job=${job.id}`);
     } catch (err: unknown) {
-      setUploadError(err instanceof Error ? err.message : "Upload failed");
+      if (err instanceof ApiError && err.status === 409 && err.message.includes("duplicate")) {
+        setDuplicateDetected(true);
+        setUploadError(err.message);
+      } else {
+        setUploadError(err instanceof Error ? err.message : "Upload failed");
+      }
     } finally {
       setUploading(false);
     }
   };
+
+  const handleUpload = () => doUpload();
 
   const filtered = sessions.filter((s) => {
     if (groupFilter !== null && s.group_id !== groupFilter) return false;
@@ -178,7 +188,17 @@ export default function SessionList() {
         {canAdmin(user) && (
           <div className="ml-auto flex items-center gap-2">
             {uploadError && (
-              <span className="text-sm text-red-400">{uploadError}</span>
+              <span className="text-sm text-red-400">
+                {uploadError}
+                {duplicateDetected && (
+                  <button
+                    onClick={() => doUpload(true)}
+                    className="ml-2 rounded bg-yellow-600 px-2 py-0.5 text-xs font-medium text-white transition hover:bg-yellow-500"
+                  >
+                    Upload Anyway
+                  </button>
+                )}
+              </span>
             )}
             <button
               onClick={openUploadModal}

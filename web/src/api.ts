@@ -53,6 +53,7 @@ export interface Session {
   name: string;
   date: string | null;
   source_file: string;
+  duration_sec: number | null;
   notes: string;
   track_count: number;
   tagged_count: number;
@@ -123,6 +124,14 @@ export interface AdminGroup {
   member_count: number;
 }
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(url, {
     ...init,
@@ -133,12 +142,12 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
     if (!window.location.pathname.startsWith("/login")) {
       window.location.href = "/login";
     }
-    throw new Error("Authentication required");
+    throw new ApiError("Authentication required", 401);
   }
   if (!resp.ok) {
     const body = await resp.json().catch(() => null);
     const detail = body?.detail;
-    throw new Error(detail || `${resp.status} ${resp.statusText}`);
+    throw new ApiError(detail || `${resp.status} ${resp.statusText}`, resp.status);
   }
   return resp.json();
 }
@@ -288,13 +297,14 @@ export const api = {
   getSongTracks: (songId: number) =>
     fetchJson<SongTrack[]>(`${BASE}/songs/${songId}/tracks`),
 
-  uploadSession: (file: File, groupId?: number, threshold?: number, single?: boolean) => {
+  uploadSession: (file: File, groupId?: number, threshold?: number, single?: boolean, force?: boolean) => {
     const form = new FormData();
     form.append("file", file);
     const params = new URLSearchParams();
     if (groupId !== undefined) params.set("group_id", String(groupId));
     if (threshold !== undefined) params.set("threshold", String(threshold));
     if (single) params.set("single", "true");
+    if (force) params.set("force", "true");
     const qs = params.toString();
     return fetchJson<Job>(`${BASE}/sessions/upload${qs ? `?${qs}` : ""}`, {
       method: "POST",

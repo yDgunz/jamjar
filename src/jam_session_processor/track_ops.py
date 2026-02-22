@@ -4,7 +4,6 @@ Orchestrates re-export from source files, DB updates, and file renaming
 when tracks are merged or split.
 """
 
-from datetime import datetime
 from pathlib import Path
 
 from jam_session_processor.config import get_config
@@ -43,7 +42,6 @@ def merge_tracks(
     storage = get_storage()
     session = db.get_session(t1.session_id)
     source_file = cfg.resolve_path(session.source_file)
-    session_date = _parse_date(session.date)
     output_dir = cfg.resolve_path(t1.audio_path).parent
 
     # Ensure source file is local if using remote storage
@@ -57,7 +55,6 @@ def merge_tracks(
     # Re-export merged segment
     total_tracks = len(db.get_tracks_for_session(session.id)) - 1
     filename = generate_output_name(
-        session_date,
         t1.track_number,
         max(total_tracks, 1),
         new_start,
@@ -99,7 +96,7 @@ def merge_tracks(
         db.update_track_notes(new_track_id, notes)
 
     # Renumber all tracks in the session
-    _renumber_tracks(db, session.id, session_date, output_dir, audio_format=audio_format)
+    _renumber_tracks(db, session.id, output_dir, audio_format=audio_format)
 
     return db.get_tracks_for_session(session.id)
 
@@ -129,7 +126,6 @@ def split_track(
     storage = get_storage()
     session = db.get_session(track.session_id)
     source_file = cfg.resolve_path(session.source_file)
-    session_date = _parse_date(session.date)
     output_dir = cfg.resolve_path(track.audio_path).parent
 
     # Ensure source file is local if using remote storage
@@ -140,7 +136,6 @@ def split_track(
 
     # Export first half
     filename_1 = generate_output_name(
-        session_date,
         track.track_number,
         total_tracks,
         track.start_sec,
@@ -152,7 +147,6 @@ def split_track(
 
     # Export second half
     filename_2 = generate_output_name(
-        session_date,
         track.track_number + 1,
         total_tracks,
         absolute_split,
@@ -201,7 +195,7 @@ def split_track(
         storage.put(rel_path_2, path_2)
 
     # Renumber all tracks in the session
-    _renumber_tracks(db, session.id, session_date, output_dir, audio_format=audio_format)
+    _renumber_tracks(db, session.id, output_dir, audio_format=audio_format)
 
     return db.get_tracks_for_session(session.id)
 
@@ -209,7 +203,6 @@ def split_track(
 def _renumber_tracks(
     db: Database,
     session_id: int,
-    session_date: datetime | None,
     output_dir: Path,
     audio_format: AudioFormat = DEFAULT_FORMAT,
 ):
@@ -228,7 +221,6 @@ def _renumber_tracks(
         expected_num = i
         if track.track_number != expected_num:
             new_name = generate_output_name(
-                session_date,
                 expected_num,
                 total,
                 track.start_sec,
@@ -241,13 +233,3 @@ def _renumber_tracks(
             db.update_track(
                 track.id, track_number=expected_num, audio_path=new_rel
             )
-
-
-def _parse_date(date_str: str | None) -> datetime | None:
-    """Parse a date string from the database into a datetime."""
-    if not date_str:
-        return None
-    try:
-        return datetime.strptime(date_str, "%Y-%m-%d")
-    except ValueError:
-        return None
