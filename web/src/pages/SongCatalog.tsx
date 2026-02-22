@@ -11,12 +11,26 @@ export default function SongCatalog() {
   const navigate = useNavigate();
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState<SortKey>("name");
-  const [groupFilter, setGroupFilter] = useState<number | null>(null);
+  const [sortBy, setSortBy] = useState<SortKey>(() => {
+    const stored = localStorage.getItem("song-catalog-sort");
+    if (stored === "name" || stored === "last_played" || stored === "takes") return stored;
+    return "name";
+  });
+  const [groupFilter, setGroupFilter] = useState<number | null>(() => {
+    const stored = localStorage.getItem("song-catalog-group");
+    if (stored) { const n = Number(stored); if (!isNaN(n)) return n; }
+    return null;
+  });
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newGroupId, setNewGroupId] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => { localStorage.setItem("song-catalog-sort", sortBy); }, [sortBy]);
+  useEffect(() => {
+    if (groupFilter !== null) localStorage.setItem("song-catalog-group", String(groupFilter));
+    else localStorage.removeItem("song-catalog-group");
+  }, [groupFilter]);
 
   useEffect(() => {
     api.listSongs().then((data) => {

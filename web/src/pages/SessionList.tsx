@@ -31,7 +31,11 @@ export default function SessionList() {
   const [filter, setFilter] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const filterInputRef = useRef<HTMLInputElement>(null);
-  const [groupFilter, setGroupFilter] = useState<number | null>(null);
+  const [groupFilter, setGroupFilter] = useState<number | null>(() => {
+    const stored = localStorage.getItem("session-list-group");
+    if (stored) { const n = Number(stored); if (!isNaN(n)) return n; }
+    return null;
+  });
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("Uploading...");
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -43,6 +47,11 @@ export default function SessionList() {
   const [duplicateDetected, setDuplicateDetected] = useState(false);
   const navigate = useNavigate();
   const multiGroup = user != null && user.groups.length > 1;
+
+  useEffect(() => {
+    if (groupFilter !== null) localStorage.setItem("session-list-group", String(groupFilter));
+    else localStorage.removeItem("session-list-group");
+  }, [groupFilter]);
 
   useEffect(() => {
     api.listSessions().then((data) => {
