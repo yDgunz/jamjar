@@ -191,22 +191,14 @@ export default function PerformMode() {
             <button
               data-scroll-btn
               onClick={(e) => { e.stopPropagation(); setScrolling((s) => !s); }}
-              className={`shrink-0 rounded-lg p-2 transition-colors ${
+              className={`shrink-0 rounded-xl px-4 py-2 text-base font-semibold transition-colors ${
                 scrolling
-                  ? "text-indigo-400"
-                  : "text-gray-400 hover:bg-gray-800 hover:text-white"
+                  ? "bg-indigo-600 text-white"
+                  : "bg-gray-800 text-gray-200 hover:bg-gray-700 hover:text-white"
               }`}
               title={scrolling ? "Pause scroll" : "Start auto-scroll"}
             >
-              {scrolling ? (
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
-                  <path fillRule="evenodd" d="M6.75 5.25a.75.75 0 0 1 .75.75v12a.75.75 0 0 1-1.5 0V6a.75.75 0 0 1 .75-.75Zm10.5 0a.75.75 0 0 1 .75.75v12a.75.75 0 0 1-1.5 0V6a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-                </svg>
-              ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
-                  <path fillRule="evenodd" d="M12 3.75a.75.75 0 0 1 .75.75v13.19l5.47-5.47a.75.75 0 1 1 1.06 1.06l-6.75 6.75a.75.75 0 0 1-1.06 0l-6.75-6.75a.75.75 0 1 1 1.06-1.06l5.47 5.47V4.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-                </svg>
-              )}
+              {scrolling ? "Pause" : "Scroll"}
             </button>
           ) : (
             <div className="w-9 shrink-0" />
@@ -214,33 +206,42 @@ export default function PerformMode() {
         </div>
 
         {/* Controls row */}
-        <div className="mt-2 flex items-center justify-center gap-3">
-          {/* Transpose */}
+        <div className="mt-2 flex items-center justify-center gap-4">
+          {/* Transpose + Root notes */}
           {hasChart && (
-            <div className="flex items-center">
+            <div className="flex items-center gap-1">
               <button
                 onClick={() => setTranspose((t) => ((t - 1) % 12 + 12) % 12)}
-                className="rounded-lg px-3 py-2 text-base text-gray-400 active:bg-gray-800 hover:bg-gray-800 hover:text-white"
+                className="rounded-xl px-4 py-2.5 text-lg font-medium text-gray-300 active:bg-gray-800 hover:bg-gray-800 hover:text-white"
                 title="Transpose down"
               >
                 T-
               </button>
               <button
                 onClick={() => setTranspose((t) => (t + 1) % 12)}
-                className="rounded-lg px-3 py-2 text-base text-gray-400 active:bg-gray-800 hover:bg-gray-800 hover:text-white"
+                className="rounded-xl px-4 py-2.5 text-lg font-medium text-gray-300 active:bg-gray-800 hover:bg-gray-800 hover:text-white"
                 title="Transpose up"
               >
                 T+
+              </button>
+              <button
+                onClick={() => setShowRoots((v) => !v)}
+                className={`rounded-xl px-4 py-2.5 text-lg font-medium active:bg-gray-800 ${
+                  showRoots ? "bg-indigo-600/20 text-indigo-400" : "text-gray-300 hover:bg-gray-800 hover:text-white"
+                }`}
+                title={showRoots ? "Hide root note frets" : "Show root note frets"}
+              >
+                #
               </button>
             </div>
           )}
 
           {/* Font size */}
-          <div className="flex items-center">
+          <div className="flex items-center gap-1">
             <button
               onClick={() => setFontIdx((i) => Math.max(0, i - 1))}
               disabled={fontIdx === 0}
-              className="rounded-lg px-3 py-2 text-base text-gray-400 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
+              className="rounded-xl px-4 py-2.5 text-lg font-medium text-gray-300 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
               title="Decrease font size"
             >
               A-
@@ -248,49 +249,35 @@ export default function PerformMode() {
             <button
               onClick={() => setFontIdx((i) => Math.min(FONT_SIZES.length - 1, i + 1))}
               disabled={fontIdx === FONT_SIZES.length - 1}
-              className="rounded-lg px-3 py-2 text-base text-gray-400 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
+              className="rounded-xl px-4 py-2.5 text-lg font-medium text-gray-300 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
               title="Increase font size"
             >
               A+
             </button>
           </div>
 
-          {/* Scroll speed */}
-          <div className="flex items-center">
+          {/* Scroll speed: − value × + */}
+          <div className="flex items-center gap-1">
             <button
               onClick={() => setSpeedIdx((i) => Math.max(0, i - 1))}
               disabled={speedIdx === 0}
-              className="rounded-lg px-3 py-2 text-gray-400 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
+              className="rounded-xl px-3 py-2.5 text-lg font-bold leading-none text-gray-300 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
               title="Slower scroll"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                <path fillRule="evenodd" d="M9.47 15.28a.75.75 0 0 0 1.06 0l4.25-4.25a.75.75 0 1 0-1.06-1.06L10 13.69 6.28 9.97a.75.75 0 0 0-1.06 1.06l4.25 4.25ZM5.22 6.03l4.25 4.25a.75.75 0 0 0 1.06 0l4.25-4.25a.75.75 0 0 0-1.06-1.06L10 8.69 6.28 4.97a.75.75 0 0 0-1.06 1.06Z" clipRule="evenodd" />
-              </svg>
+              −
             </button>
+            <span className="min-w-[3ch] text-center text-sm tabular-nums text-gray-400">
+              {SPEED_MULTIPLIERS[speedIdx]}×
+            </span>
             <button
               onClick={() => setSpeedIdx((i) => Math.min(SPEED_MULTIPLIERS.length - 1, i + 1))}
               disabled={speedIdx === SPEED_MULTIPLIERS.length - 1}
-              className="rounded-lg px-3 py-2 text-gray-400 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
+              className="rounded-xl px-3 py-2.5 text-lg font-bold leading-none text-gray-300 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
               title="Faster scroll"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                <path fillRule="evenodd" d="M9.47 4.72a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 1 1-1.06 1.06L10 6.31l-3.72 3.72a.75.75 0 1 1-1.06-1.06l4.25-4.25Zm-4.25 9.25 4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 1 1-1.06 1.06L10 11.31l-3.72 3.72a.75.75 0 0 1-1.06-1.06Z" clipRule="evenodd" />
-              </svg>
+              +
             </button>
           </div>
-
-          {/* Root notes toggle */}
-          {hasChart && (
-            <button
-              onClick={() => setShowRoots((v) => !v)}
-              className={`rounded-lg px-3 py-2 text-base active:bg-gray-800 ${
-                showRoots ? "text-indigo-400" : "text-gray-400 hover:bg-gray-800 hover:text-white"
-              }`}
-              title={showRoots ? "Hide root note frets" : "Show root note frets"}
-            >
-              #
-            </button>
-          )}
         </div>
       </header>
 
