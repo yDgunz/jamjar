@@ -27,9 +27,17 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//],
+        // No navigateFallback — use NetworkFirst for navigations instead,
+        // so the browser always fetches fresh index.html from the server.
+        // Hashed JS/CSS bundles are still precached and served instantly.
         runtimeCaching: [
+          {
+            // SPA navigations — always try network first for fresh index.html,
+            // fall back to cache only when offline
+            urlPattern: ({request}) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: { cacheName: 'navigation', expiration: { maxEntries: 5, maxAgeSeconds: 24 * 60 * 60 } },
+          },
           {
             // Song list — show cached, refresh in background
             urlPattern: /^\/api\/songs(\?.*)?$/,
