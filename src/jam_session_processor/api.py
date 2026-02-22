@@ -1245,10 +1245,19 @@ _static_dir = _os.environ.get("JAM_STATIC_DIR")
 if _static_dir:
     _static_path = Path(_static_dir)
     if _static_path.is_dir():
+        # Files that must not be cached so the browser always picks up new versions
+        _no_cache_files = {"sw.js", "index.html"}
+
         # Serve index.html for the root and any non-file paths (React Router)
         @app.get("/{full_path:path}")
         def spa_catch_all(full_path: str):
             file = _static_path / full_path
             if full_path and file.is_file():
-                return FileResponse(file)
-            return FileResponse(_static_path / "index.html")
+                resp = FileResponse(file)
+                if file.name in _no_cache_files:
+                    resp.headers["Cache-Control"] = "no-cache"
+                return resp
+            return FileResponse(
+                _static_path / "index.html",
+                headers={"Cache-Control": "no-cache"},
+            )
