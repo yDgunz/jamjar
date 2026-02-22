@@ -174,12 +174,9 @@ export default function PerformMode() {
   );
   if (!song) return <div className="min-h-screen bg-gray-950 p-4 text-gray-400">Song not found.</div>;
 
-  const hasChart = !!song.chart;
-  const hasLyrics = !!song.lyrics;
-  const bothPresent = hasChart && hasLyrics;
-  const transposedChart = hasChart ? transposeChartText(song.chart, transpose) : "";
-  const chartText = hasChart && showRoots ? annotateEStringRoots(transposedChart) : transposedChart;
-  const lyricsText = hasLyrics ? transposeChartText(song.lyrics, transpose) : "";
+  const hasSheet = !!song.sheet;
+  const transposedSheet = hasSheet ? transposeChartText(song.sheet, transpose) : "";
+  const sheetText = hasSheet && showRoots ? annotateEStringRoots(transposedSheet) : transposedSheet;
 
   return (
     <div
@@ -208,7 +205,7 @@ export default function PerformMode() {
           <h1 className="min-w-0 flex-1 truncate text-center text-base font-bold">
             {song.name}
           </h1>
-          {(hasChart || hasLyrics) ? (
+          {hasSheet ? (
             <button
               data-scroll-btn
               onClick={(e) => { e.stopPropagation(); setScrolling((s) => !s); }}
@@ -229,7 +226,7 @@ export default function PerformMode() {
         {/* Controls row */}
         <div className="mt-2 flex items-center justify-center gap-4">
           {/* Transpose + Root notes */}
-          {hasChart && (
+          {hasSheet && (
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setTranspose((t) => ((t - 1) % 12 + 12) % 12)}
@@ -303,34 +300,16 @@ export default function PerformMode() {
       </header>
 
       {/* Body */}
-      <div
-        className={`p-4 sm:p-6 ${FONT_SIZES[fontIdx]} ${
-          bothPresent ? "grid gap-6 sm:grid-cols-2" : ""
-        }`}
-      >
-        {hasChart && (
-          <div className={bothPresent ? "" : "mx-auto max-w-3xl"}>
-            <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
-              Chart
-            </h2>
+      <div className={`p-4 sm:p-6 ${FONT_SIZES[fontIdx]}`}>
+        {hasSheet ? (
+          <div className="mx-auto max-w-3xl">
             <pre className="whitespace-pre overflow-x-auto font-mono leading-relaxed text-gray-200">
-              {chartText}
+              {sheetText}
             </pre>
           </div>
-        )}
-        {hasLyrics && (
-          <div className={bothPresent ? "" : "mx-auto max-w-3xl"}>
-            <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
-              Lyrics
-            </h2>
-            <div className="whitespace-pre-wrap leading-relaxed text-gray-200">
-              {lyricsText}
-            </div>
-          </div>
-        )}
-        {!hasChart && !hasLyrics && (
+        ) : (
           <p className="text-gray-500">
-            No chart or lyrics to display.{" "}
+            No sheet content to display.{" "}
             <Link to={`/songs/${songId}`} className="text-indigo-400 hover:text-indigo-300">
               Add content
             </Link>{" "}

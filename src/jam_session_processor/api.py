@@ -231,8 +231,7 @@ class SongResponse(BaseModel):
     group_name: str = ""
     name: str
     artist: str = ""
-    chart: str = ""
-    lyrics: str = ""
+    sheet: str = ""
     notes: str = ""
     take_count: int
     first_date: str | None
@@ -274,8 +273,7 @@ class SplitRequest(BaseModel):
 
 class SongDetailsRequest(BaseModel):
     artist: str = ""
-    chart: str = ""
-    lyrics: str = ""
+    sheet: str = ""
     notes: str = ""
 
 
@@ -971,7 +969,7 @@ def update_song_details(song_id: int, req: SongDetailsRequest, request: Request)
     db = get_db()
     _get_song_with_access(db, song_id, request)
     _require_role(request, "editor")
-    db.update_song_details(song_id, req.chart, req.lyrics, req.notes, req.artist)
+    db.update_song_details(song_id, req.sheet, req.notes, req.artist)
     song = db.get_song(song_id)
     return _song_response(song)
 
@@ -1008,7 +1006,11 @@ def fetch_lyrics(song_id: int, request: Request):
             break
     if not lyrics:
         raise HTTPException(status_code=404, detail="Lyrics not found")
-    return {"lyrics": lyrics}
+    # Append to existing sheet content
+    new_sheet = f"{song.sheet}\n\n{lyrics}".strip() if song.sheet else lyrics
+    db.update_song_details(song.id, new_sheet, song.notes, song.artist)
+    updated = db.get_song(song.id)
+    return {"lyrics": lyrics, "song": _song_response(updated).model_dump()}
 
 
 @app.delete("/api/songs/{song_id}")

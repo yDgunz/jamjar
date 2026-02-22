@@ -41,8 +41,7 @@ CREATE TABLE IF NOT EXISTS songs (
     group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     artist TEXT NOT NULL DEFAULT '',
-    chart TEXT NOT NULL DEFAULT '',
-    lyrics TEXT NOT NULL DEFAULT '',
+    sheet TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(group_id, name)
@@ -132,8 +131,7 @@ class Song:
     group_id: int
     name: str
     artist: str = ""
-    chart: str = ""
-    lyrics: str = ""
+    sheet: str = ""
     notes: str = ""
     take_count: int = 0
     first_date: str | None = None
@@ -601,7 +599,7 @@ class Database:
     def list_songs(self, group_ids: list[int] | None = None) -> list[Song]:
         if group_ids is not None and not group_ids:
             return []
-        base = """SELECT s.id, s.group_id, s.name, s.artist, s.chart, s.lyrics, s.notes,
+        base = """SELECT s.id, s.group_id, s.name, s.artist, s.sheet, s.notes,
                       COUNT(t.id) as take_count,
                       MIN(ses.date) as first_date, MAX(ses.date) as last_date
                FROM songs s
@@ -619,7 +617,7 @@ class Database:
 
     def get_song(self, song_id: int) -> Song | None:
         row = self.conn.execute(
-            """SELECT s.id, s.group_id, s.name, s.artist, s.chart, s.lyrics, s.notes,
+            """SELECT s.id, s.group_id, s.name, s.artist, s.sheet, s.notes,
                       COUNT(t.id) as take_count,
                       MIN(ses.date) as first_date, MAX(ses.date) as last_date
                FROM songs s
@@ -634,11 +632,11 @@ class Database:
         return Song(**row)
 
     def update_song_details(
-        self, song_id: int, chart: str, lyrics: str, notes: str, artist: str = ""
+        self, song_id: int, sheet: str, notes: str, artist: str = ""
     ):
         self.conn.execute(
-            "UPDATE songs SET artist = ?, chart = ?, lyrics = ?, notes = ? WHERE id = ?",
-            (artist, chart, lyrics, notes, song_id),
+            "UPDATE songs SET artist = ?, sheet = ?, notes = ? WHERE id = ?",
+            (artist, sheet, notes, song_id),
         )
         self.conn.commit()
 

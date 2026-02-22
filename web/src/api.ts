@@ -79,8 +79,7 @@ export interface Song {
   group_name: string;
   name: string;
   artist: string;
-  chart: string;
-  lyrics: string;
+  sheet: string;
   notes: string;
   take_count: number;
   first_date: string | null;
@@ -264,7 +263,7 @@ export const api = {
 
   updateSongDetails: (
     songId: number,
-    details: { artist: string; chart: string; lyrics: string; notes: string },
+    details: { artist: string; sheet: string; notes: string },
   ) =>
     fetchJson<Song>(`${BASE}/songs/${songId}/details`, {
       method: "PUT",
@@ -273,7 +272,7 @@ export const api = {
     }),
 
   fetchLyrics: (songId: number) =>
-    fetchJson<{ lyrics: string }>(`${BASE}/songs/${songId}/fetch-lyrics`, {
+    fetchJson<{ lyrics: string; song: Song }>(`${BASE}/songs/${songId}/fetch-lyrics`, {
       method: "POST",
     }),
 

@@ -50,7 +50,7 @@ sessions                    tracks                        songs
 id (PK)                    id (PK)                        id (PK)
 group_id (FK→groups)       session_id (FK→sessions)       group_id (FK→groups)
 name                       song_id (FK→songs)             name
-date                       track_number                   chart, lyrics, notes
+date                       track_number                   sheet, notes
 source_file                start_sec, end_sec             created_at
 notes                      duration_sec                   UNIQUE(group_id, name)
 created_at                 audio_path, notes

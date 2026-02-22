@@ -358,12 +358,11 @@ def test_update_song_details(db, group_id):
     song_id = songs[0].id
 
     db.update_song_details(
-        song_id, chart="Intro: Am | G\nVerse: C | G", lyrics="Some lyrics", notes="Play it slow"
+        song_id, sheet="Intro: Am | G\nVerse: C | G\n\nSome lyrics", notes="Play it slow"
     )
 
     song = db.get_song(song_id)
-    assert song.chart == "Intro: Am | G\nVerse: C | G"
-    assert song.lyrics == "Some lyrics"
+    assert song.sheet == "Intro: Am | G\nVerse: C | G\n\nSome lyrics"
     assert song.notes == "Play it slow"
     assert song.name == "Fat Cat"
     assert song.take_count == 1
@@ -378,7 +377,7 @@ def test_get_song(db, group_id):
     song = db.get_song(songs[0].id)
     assert song is not None
     assert song.name == "Fat Cat"
-    assert song.chart == ""
+    assert song.sheet == ""
     assert song.take_count == 1
     assert song.group_id == group_id
 
@@ -392,10 +391,10 @@ def test_list_songs_includes_metadata(db, group_id):
 
     songs = db.list_songs(group_ids=[group_id])
     song_id = songs[0].id
-    db.update_song_details(song_id, chart="Am G", lyrics="", notes="")
+    db.update_song_details(song_id, sheet="Am G", notes="")
 
     songs = db.list_songs(group_ids=[group_id])
-    assert songs[0].chart == "Am G"
+    assert songs[0].sheet == "Am G"
 
 
 def test_delete_song(db, group_id):

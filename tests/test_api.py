@@ -451,8 +451,7 @@ def test_get_song_endpoint(seeded_client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Fat Cat"
-    assert data["chart"] == ""
-    assert data["lyrics"] == ""
+    assert data["sheet"] == ""
     assert data["notes"] == ""
     assert data["take_count"] == 1
 
@@ -473,24 +472,22 @@ def test_update_song_details_endpoint(seeded_client):
     resp = client.put(
         f"/api/songs/{song_id}/details",
         json={
-            "chart": "Intro: Am | G | F | E\nVerse: C | G",
-            "lyrics": "Some lyrics here",
+            "sheet": "Intro: Am | G | F | E\nVerse: C | G\n\nSome lyrics here",
             "notes": "Play slow",
         },
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["chart"] == "Intro: Am | G | F | E\nVerse: C | G"
-    assert data["lyrics"] == "Some lyrics here"
+    assert data["sheet"] == "Intro: Am | G | F | E\nVerse: C | G\n\nSome lyrics here"
     assert data["notes"] == "Play slow"
 
     resp = client.get(f"/api/songs/{song_id}")
-    assert resp.json()["chart"] == "Intro: Am | G | F | E\nVerse: C | G"
+    assert resp.json()["sheet"] == "Intro: Am | G | F | E\nVerse: C | G\n\nSome lyrics here"
 
 
 def test_update_song_details_not_found(auth_client):
     client, uid, gid = auth_client
-    resp = client.put("/api/songs/9999/details", json={"chart": "C"})
+    resp = client.put("/api/songs/9999/details", json={"sheet": "C"})
     assert resp.status_code == 404
 
 
@@ -1075,7 +1072,7 @@ def test_song_artist_round_trip(seeded_client):
 
     resp = client.put(
         f"/api/songs/{song_id}/details",
-        json={"artist": "Cool Band", "chart": "", "lyrics": "", "notes": ""},
+        json={"artist": "Cool Band", "sheet": "", "notes": ""},
     )
     assert resp.status_code == 200
     assert resp.json()["artist"] == "Cool Band"
@@ -1096,7 +1093,7 @@ def test_fetch_lyrics_success(seeded_client):
     # Set artist first
     client.put(
         f"/api/songs/{song_id}/details",
-        json={"artist": "John Lennon", "chart": "", "lyrics": "", "notes": ""},
+        json={"artist": "John Lennon", "sheet": "", "notes": ""},
     )
 
     mock_resp = MagicMock()
@@ -1114,7 +1111,9 @@ def test_fetch_lyrics_success(seeded_client):
         )
 
     assert resp.status_code == 200
-    assert resp.json()["lyrics"] == "Imagine there's no heaven..."
+    data = resp.json()
+    assert data["lyrics"] == "Imagine there's no heaven..."
+    assert data["song"]["sheet"] == "Imagine there's no heaven..."
 
 
 def test_fetch_lyrics_not_found(seeded_client):
@@ -1128,7 +1127,7 @@ def test_fetch_lyrics_not_found(seeded_client):
 
     client.put(
         f"/api/songs/{song_id}/details",
-        json={"artist": "Nobody", "chart": "", "lyrics": "", "notes": ""},
+        json={"artist": "Nobody", "sheet": "", "notes": ""},
     )
 
     mock_resp = MagicMock()
@@ -1154,7 +1153,7 @@ def test_fetch_lyrics_timeout(seeded_client):
 
     client.put(
         f"/api/songs/{song_id}/details",
-        json={"artist": "Slow Band", "chart": "", "lyrics": "", "notes": ""},
+        json={"artist": "Slow Band", "sheet": "", "notes": ""},
     )
 
     with patch("requests.get", side_effect=http_requests.Timeout):

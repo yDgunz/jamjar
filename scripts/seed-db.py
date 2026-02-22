@@ -48,14 +48,14 @@ SONGS = {
     ],
 }
 
-# Song details: (chart, lyrics, notes)
-SONG_DETAILS: dict[str, tuple[str, str, str]] = {
+# Song details: (sheet, notes)
+SONG_DETAILS: dict[str, tuple[str, str]] = {
     "Fat Cat": (
         "Intro: E | E | A | A\n"
         "Verse: E | G | A | E\n"
         "Chorus: A | B | E | E\n"
-        "Bridge: C#m | A | B | E",
-        #
+        "Bridge: C#m | A | B | E\n"
+        "\n"
         "[Verse 1]\n"
         "Fat cat sittin' on the windowsill\n"
         "Watchin' the world go by\n"
@@ -113,8 +113,8 @@ SONG_DETAILS: dict[str, tuple[str, str, str]] = {
         "Intro: Am | Am | Am | Am\n"
         "Verse: Am | C | G | D\n"
         "Chorus: F | G | Am | Am\n"
-        "Outro: Am | G | F | E",
-        #
+        "Outro: Am | G | F | E\n"
+        "\n"
         "[Verse 1]\n"
         "Good god damn, what a mess\n"
         "Woke up late in yesterday's dress\n"
@@ -159,8 +159,8 @@ SONG_DETAILS: dict[str, tuple[str, str, str]] = {
     "Spit Me Out": (
         "Verse: D | F#m | Bm | G\n"
         "Pre-chorus: G | A | G | A\n"
-        "Chorus: D | A | Bm | G",
-        #
+        "Chorus: D | A | Bm | G\n"
+        "\n"
         "[Verse 1]\n"
         "You took a bite and spit me out\n"
         "Left me lyin' on the ground\n"
@@ -212,8 +212,8 @@ SONG_DETAILS: dict[str, tuple[str, str, str]] = {
         "Intro: Cmaj7 | Em7 | Am7 | Fmaj7\n"
         "Verse: C | Em | Am | F\n"
         "Chorus: F | G | Am | C\n"
-        "Bridge: Dm | G | C | Am",
-        #
+        "Bridge: Dm | G | C | Am\n"
+        "\n"
         "[Verse 1]\n"
         "If I could be forever\n"
         "Standin' in the pouring rain\n"
@@ -266,8 +266,8 @@ SONG_DETAILS: dict[str, tuple[str, str, str]] = {
         "Intro: Em | Em | Em | Em\n"
         "Verse: Em | G | C | D\n"
         "Chorus: C | D | Em | Em\n"
-        "Breakdown: Am | Am | Em | Em",
-        #
+        "Breakdown: Am | Am | Em | Em\n"
+        "\n"
         "[Verse 1]\n"
         "Down by the river mouth\n"
         "Where the water meets the sound\n"
@@ -323,8 +323,8 @@ SONG_DETAILS: dict[str, tuple[str, str, str]] = {
     "Dust & Neon": (
         "Verse: A | D | A | E\n"
         "Chorus: D | E | A | F#m\n"
-        "Solo: A | D | E | A",
-        #
+        "Solo: A | D | E | A\n"
+        "\n"
         "[Verse 1]\n"
         "Dust and neon, two-lane road\n"
         "Dashboard lights and a heavy load\n"
@@ -384,8 +384,8 @@ SONG_DETAILS: dict[str, tuple[str, str, str]] = {
     "Low Tide": (
         "Intro: Dm | Am | Bb | F\n"
         "Verse: Dm | Am | Bb | C\n"
-        "Chorus: Bb | C | Dm | Dm",
-        #
+        "Chorus: Bb | C | Dm | Dm\n"
+        "\n"
         "[Verse 1]\n"
         "Low tide pulling at the shore\n"
         "Everything I had before\n"
@@ -438,8 +438,8 @@ SONG_DETAILS: dict[str, tuple[str, str, str]] = {
     "Copper Wire": (
         "Verse: Em | Em | Am | Am\n"
         "Build: C | D | Em | Em\n"
-        "Peak: Em | G | D | Am",
-        #
+        "Peak: Em | G | D | Am\n"
+        "\n"
         "[Verse 1]\n"
         "Copper wire hummin' in the wall\n"
         "Signal fadin' down the hall\n"
@@ -715,14 +715,14 @@ def seed(db: Database):
             song_ids[(group_name, song_name)] = sid
     print(f"  Songs: {sum(len(s) for s in SONGS.values())} created")
 
-    # Song details (charts, lyrics, notes)
+    # Song details (sheets and notes)
     details_count = 0
     for (group_name, song_name), sid in song_ids.items():
         if song_name in SONG_DETAILS:
-            chart, lyrics, notes = SONG_DETAILS[song_name]
-            db.update_song_details(sid, chart, lyrics, notes)
+            sheet, notes = SONG_DETAILS[song_name]
+            db.update_song_details(sid, sheet, notes)
             details_count += 1
-    print(f"  Song details: {details_count} with charts/lyrics/notes")
+    print(f"  Song details: {details_count} with sheets/notes")
 
     # Sessions and tracks
     total_tracks = 0

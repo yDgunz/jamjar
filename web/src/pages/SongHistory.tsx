@@ -19,6 +19,7 @@ function EditableField({
   placeholder,
   mono,
   readOnly,
+  rows = 3,
   onSave,
 }: {
   label: string;
@@ -26,6 +27,7 @@ function EditableField({
   placeholder: string;
   mono?: boolean;
   readOnly?: boolean;
+  rows?: number;
   onSave: (val: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -64,7 +66,7 @@ function EditableField({
               if (e.key === "Enter" && e.metaKey) { e.preventDefault(); handleSave(); }
               if (e.key === "Escape") handleCancel();
             }}
-            rows={3}
+            rows={rows}
             className={`w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none ${mono ? "font-mono" : ""}`}
             placeholder={placeholder}
           />
@@ -234,8 +236,7 @@ export default function SongHistory() {
     try {
       const updated = await api.updateSongDetails(songId, {
         artist: field === "artist" ? value : song.artist,
-        chart: field === "chart" ? value : song.chart,
-        lyrics: field === "lyrics" ? value : song.lyrics,
+        sheet: field === "sheet" ? value : song.sheet,
         notes: field === "notes" ? value : song.notes,
       });
       setSong(updated);
@@ -255,17 +256,11 @@ export default function SongHistory() {
 
   const handleFetchLyrics = async () => {
     if (!song) return;
-    if (song.lyrics && !confirm("Overwrite existing lyrics with fetched lyrics?")) return;
+    if (song.sheet && !confirm("Append fetched lyrics to existing sheet content?")) return;
     setFetchingLyrics(true);
     try {
       const result = await api.fetchLyrics(songId);
-      const updated = await api.updateSongDetails(songId, {
-        artist: song.artist,
-        chart: song.chart,
-        lyrics: result.lyrics,
-        notes: song.notes,
-      });
-      setSong(updated);
+      setSong(result.song);
     } catch (err) {
       setErrorMsg(`Fetch lyrics failed: ${err instanceof Error ? err.message : err}`);
     } finally {
@@ -397,7 +392,7 @@ export default function SongHistory() {
             </p>
           </div>
           <div className="flex items-center gap-1">
-            {(song?.chart || song?.lyrics) && (
+            {song?.sheet && (
               <Link
                 to={`/songs/${songId}/perform`}
                 className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500"
@@ -422,8 +417,8 @@ export default function SongHistory() {
       <div className="mb-4 space-y-4 rounded-lg border border-gray-800 bg-gray-900 p-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Chart</label>
-            {song?.chart && (
+            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Sheet</label>
+            {song?.sheet && (
               <button
                 onClick={() => setShowRoots((v) => !v)}
                 className={`text-xs px-2 py-0.5 rounded ${showRoots ? "bg-indigo-600/20 text-indigo-400" : "text-gray-500 hover:text-gray-300"}`}
@@ -431,55 +426,42 @@ export default function SongHistory() {
                 Root notes
               </button>
             )}
+            {canEdit(user) && (
+              <button
+                onClick={handleFetchLyrics}
+                disabled={!song?.artist || fetchingLyrics}
+                title={!song?.artist ? "Set artist first" : "Fetch lyrics from lrclib.net"}
+                className={`text-xs px-2 py-0.5 rounded ${
+                  !song?.artist || fetchingLyrics
+                    ? "text-gray-600 cursor-not-allowed"
+                    : "text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                {fetchingLyrics ? "Fetching..." : "Fetch lyrics"}
+              </button>
+            )}
           </div>
-          {showRoots && song?.chart ? (
-            <pre className="font-mono text-sm whitespace-pre overflow-x-auto text-gray-300">{annotateEStringRoots(song.chart)}</pre>
+          {showRoots && song?.sheet ? (
+            <pre className="font-mono text-sm whitespace-pre overflow-x-auto text-gray-300">{annotateEStringRoots(song.sheet)}</pre>
           ) : (
             <EditableField
               label=""
-              value={song?.chart ?? ""}
-              placeholder="Add chart (e.g. Intro: Am | G | F | E)"
+              value={song?.sheet ?? ""}
+              placeholder="Add sheet (chords, lyrics, tabs...)"
               mono
+              rows={12}
               readOnly={!canEdit(user)}
-              onSave={(v) => handleSaveField("chart", v)}
+              onSave={(v) => handleSaveField("sheet", v)}
             />
           )}
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Lyrics</label>
-              {canEdit(user) && (
-                <button
-                  onClick={handleFetchLyrics}
-                  disabled={!song?.artist || fetchingLyrics}
-                  title={!song?.artist ? "Set artist first" : "Fetch lyrics from lyrics.ovh"}
-                  className={`text-xs px-2 py-0.5 rounded ${
-                    !song?.artist || fetchingLyrics
-                      ? "text-gray-600 cursor-not-allowed"
-                      : "text-gray-500 hover:text-gray-300"
-                  }`}
-                >
-                  {fetchingLyrics ? "Fetching..." : "Fetch lyrics"}
-                </button>
-              )}
-            </div>
-            <EditableField
-              label=""
-              value={song?.lyrics ?? ""}
-              placeholder="Add lyrics"
-              readOnly={!canEdit(user)}
-              onSave={(v) => handleSaveField("lyrics", v)}
-            />
-          </div>
-          <EditableField
-            label="Notes"
-            value={song?.notes ?? ""}
-            placeholder="Add notes"
-            readOnly={!canEdit(user)}
-            onSave={(v) => handleSaveField("notes", v)}
-          />
-        </div>
+        <EditableField
+          label="Notes"
+          value={song?.notes ?? ""}
+          placeholder="Add notes"
+          readOnly={!canEdit(user)}
+          onSave={(v) => handleSaveField("notes", v)}
+        />
       </div>
 
       {takes.length === 0 ? (
