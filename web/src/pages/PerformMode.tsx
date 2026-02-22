@@ -4,7 +4,7 @@ import { api } from "../api";
 import type { Song } from "../api";
 import { transposeChartText, annotateEStringRoots } from "../utils/chordUtils";
 
-const FONT_SIZES = ["text-base", "text-lg", "text-xl", "text-2xl", "text-3xl"];
+const FONT_SIZES = ["text-xs", "text-sm", "text-base", "text-lg", "text-xl", "text-2xl", "text-3xl"];
 const SPEED_MULTIPLIERS = [0.5, 0.75, 1, 1.5, 2]; // multipliers around baseline
 const TARGET_DURATION = 150; // baseline seconds — tuned so 1x feels natural for a ~3:30 song
 const LS_FONT_KEY = "perform-font-size";
@@ -24,7 +24,7 @@ export default function PerformMode() {
   const songId = Number(id);
   const [song, setSong] = useState<Song | null>(null);
   const [loading, setLoading] = useState(true);
-  const [fontIdx, setFontIdx] = useState(() => loadInt(LS_FONT_KEY, 2, FONT_SIZES.length - 1));
+  const [fontIdx, setFontIdx] = useState(() => loadInt(LS_FONT_KEY, 4, FONT_SIZES.length - 1));
   const [transpose, setTranspose] = useState(0);
   const [scrolling, setScrolling] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(() => loadInt(LS_SPEED_KEY, 2, SPEED_MULTIPLIERS.length - 1));
@@ -171,7 +171,7 @@ export default function PerformMode() {
     >
       {/* Header — auto-hides during scroll */}
       <header
-        className={`sticky top-0 z-10 border-b border-gray-800 bg-gray-950/95 px-3 py-2.5 backdrop-blur transition-all duration-300 ${
+        className={`sticky top-0 z-10 border-b border-gray-800 bg-gray-950/95 px-3 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 backdrop-blur transition-all duration-300 ${
           headerVisible ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0"
         }`}
       >

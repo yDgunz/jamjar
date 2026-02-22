@@ -18,11 +18,11 @@ function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
       {!online && (
-        <div className="bg-yellow-600/90 px-4 py-1.5 text-center text-sm font-medium text-white">
-          Offline — showing cached data
+        <div className="bg-yellow-600/90 px-4 pt-[env(safe-area-inset-top)] text-center text-sm font-medium text-white">
+          <div className="py-1.5">Offline — showing cached data</div>
         </div>
       )}
-      <header className="border-b border-gray-800 px-4 py-3">
+      <header className={`border-b border-gray-800 px-4 py-3 ${online ? "pt-[max(0.75rem,env(safe-area-inset-top))]" : ""}`}>
         <div className="mx-auto flex max-w-5xl items-center gap-x-3 sm:gap-x-8">
           <NavLink to="/" className="flex items-center gap-1.5 text-xl font-bold text-white hover:text-indigo-300 transition">
             <span className="text-2xl" role="img" aria-label="jar">🫙</span>
