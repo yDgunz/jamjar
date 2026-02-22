@@ -32,9 +32,10 @@ export default function PerformMode() {
   const [headerVisible, setHeaderVisible] = useState(true);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
-  const scrollAccumRef = useRef<number>(0);
+  const offsetRef = useRef<number>(0);
   const headerTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const touchStartRef = useRef<{ y: number; time: number } | null>(null);
 
@@ -62,43 +63,62 @@ export default function PerformMode() {
   const speedIdxRef = useRef(speedIdx);
   useEffect(() => { speedIdxRef.current = speedIdx; }, [speedIdx]);
 
-  // Auto-scroll animation loop
+  // Auto-scroll via GPU-composited transforms for smooth sub-pixel scrolling.
+  // During auto-scroll: overflow is hidden, content moves via translateY().
+  // On pause/stop: transform offset is converted back to native scrollTop.
   useEffect(() => {
     if (!scrolling) return;
+    const container = scrollRef.current;
+    const content = contentRef.current;
+    if (!container || !content) return;
+
+    // Capture current scroll position, then switch to transform mode
+    offsetRef.current = container.scrollTop;
+    container.scrollTop = 0;
+    container.style.overflow = "hidden";
+    content.style.willChange = "transform";
+    content.style.transform = `translateY(${-offsetRef.current}px)`;
     lastTimeRef.current = 0;
-    scrollAccumRef.current = 0;
 
     function step(timestamp: number) {
-      const el = scrollRef.current;
-      if (!el) return;
+      if (!container || !content) return;
 
       if (lastTimeRef.current) {
         const dt = (timestamp - lastTimeRef.current) / 1000;
 
-        const scrollable = el.scrollHeight - el.clientHeight;
+        const scrollable = content.offsetHeight - container.clientHeight;
         const speed = scrollable > 0
           ? (scrollable / TARGET_DURATION) * SPEED_MULTIPLIERS[speedIdxRef.current]
           : 30;
 
-        // Accumulate sub-pixel amounts; only scroll whole pixels
-        scrollAccumRef.current += speed * dt;
-        if (scrollAccumRef.current >= 1) {
-          const px = Math.floor(scrollAccumRef.current);
-          scrollAccumRef.current -= px;
-          el.scrollTop += px;
-        }
+        offsetRef.current += speed * dt;
 
-        if (el.scrollTop + el.clientHeight >= el.scrollHeight - 1) {
+        if (offsetRef.current >= scrollable) {
+          // Reached the end — convert back to native scroll
+          content.style.willChange = "";
+          content.style.transform = "";
+          container.style.overflow = "";
+          container.scrollTop = scrollable;
           setScrolling(false);
           return;
         }
+
+        content.style.transform = `translateY(${-offsetRef.current}px)`;
       }
       lastTimeRef.current = timestamp;
       animRef.current = requestAnimationFrame(step);
     }
 
     animRef.current = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(animRef.current);
+    return () => {
+      cancelAnimationFrame(animRef.current);
+      // Convert transform position back to native scroll
+      const offset = offsetRef.current;
+      content.style.willChange = "";
+      content.style.transform = "";
+      container.style.overflow = "";
+      container.scrollTop = offset;
+    };
   }, [scrolling]);
 
   // Auto-hide header during scroll
@@ -169,6 +189,7 @@ export default function PerformMode() {
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
+      <div ref={contentRef}>
       {/* Header — auto-hides during scroll */}
       <header
         className={`sticky top-0 z-10 border-b border-gray-800 bg-gray-950/95 px-3 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 backdrop-blur transition-all duration-300 ${
@@ -316,6 +337,7 @@ export default function PerformMode() {
             first.
           </p>
         )}
+      </div>
       </div>
 
     </div>
