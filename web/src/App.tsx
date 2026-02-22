@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, NavLink } from "react-router";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { isSuperAdmin } from "./api";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { useOnline } from "./hooks/useOnline";
 import Login from "./pages/Login";
 import SessionList from "./pages/SessionList";
 import SessionDetail from "./pages/SessionDetail";
@@ -12,9 +13,15 @@ import Admin from "./pages/Admin";
 
 function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
+  const online = useOnline();
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
+      {!online && (
+        <div className="bg-yellow-600/90 px-4 py-1.5 text-center text-sm font-medium text-white">
+          Offline — showing cached data
+        </div>
+      )}
       <header className="border-b border-gray-800 px-4 py-3">
         <div className="mx-auto flex max-w-5xl items-center gap-x-3 sm:gap-x-8">
           <NavLink to="/" className="flex items-center gap-1.5 text-xl font-bold text-white hover:text-indigo-300 transition">

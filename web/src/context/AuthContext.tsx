@@ -25,9 +25,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     api
       .getMe()
-      .then(setUser)
+      .then((u) => {
+        setUser(u);
+        // Cache user for offline access
+        localStorage.setItem("cached-user", JSON.stringify(u));
+      })
       .catch(() => {
-        // 401 will redirect via fetchJson — just clear state
+        // Offline: use cached user so the app still renders (read-only)
+        if (!navigator.onLine) {
+          const cached = localStorage.getItem("cached-user");
+          if (cached) {
+            setUser(JSON.parse(cached));
+            return;
+          }
+        }
         setUser(null);
       })
       .finally(() => setLoading(false));

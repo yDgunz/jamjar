@@ -138,8 +138,8 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
     credentials: "include",
   });
   if (resp.status === 401) {
-    // Redirect to login on auth failure (unless already on login page)
-    if (!window.location.pathname.startsWith("/login")) {
+    // Redirect to login on auth failure (unless already on login page or offline)
+    if (!window.location.pathname.startsWith("/login") && navigator.onLine) {
       window.location.href = "/login";
     }
     throw new ApiError("Authentication required", 401);
