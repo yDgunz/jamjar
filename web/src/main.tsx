@@ -13,6 +13,14 @@ registerSW({
   },
 })
 
+// When a new SW takes control, reload to pick up fresh precached assets
+let refreshing = false;
+navigator.serviceWorker?.addEventListener('controllerchange', () => {
+  if (refreshing) return;
+  refreshing = true;
+  window.location.reload();
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
