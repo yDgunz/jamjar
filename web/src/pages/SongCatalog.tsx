@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { api, formatDate, canEdit } from "../api";
 import type { Song } from "../api";
 import { useAuth } from "../context/AuthContext";
@@ -8,6 +8,7 @@ type SortKey = "name" | "last_played" | "takes";
 
 export default function SongCatalog() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>("name");
@@ -48,10 +49,7 @@ export default function SongCatalog() {
     if (!groupId) return;
     try {
       const song = await api.createSong(name, groupId);
-      setSongs((prev) => [...prev, song]);
-      setNewName("");
-      setCreating(false);
-      setErrorMsg(null);
+      navigate(`/songs/${song.id}`);
     } catch (err) {
       setErrorMsg(`Failed to create song: ${err instanceof Error ? err.message : err}`);
     }
