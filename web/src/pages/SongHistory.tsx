@@ -86,11 +86,11 @@ function EditableField({
         </div>
       ) : value ? (
         readOnly ? (
-          <p className={`text-sm whitespace-pre-wrap text-gray-300 ${mono ? "font-mono" : ""}`}>{value}</p>
+          <p className={`text-sm text-gray-300 ${mono ? "font-mono whitespace-pre overflow-x-auto" : "whitespace-pre-wrap"}`}>{value}</p>
         ) : (
           <button
             onClick={() => setEditing(true)}
-            className={`text-left text-sm whitespace-pre-wrap text-gray-300 hover:text-white ${mono ? "font-mono" : ""}`}
+            className={`text-left text-sm text-gray-300 hover:text-white ${mono ? "font-mono whitespace-pre overflow-x-auto" : "whitespace-pre-wrap"}`}
           >
             {value}
           </button>
@@ -433,7 +433,7 @@ export default function SongHistory() {
             )}
           </div>
           {showRoots && song?.chart ? (
-            <pre className="font-mono text-sm whitespace-pre-wrap text-gray-300">{annotateEStringRoots(song.chart)}</pre>
+            <pre className="font-mono text-sm whitespace-pre overflow-x-auto text-gray-300">{annotateEStringRoots(song.chart)}</pre>
           ) : (
             <EditableField
               label=""

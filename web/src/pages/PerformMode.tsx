@@ -292,7 +292,7 @@ export default function PerformMode() {
             <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
               Chart
             </h2>
-            <pre className="whitespace-pre-wrap font-mono leading-relaxed text-gray-200">
+            <pre className="whitespace-pre overflow-x-auto font-mono leading-relaxed text-gray-200">
               {chartText}
             </pre>
           </div>
