@@ -191,12 +191,15 @@ export default function Admin() {
               key={user.id}
               className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-3"
             >
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-white">{user.email}</span>
-                  {user.name && (
-                    <span className="text-sm text-gray-400">{user.name}</span>
-                  )}
+              <div className="space-y-3">
+                {/* Row 1 — Identity + Role */}
+                <div className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-medium text-white">{user.email}</span>
+                    {user.name && (
+                      <span className="ml-2 text-sm text-gray-400">{user.name}</span>
+                    )}
+                  </div>
                   <select
                     value={user.role}
                     onChange={(e) => handleRoleChange(user.id, e.target.value)}
@@ -207,6 +210,8 @@ export default function Admin() {
                     ))}
                   </select>
                 </div>
+
+                {/* Row 2 — Groups */}
                 <div className="flex flex-wrap items-center gap-1.5">
                   {user.groups.map((g) => (
                     <span
@@ -223,7 +228,7 @@ export default function Admin() {
                       </button>
                     </span>
                   ))}
-                  {groups.filter((g) => !user.groups.some((ug) => ug.id === g.id)).length > 0 && (
+                  {groups.filter((g) => !user.groups.some((ug) => ug.id === g.id)).length > 0 ? (
                     <select
                       value=""
                       onChange={(e) => {
@@ -240,15 +245,20 @@ export default function Admin() {
                           </option>
                         ))}
                     </select>
-                  )}
-                  <div className="h-3 w-px bg-gray-700" />
-                  {resetUserId === user.id ? (
+                  ) : user.groups.length === 0 ? (
+                    <span className="text-xs text-gray-500">No groups</span>
+                  ) : null}
+                </div>
+
+                {/* Row 3 — Actions */}
+                <div className="flex items-center gap-2 border-t border-gray-800 pt-2">
+                  {resetUserId === user.id && (
                     <form
                       onSubmit={(e) => {
                         e.preventDefault();
                         handleResetPassword(user.id);
                       }}
-                      className="flex items-center gap-1"
+                      className="mr-auto flex items-center gap-1"
                     >
                       <input
                         type="password"
@@ -276,22 +286,25 @@ export default function Admin() {
                         Cancel
                       </button>
                     </form>
-                  ) : (
-                    <button
-                      onClick={() => setResetUserId(user.id)}
-                      className="rounded px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
-                    >
-                      Reset pw
-                    </button>
                   )}
-                  <button
-                    onClick={() =>
-                      setDeleteModal({ type: "user", id: user.id, name: user.email })
-                    }
-                    className="rounded px-2 py-1 text-xs text-red-400 transition hover:bg-red-950 hover:text-red-300"
-                  >
-                    Delete
-                  </button>
+                  <div className="ml-auto flex items-center gap-2">
+                    {resetUserId !== user.id && (
+                      <button
+                        onClick={() => setResetUserId(user.id)}
+                        className="rounded px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
+                      >
+                        Reset pw
+                      </button>
+                    )}
+                    <button
+                      onClick={() =>
+                        setDeleteModal({ type: "user", id: user.id, name: user.email })
+                      }
+                      className="rounded px-2 py-1 text-xs text-red-400 transition hover:bg-red-950 hover:text-red-300"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
