@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, NavLink } from "react-router";
+import { useState, useRef, useEffect } from "react";
+import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { isSuperAdmin } from "./api";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -18,6 +19,22 @@ import Admin from "./pages/Admin";
 function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const online = useOnline();
+  const location = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu on navigation
+  useEffect(() => { setMenuOpen(false); }, [location.pathname]);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
@@ -32,20 +49,21 @@ function Layout({ children }: { children: React.ReactNode }) {
             <span className="text-2xl" role="img" aria-label="jar">🫙</span>
             <span className="hidden sm:inline">JamJar</span>
           </NavLink>
-          <nav className="flex flex-1 gap-1 text-sm sm:gap-4">
+          <nav className="flex flex-1 gap-0.5 text-xs sm:gap-4 sm:text-sm">
             <NavLink
               to="/"
               end
               className={({ isActive }) =>
-                `py-2 px-2 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
+                `py-2 px-1.5 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
               }
             >
-              Recordings
+              <span className="sm:hidden">Recs</span>
+              <span className="hidden sm:inline">Recordings</span>
             </NavLink>
             <NavLink
               to="/songs"
               className={({ isActive }) =>
-                `py-2 px-2 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
+                `py-2 px-1.5 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
               }
             >
               Songs
@@ -53,7 +71,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             <NavLink
               to="/setlists"
               className={({ isActive }) =>
-                `py-2 px-2 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
+                `py-2 px-1.5 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
               }
             >
               Setlists
@@ -61,31 +79,44 @@ function Layout({ children }: { children: React.ReactNode }) {
             <NavLink
               to="/tuner"
               className={({ isActive }) =>
-                `py-2 px-2 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
+                `py-2 px-1.5 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
               }
             >
               Tuner
             </NavLink>
-            {isSuperAdmin(user) && (
-              <NavLink
-                to="/admin"
-                className={({ isActive }) =>
-                  `py-2 px-2 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
-                }
-              >
-                Admin
-              </NavLink>
-            )}
           </nav>
           {user && (
-            <div className="flex items-center gap-3 text-sm">
-              <span className="hidden text-gray-400 sm:inline">{user.name || user.email}</span>
+            <div className="relative" ref={menuRef}>
               <button
-                onClick={logout}
-                className="text-gray-500 transition hover:text-gray-300"
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white hover:bg-indigo-500"
+                aria-label="Account menu"
               >
-                Sign out
+                {(user.name || user.email).slice(0, 2).toUpperCase()}
               </button>
+              {menuOpen && (
+                <div className="absolute right-0 z-20 mt-1 w-48 rounded-lg border border-gray-700 bg-gray-800 py-1 shadow-lg">
+                  <div className="border-b border-gray-700 px-3 py-2 text-sm text-gray-400">
+                    {user.name || user.email}
+                  </div>
+                  {isSuperAdmin(user) && (
+                    <NavLink
+                      to="/admin"
+                      className={({ isActive }) =>
+                        `block px-3 py-2 text-sm ${isActive ? "text-indigo-400" : "text-gray-300 hover:bg-gray-700"}`
+                      }
+                    >
+                      Admin
+                    </NavLink>
+                  )}
+                  <button
+                    onClick={logout}
+                    className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
