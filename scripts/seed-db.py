@@ -750,6 +750,38 @@ def seed(db: Database):
 
     print(f"  Sessions: {len(SESSIONS)}")
     print(f"  Tracks: {total_tracks} ({tagged_tracks} tagged, {total_tracks - tagged_tracks} untagged)")
+
+    # Setlists
+    setlist_data = [
+        (
+            "Porch Dogs",
+            "Friday Night Set",
+            "2026-03-14",
+            "The Tipsy Crow, 9pm. 45-min set.",
+            ["Fat Cat", "Good God Damn", "Spit Me Out", "Be Forever", "Dust & Neon"],
+        ),
+        (
+            "Porch Dogs",
+            "Battle of the Bands",
+            "2026-04-05",
+            "3 songs, 15 minutes max.",
+            ["Spit Me Out", "Fat Cat", "Good God Damn"],
+        ),
+        (
+            "The Slow Burners",
+            "Open Mic Night",
+            "2026-03-20",
+            "Acoustic night at The Hollow.",
+            ["Low Tide", "Copper Wire"],
+        ),
+    ]
+    for group_name, setlist_name, date, notes, setlist_songs in setlist_data:
+        gid = group_ids[group_name]
+        sl_id = db.create_setlist(setlist_name, gid, date=date, notes=notes)
+        sl_song_ids = [song_ids[(group_name, sn)] for sn in setlist_songs]
+        db.set_setlist_songs(sl_id, sl_song_ids)
+    print(f"  Setlists: {len(setlist_data)}")
+
     print(f"\nAll users have password: {DEFAULT_PASSWORD}")
     print("Done.")
 

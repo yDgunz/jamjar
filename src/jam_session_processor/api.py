@@ -1061,6 +1061,168 @@ def get_song_tracks(song_id: int, request: Request):
     return [_song_track_response(r) for r in rows]
 
 
+# --- Setlist endpoints ---
+
+
+class SetlistResponse(BaseModel):
+    id: int
+    group_id: int
+    group_name: str = ""
+    name: str
+    date: str | None
+    notes: str
+    song_count: int
+
+
+class SetlistSongResponse(BaseModel):
+    position: int
+    song_id: int
+    song_name: str
+    artist: str
+    sheet: str
+
+
+class CreateSetlistRequest(BaseModel):
+    name: str
+    group_id: int
+    date: str | None = None
+    notes: str = ""
+
+
+class SetlistSongsRequest(BaseModel):
+    song_ids: list[int]
+
+
+class AddSetlistSongRequest(BaseModel):
+    song_id: int
+    position: int | None = None
+
+
+def _setlist_response(setlist) -> SetlistResponse:
+    db = get_db()
+    group = db.get_group(setlist.group_id)
+    d = setlist.__dict__.copy()
+    d["group_name"] = group.name if group else ""
+    return SetlistResponse(**d)
+
+
+def _get_setlist_with_access(db, setlist_id: int, request):
+    """Get a setlist and verify group access."""
+    setlist = db.get_setlist(setlist_id)
+    if not setlist:
+        raise HTTPException(status_code=404, detail="Setlist not found")
+    _require_group_access(request, setlist.group_id)
+    return setlist
+
+
+@app.get("/api/setlists", response_model=list[SetlistResponse])
+def list_setlists(request: Request):
+    db = get_db()
+    group_ids = _get_group_ids(request)
+    return [_setlist_response(sl) for sl in db.list_setlists(group_ids)]
+
+
+@app.post("/api/setlists", response_model=SetlistResponse, status_code=201)
+def create_setlist(req: CreateSetlistRequest, request: Request):
+    db = get_db()
+    _require_group_access(request, req.group_id)
+    _require_role(request, "editor")
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Setlist name cannot be empty")
+    existing = db.conn.execute(
+        "SELECT id FROM setlists WHERE name = ? AND group_id = ?", (name, req.group_id)
+    ).fetchone()
+    if existing:
+        raise HTTPException(status_code=409, detail="Setlist already exists in this group")
+    sl_id = db.create_setlist(name, req.group_id, date=req.date, notes=req.notes)
+    setlist = db.get_setlist(sl_id)
+    return _setlist_response(setlist)
+
+
+@app.get("/api/setlists/{setlist_id}", response_model=SetlistResponse)
+def get_setlist(setlist_id: int, request: Request):
+    db = get_db()
+    setlist = _get_setlist_with_access(db, setlist_id, request)
+    return _setlist_response(setlist)
+
+
+@app.get("/api/setlists/{setlist_id}/songs", response_model=list[SetlistSongResponse])
+def get_setlist_songs(setlist_id: int, request: Request):
+    db = get_db()
+    _get_setlist_with_access(db, setlist_id, request)
+    return db.get_setlist_songs(setlist_id)
+
+
+@app.put("/api/setlists/{setlist_id}/name", response_model=SetlistResponse)
+def update_setlist_name(setlist_id: int, req: NameRequest, request: Request):
+    db = get_db()
+    _get_setlist_with_access(db, setlist_id, request)
+    _require_role(request, "editor")
+    try:
+        db.update_setlist_name(setlist_id, req.name.strip())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    setlist = db.get_setlist(setlist_id)
+    return _setlist_response(setlist)
+
+
+@app.put("/api/setlists/{setlist_id}/date", response_model=SetlistResponse)
+def update_setlist_date(setlist_id: int, req: DateRequest, request: Request):
+    db = get_db()
+    _get_setlist_with_access(db, setlist_id, request)
+    _require_role(request, "editor")
+    db.update_setlist_date(setlist_id, req.date)
+    setlist = db.get_setlist(setlist_id)
+    return _setlist_response(setlist)
+
+
+@app.put("/api/setlists/{setlist_id}/notes", response_model=SetlistResponse)
+def update_setlist_notes(setlist_id: int, req: NotesRequest, request: Request):
+    db = get_db()
+    _get_setlist_with_access(db, setlist_id, request)
+    _require_role(request, "editor")
+    db.update_setlist_notes(setlist_id, req.notes)
+    setlist = db.get_setlist(setlist_id)
+    return _setlist_response(setlist)
+
+
+@app.put("/api/setlists/{setlist_id}/songs", response_model=list[SetlistSongResponse])
+def set_setlist_songs(setlist_id: int, req: SetlistSongsRequest, request: Request):
+    db = get_db()
+    _get_setlist_with_access(db, setlist_id, request)
+    _require_role(request, "editor")
+    db.set_setlist_songs(setlist_id, req.song_ids)
+    return db.get_setlist_songs(setlist_id)
+
+
+@app.post("/api/setlists/{setlist_id}/songs", response_model=list[SetlistSongResponse])
+def add_setlist_song(setlist_id: int, req: AddSetlistSongRequest, request: Request):
+    db = get_db()
+    _get_setlist_with_access(db, setlist_id, request)
+    _require_role(request, "editor")
+    db.add_song_to_setlist(setlist_id, req.song_id, req.position)
+    return db.get_setlist_songs(setlist_id)
+
+
+@app.delete("/api/setlists/{setlist_id}/songs/{position}")
+def remove_setlist_song(setlist_id: int, position: int, request: Request):
+    db = get_db()
+    _get_setlist_with_access(db, setlist_id, request)
+    _require_role(request, "editor")
+    db.remove_song_from_setlist(setlist_id, position)
+    return {"ok": True}
+
+
+@app.delete("/api/setlists/{setlist_id}")
+def delete_setlist(setlist_id: int, request: Request):
+    db = get_db()
+    _get_setlist_with_access(db, setlist_id, request)
+    _require_role(request, "admin")
+    db.delete_setlist(setlist_id)
+    return {"ok": True}
+
+
 # --- Admin endpoints ---
 
 

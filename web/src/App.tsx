@@ -9,6 +9,9 @@ import SessionDetail from "./pages/SessionDetail";
 import SongCatalog from "./pages/SongCatalog";
 import SongHistory from "./pages/SongHistory";
 import PerformMode from "./pages/PerformMode";
+import SetlistList from "./pages/SetlistList";
+import SetlistDetail from "./pages/SetlistDetail";
+import SetlistPerformMode from "./pages/SetlistPerformMode";
 import Tuner from "./pages/Tuner";
 import Admin from "./pages/Admin";
 
@@ -46,6 +49,14 @@ function Layout({ children }: { children: React.ReactNode }) {
               }
             >
               Songs
+            </NavLink>
+            <NavLink
+              to="/setlists"
+              className={({ isActive }) =>
+                `py-2 px-2 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
+              }
+            >
+              Setlists
             </NavLink>
             <NavLink
               to="/tuner"
@@ -92,6 +103,7 @@ function AuthenticatedApp() {
       <Routes>
         {/* Full-screen routes — no app chrome */}
         <Route path="/songs/:id/perform" element={<PerformMode />} />
+        <Route path="/setlists/:id/perform" element={<SetlistPerformMode />} />
         <Route path="/tuner" element={<Tuner />} />
 
         {/* Normal layout routes */}
@@ -102,6 +114,8 @@ function AuthenticatedApp() {
               <Route path="/sessions/:id" element={<SessionDetail />} />
               <Route path="/songs" element={<SongCatalog />} />
               <Route path="/songs/:id" element={<SongHistory />} />
+              <Route path="/setlists" element={<SetlistList />} />
+              <Route path="/setlists/:id" element={<SetlistDetail />} />
               <Route path="/admin" element={<Admin />} />
             </Routes>
           </Layout>

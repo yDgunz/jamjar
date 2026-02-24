@@ -109,6 +109,24 @@ export interface Job {
   error: string | null;
 }
 
+export interface Setlist {
+  id: number;
+  group_id: number;
+  group_name: string;
+  name: string;
+  date: string | null;
+  notes: string;
+  song_count: number;
+}
+
+export interface SetlistSong {
+  position: number;
+  song_id: number;
+  song_name: string;
+  artist: string;
+  sheet: string;
+}
+
 export interface AdminUser {
   id: number;
   email: string;
@@ -312,6 +330,63 @@ export const api = {
   },
 
   getJob: (jobId: string) => fetchJson<Job>(`${BASE}/jobs/${jobId}`),
+
+  // Setlists
+  listSetlists: () => fetchJson<Setlist[]>(`${BASE}/setlists`),
+
+  createSetlist: (name: string, groupId: number, date?: string, notes?: string) =>
+    fetchJson<Setlist>(`${BASE}/setlists`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, group_id: groupId, date: date ?? null, notes: notes ?? "" }),
+    }),
+
+  getSetlist: (id: number) => fetchJson<Setlist>(`${BASE}/setlists/${id}`),
+
+  getSetlistSongs: (id: number) => fetchJson<SetlistSong[]>(`${BASE}/setlists/${id}/songs`),
+
+  updateSetlistName: (id: number, name: string) =>
+    fetchJson<Setlist>(`${BASE}/setlists/${id}/name`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+
+  updateSetlistDate: (id: number, date: string | null) =>
+    fetchJson<Setlist>(`${BASE}/setlists/${id}/date`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date }),
+    }),
+
+  updateSetlistNotes: (id: number, notes: string) =>
+    fetchJson<Setlist>(`${BASE}/setlists/${id}/notes`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes }),
+    }),
+
+  setSetlistSongs: (id: number, songIds: number[]) =>
+    fetchJson<SetlistSong[]>(`${BASE}/setlists/${id}/songs`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ song_ids: songIds }),
+    }),
+
+  addSetlistSong: (id: number, songId: number, position?: number) =>
+    fetchJson<SetlistSong[]>(`${BASE}/setlists/${id}/songs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ song_id: songId, position: position ?? null }),
+    }),
+
+  removeSetlistSong: (id: number, position: number) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/setlists/${id}/songs/${position}`, {
+      method: "DELETE",
+    }),
+
+  deleteSetlist: (id: number) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/setlists/${id}`, { method: "DELETE" }),
 
   // Admin
   adminListUsers: () => fetchJson<AdminUser[]>(`${BASE}/admin/users`),

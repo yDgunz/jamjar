@@ -581,3 +581,152 @@ def test_update_session_source_file(db, group_id):
     db.update_session_source_file(sid, "recordings/1.m4a")
     session = db.get_session(sid)
     assert session.source_file == "recordings/1.m4a"
+
+
+# --- Setlist tests ---
+
+
+@pytest.fixture
+def songs(db, group_id):
+    """Create some songs and return their IDs."""
+    sid = db.create_session("s.m4a", group_id)
+    ids = []
+    for name in ["Song A", "Song B", "Song C"]:
+        tid = db.create_track(sid, len(ids) + 1, 0, 300, f"{name}.wav")
+        song_id = db.tag_track(tid, name, group_id)
+        ids.append(song_id)
+    return ids
+
+
+def test_create_and_get_setlist(db, group_id):
+    sl_id = db.create_setlist("Friday Night Set", group_id, date="2026-03-15", notes="Opener")
+    sl = db.get_setlist(sl_id)
+    assert sl is not None
+    assert sl.name == "Friday Night Set"
+    assert sl.date == "2026-03-15"
+    assert sl.notes == "Opener"
+    assert sl.group_id == group_id
+    assert sl.song_count == 0
+
+
+def test_list_setlists(db, group_id):
+    db.create_setlist("Set A", group_id, date="2026-03-10")
+    db.create_setlist("Set B", group_id, date="2026-03-20")
+    setlists = db.list_setlists(group_ids=[group_id])
+    assert len(setlists) == 2
+    # Ordered by date DESC
+    assert setlists[0].name == "Set B"
+    assert setlists[1].name == "Set A"
+
+
+def test_list_setlists_group_scoped(db):
+    gid1 = db.create_group("Band1")
+    gid2 = db.create_group("Band2")
+    db.create_setlist("Set 1", gid1)
+    db.create_setlist("Set 2", gid2)
+    assert len(db.list_setlists(group_ids=[gid1])) == 1
+    assert len(db.list_setlists(group_ids=[gid2])) == 1
+    assert len(db.list_setlists(group_ids=[gid1, gid2])) == 2
+    assert len(db.list_setlists(group_ids=[])) == 0
+
+
+def test_update_setlist_name(db, group_id):
+    sl_id = db.create_setlist("Old Name", group_id)
+    db.update_setlist_name(sl_id, "New Name")
+    assert db.get_setlist(sl_id).name == "New Name"
+
+
+def test_update_setlist_name_uniqueness(db, group_id):
+    db.create_setlist("Set A", group_id)
+    sl2 = db.create_setlist("Set B", group_id)
+    with pytest.raises(ValueError, match="already exists"):
+        db.update_setlist_name(sl2, "Set A")
+
+
+def test_update_setlist_date_and_notes(db, group_id):
+    sl_id = db.create_setlist("Test", group_id)
+    db.update_setlist_date(sl_id, "2026-04-01")
+    db.update_setlist_notes(sl_id, "Updated notes")
+    sl = db.get_setlist(sl_id)
+    assert sl.date == "2026-04-01"
+    assert sl.notes == "Updated notes"
+
+
+def test_delete_setlist(db, group_id):
+    sl_id = db.create_setlist("Doomed", group_id)
+    db.delete_setlist(sl_id)
+    assert db.get_setlist(sl_id) is None
+
+
+def test_setlist_songs_crud(db, group_id, songs):
+    sl_id = db.create_setlist("My Set", group_id)
+
+    # set_setlist_songs
+    db.set_setlist_songs(sl_id, [songs[0], songs[2], songs[1]])
+    items = db.get_setlist_songs(sl_id)
+    assert len(items) == 3
+    assert items[0].song_name == "Song A"
+    assert items[0].position == 1
+    assert items[1].song_name == "Song C"
+    assert items[1].position == 2
+    assert items[2].song_name == "Song B"
+    assert items[2].position == 3
+
+    # song_count
+    sl = db.get_setlist(sl_id)
+    assert sl.song_count == 3
+
+    # replace (idempotent)
+    db.set_setlist_songs(sl_id, [songs[1], songs[0]])
+    items = db.get_setlist_songs(sl_id)
+    assert len(items) == 2
+    assert items[0].song_name == "Song B"
+    assert items[1].song_name == "Song A"
+
+
+def test_add_song_to_setlist(db, group_id, songs):
+    sl_id = db.create_setlist("My Set", group_id)
+    db.add_song_to_setlist(sl_id, songs[0])
+    db.add_song_to_setlist(sl_id, songs[1])
+    items = db.get_setlist_songs(sl_id)
+    assert len(items) == 2
+    assert items[0].position == 1
+    assert items[1].position == 2
+
+    # Insert at position
+    db.add_song_to_setlist(sl_id, songs[2], position=2)
+    items = db.get_setlist_songs(sl_id)
+    assert len(items) == 3
+    assert items[0].song_name == "Song A"
+    assert items[1].song_name == "Song C"
+    assert items[2].song_name == "Song B"
+
+
+def test_remove_song_from_setlist(db, group_id, songs):
+    sl_id = db.create_setlist("My Set", group_id)
+    db.set_setlist_songs(sl_id, songs)
+
+    db.remove_song_from_setlist(sl_id, position=2)
+    items = db.get_setlist_songs(sl_id)
+    assert len(items) == 2
+    assert items[0].song_name == "Song A"
+    assert items[0].position == 1
+    assert items[1].song_name == "Song C"
+    assert items[1].position == 2  # renumbered
+
+
+def test_setlist_cascade_on_group_delete(db):
+    gid = db.create_group("TempBand")
+    sl_id = db.create_setlist("Temp Set", gid)
+    db.delete_group(gid)
+    assert db.get_setlist(sl_id) is None
+
+
+def test_setlist_song_cascade_on_song_delete(db, group_id, songs):
+    sl_id = db.create_setlist("My Set", group_id)
+    db.set_setlist_songs(sl_id, songs)
+    db.delete_song(songs[1])  # Delete Song B
+    items = db.get_setlist_songs(sl_id)
+    assert len(items) == 2
+    assert items[0].song_name == "Song A"
+    assert items[1].song_name == "Song C"

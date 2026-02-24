@@ -56,25 +56,28 @@ notes                      duration_sec                   UNIQUE(group_id, name)
 created_at                 audio_path, notes
                            created_at
 
-jobs
-──────────────
-id (PK, TEXT)
-type
-group_id (FK→groups)
-status (pending→processing→completed|failed)
-progress
-session_id (FK→sessions, nullable)
-error
+jobs                           setlists                       setlist_songs
+──────────────                ──────────────                 ─────────────────
+id (PK, TEXT)                 id (PK)                        id (PK)
+type                          group_id (FK→groups)           setlist_id (FK→setlists)
+group_id (FK→groups)          name                           song_id (FK→songs)
+status (pending→…)            date                           position
+progress                      notes                          UNIQUE(setlist_id, position)
+session_id (nullable)         created_at
+error                         UNIQUE(group_id, name)
 created_at, updated_at
 ```
 
-- **Multi-tenancy:** groups own sessions and songs; users belong to groups via `user_groups`
+- **Multi-tenancy:** groups own sessions, songs, and setlists; users belong to groups via `user_groups`
 - **Roles:** `superadmin`, `admin`, `editor`, `readonly` — enforced in API middleware
-- `groups → sessions/songs/jobs`: one-to-many, CASCADE delete
+- `groups → sessions/songs/jobs/setlists`: one-to-many, CASCADE delete
 - `sessions → tracks`: one-to-many, CASCADE delete
 - `tracks → songs`: many-to-one (nullable), SET NULL on delete
 - `jobs → sessions`: many-to-one (nullable), SET NULL on delete
+- `setlists → setlist_songs`: one-to-many, CASCADE delete
+- `setlist_songs → songs`: many-to-one, CASCADE on delete
 - Songs are created on first tag and reused across sessions within a group
+- Setlists are group-scoped ordered collections of songs, independent of sessions
 
 ### REST API
 
@@ -85,6 +88,7 @@ All `/api` endpoints require authentication (JWT cookie or API key header). Role
 **Jobs:** `GET /api/jobs/{id}` — poll for upload progress (status: pending → processing → completed/failed)
 **Tracks:** `POST /api/tracks/{id}/tag` | `DELETE /api/tracks/{id}/tag` | `PUT /api/tracks/{id}/notes` | `GET /api/tracks/{id}/audio` | `POST /api/tracks/{id}/merge` (admin) | `POST /api/tracks/{id}/split` (admin)
 **Songs:** `GET /api/songs` | `GET /api/songs/{id}` | `GET /api/songs/{id}/tracks` | `PUT /api/songs/{id}/details` | `PUT /api/songs/{id}/name` | `PUT /api/songs/{id}/group` (admin) | `DELETE /api/songs/{id}` (admin)
+**Setlists:** `GET /api/setlists` | `POST /api/setlists` (editor) | `GET /api/setlists/{id}` | `GET /api/setlists/{id}/songs` | `PUT /api/setlists/{id}/name` (editor) | `PUT /api/setlists/{id}/date` (editor) | `PUT /api/setlists/{id}/notes` (editor) | `PUT /api/setlists/{id}/songs` (editor, replace order) | `POST /api/setlists/{id}/songs` (editor, add song) | `DELETE /api/setlists/{id}/songs/{position}` (editor) | `DELETE /api/setlists/{id}` (admin)
 **Admin:** `GET/POST /api/admin/users` | `DELETE /api/admin/users/{id}` | `PUT .../password` | `PUT .../role` | `POST/DELETE .../groups/{id}` | `GET/POST /api/admin/groups` | `DELETE /api/admin/groups/{id}` (all superadmin)
 **Health:** `GET /health`
 

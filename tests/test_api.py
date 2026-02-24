@@ -1171,3 +1171,177 @@ def test_fetch_lyrics_no_artist(seeded_client):
 
     resp = client.post(f"/api/songs/{song_id}/fetch-lyrics")
     assert resp.status_code == 400
+
+
+# --- Setlist endpoint tests ---
+
+
+def test_create_and_list_setlists(auth_client):
+    client, uid, gid = auth_client
+    resp = client.post(
+        "/api/setlists",
+        json={"name": "Friday Set", "group_id": gid, "date": "2026-03-14"},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["name"] == "Friday Set"
+    assert data["date"] == "2026-03-14"
+    assert data["group_name"] == "TestBand"
+    assert data["song_count"] == 0
+
+    resp = client.get("/api/setlists")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+
+
+def test_get_setlist(auth_client):
+    client, uid, gid = auth_client
+    resp = client.post("/api/setlists", json={"name": "My Set", "group_id": gid})
+    sl_id = resp.json()["id"]
+
+    resp = client.get(f"/api/setlists/{sl_id}")
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "My Set"
+
+
+def test_get_setlist_not_found(auth_client):
+    client, uid, gid = auth_client
+    resp = client.get("/api/setlists/9999")
+    assert resp.status_code == 404
+
+
+def test_update_setlist_name(auth_client):
+    client, uid, gid = auth_client
+    resp = client.post("/api/setlists", json={"name": "Old", "group_id": gid})
+    sl_id = resp.json()["id"]
+
+    resp = client.put(f"/api/setlists/{sl_id}/name", json={"name": "New"})
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "New"
+
+
+def test_update_setlist_date_and_notes(auth_client):
+    client, uid, gid = auth_client
+    resp = client.post("/api/setlists", json={"name": "Test", "group_id": gid})
+    sl_id = resp.json()["id"]
+
+    resp = client.put(f"/api/setlists/{sl_id}/date", json={"date": "2026-04-01"})
+    assert resp.status_code == 200
+    assert resp.json()["date"] == "2026-04-01"
+
+    resp = client.put(f"/api/setlists/{sl_id}/notes", json={"notes": "Updated"})
+    assert resp.status_code == 200
+    assert resp.json()["notes"] == "Updated"
+
+
+def test_setlist_songs_workflow(seeded_client):
+    client, uid, gid = seeded_client
+    # Create some songs
+    client.post("/api/tracks/1/tag", json={"song_name": "Song A"})
+    client.post("/api/tracks/2/tag", json={"song_name": "Song B"})
+    client.post("/api/tracks/3/tag", json={"song_name": "Song C"})
+
+    songs = client.get("/api/songs").json()
+    song_ids = [s["id"] for s in sorted(songs, key=lambda s: s["name"])]
+
+    # Create setlist
+    resp = client.post("/api/setlists", json={"name": "Test Set", "group_id": gid})
+    sl_id = resp.json()["id"]
+
+    # Add songs
+    resp = client.post(f"/api/setlists/{sl_id}/songs", json={"song_id": song_ids[0]})
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+
+    resp = client.post(f"/api/setlists/{sl_id}/songs", json={"song_id": song_ids[1]})
+    assert len(resp.json()) == 2
+
+    # Get songs
+    resp = client.get(f"/api/setlists/{sl_id}/songs")
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) == 2
+    assert items[0]["position"] == 1
+    assert items[1]["position"] == 2
+
+    # Reorder via set_setlist_songs
+    resp = client.put(
+        f"/api/setlists/{sl_id}/songs",
+        json={"song_ids": [song_ids[1], song_ids[2], song_ids[0]]},
+    )
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) == 3
+    assert items[0]["song_name"] == "Song B"
+    assert items[1]["song_name"] == "Song C"
+    assert items[2]["song_name"] == "Song A"
+
+    # Remove song at position 2
+    resp = client.delete(f"/api/setlists/{sl_id}/songs/2")
+    assert resp.status_code == 200
+
+    resp = client.get(f"/api/setlists/{sl_id}/songs")
+    items = resp.json()
+    assert len(items) == 2
+
+    # Verify song_count on setlist
+    resp = client.get(f"/api/setlists/{sl_id}")
+    assert resp.json()["song_count"] == 2
+
+
+def test_delete_setlist(auth_client):
+    client, uid, gid = auth_client
+    resp = client.post("/api/setlists", json={"name": "Doomed", "group_id": gid})
+    sl_id = resp.json()["id"]
+
+    resp = client.delete(f"/api/setlists/{sl_id}")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+    resp = client.get(f"/api/setlists/{sl_id}")
+    assert resp.status_code == 404
+
+
+def test_setlist_duplicate_name_returns_409(auth_client):
+    client, uid, gid = auth_client
+    client.post("/api/setlists", json={"name": "Same", "group_id": gid})
+    resp = client.post("/api/setlists", json={"name": "Same", "group_id": gid})
+    assert resp.status_code == 409
+
+
+def test_readonly_cannot_create_setlist(client):
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "readonly@test.com", role="readonly", group_id=gid)
+
+    resp = client.post("/api/setlists", json={"name": "Set", "group_id": gid})
+    assert resp.status_code == 403
+
+
+def test_editor_cannot_delete_setlist(client):
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "editor@test.com", role="editor", group_id=gid)
+    sl_id = db.create_setlist("Test", gid)
+
+    resp = client.delete(f"/api/setlists/{sl_id}")
+    assert resp.status_code == 403
+
+
+def test_setlist_group_scoping(client):
+    db = api._db
+    uid1 = db.create_user("user1@example.com", hash_password("pw"), role="admin")
+    gid_a = db.create_group("GroupA")
+    db.assign_user_to_group(uid1, gid_a)
+    uid2 = db.create_user("user2@example.com", hash_password("pw"), role="admin")
+    gid_b = db.create_group("GroupB")
+    db.assign_user_to_group(uid2, gid_b)
+
+    db.create_setlist("Set A", gid_a)
+    db.create_setlist("Set B", gid_b)
+
+    # User 1 should only see Group A setlists
+    client.post("/api/auth/login", json={"email": "user1@example.com", "password": "pw"})
+    resp = client.get("/api/setlists")
+    assert len(resp.json()) == 1
+    assert resp.json()[0]["name"] == "Set A"

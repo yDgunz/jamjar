@@ -71,6 +71,24 @@ CREATE TABLE IF NOT EXISTS jobs (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS setlists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    date TEXT,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(group_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS setlist_songs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    setlist_id INTEGER NOT NULL REFERENCES setlists(id) ON DELETE CASCADE,
+    song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    UNIQUE(setlist_id, position)
+);
 """
 
 
@@ -151,6 +169,26 @@ class Job:
     updated_at: str
 
 
+@dataclass
+class Setlist:
+    id: int
+    group_id: int
+    name: str
+    date: str | None
+    notes: str
+    created_at: str
+    song_count: int = 0
+
+
+@dataclass
+class SetlistSong:
+    position: int
+    song_id: int
+    song_name: str
+    artist: str
+    sheet: str
+
+
 def clean_session_name(source_file: str) -> str:
     """Generate a clean display name from a source filename.
 
@@ -218,6 +256,8 @@ class Database:
     def reset(self):
         """Drop all tables and recreate the schema."""
         self.conn.executescript("""
+            DROP TABLE IF EXISTS setlist_songs;
+            DROP TABLE IF EXISTS setlists;
             DROP TABLE IF EXISTS jobs;
             DROP TABLE IF EXISTS tracks;
             DROP TABLE IF EXISTS songs;
@@ -736,5 +776,137 @@ class Database:
             "UPDATE jobs SET status = 'failed', error = ?,"
             " updated_at = datetime('now') WHERE id = ?",
             (error, job_id),
+        )
+        self.conn.commit()
+
+    # --- Setlists ---
+
+    def create_setlist(
+        self, name: str, group_id: int, date: str | None = None, notes: str = ""
+    ) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO setlists (name, group_id, date, notes) VALUES (?, ?, ?, ?)",
+            (name, group_id, date, notes),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_setlist(self, setlist_id: int) -> Setlist | None:
+        row = self.conn.execute(
+            """SELECT sl.*,
+                      COUNT(ss.id) as song_count
+               FROM setlists sl
+               LEFT JOIN setlist_songs ss ON ss.setlist_id = sl.id
+               WHERE sl.id = ?
+               GROUP BY sl.id""",
+            (setlist_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return Setlist(**row)
+
+    def list_setlists(self, group_ids: list[int] | None = None) -> list[Setlist]:
+        if group_ids is not None and not group_ids:
+            return []
+        base = """SELECT sl.*,
+                      COUNT(ss.id) as song_count
+               FROM setlists sl
+               LEFT JOIN setlist_songs ss ON ss.setlist_id = sl.id"""
+        if group_ids is not None:
+            placeholders = ",".join("?" for _ in group_ids)
+            base += f" WHERE sl.group_id IN ({placeholders})"
+            base += " GROUP BY sl.id ORDER BY sl.date DESC, sl.name"
+            rows = self.conn.execute(base, group_ids).fetchall()
+        else:
+            base += " GROUP BY sl.id ORDER BY sl.date DESC, sl.name"
+            rows = self.conn.execute(base).fetchall()
+        return [Setlist(**row) for row in rows]
+
+    def update_setlist_name(self, setlist_id: int, name: str):
+        """Rename a setlist. Raises ValueError if name already exists in the same group."""
+        sl = self.conn.execute(
+            "SELECT group_id FROM setlists WHERE id = ?", (setlist_id,)
+        ).fetchone()
+        if not sl:
+            raise ValueError(f"Setlist {setlist_id} not found")
+        existing = self.conn.execute(
+            "SELECT id FROM setlists WHERE name = ? AND group_id = ? AND id != ?",
+            (name, sl["group_id"], setlist_id),
+        ).fetchone()
+        if existing:
+            raise ValueError(f"Setlist '{name}' already exists")
+        self.conn.execute("UPDATE setlists SET name = ? WHERE id = ?", (name, setlist_id))
+        self.conn.commit()
+
+    def update_setlist_date(self, setlist_id: int, date: str | None):
+        self.conn.execute("UPDATE setlists SET date = ? WHERE id = ?", (date, setlist_id))
+        self.conn.commit()
+
+    def update_setlist_notes(self, setlist_id: int, notes: str):
+        self.conn.execute("UPDATE setlists SET notes = ? WHERE id = ?", (notes, setlist_id))
+        self.conn.commit()
+
+    def delete_setlist(self, setlist_id: int):
+        """Delete a setlist. CASCADE handles the join table."""
+        self.conn.execute("DELETE FROM setlists WHERE id = ?", (setlist_id,))
+        self.conn.commit()
+
+    def get_setlist_songs(self, setlist_id: int) -> list[SetlistSong]:
+        rows = self.conn.execute(
+            """SELECT ss.position, ss.song_id, s.name as song_name,
+                      s.artist, s.sheet
+               FROM setlist_songs ss
+               JOIN songs s ON ss.song_id = s.id
+               WHERE ss.setlist_id = ?
+               ORDER BY ss.position""",
+            (setlist_id,),
+        ).fetchall()
+        return [SetlistSong(**row) for row in rows]
+
+    def set_setlist_songs(self, setlist_id: int, song_ids: list[int]):
+        """Replace the full song list with sequential positions (idempotent)."""
+        self.conn.execute("DELETE FROM setlist_songs WHERE setlist_id = ?", (setlist_id,))
+        for i, song_id in enumerate(song_ids, start=1):
+            self.conn.execute(
+                "INSERT INTO setlist_songs (setlist_id, song_id, position) VALUES (?, ?, ?)",
+                (setlist_id, song_id, i),
+            )
+        self.conn.commit()
+
+    def add_song_to_setlist(
+        self, setlist_id: int, song_id: int, position: int | None = None
+    ):
+        """Add a song at a given position (or append to the end)."""
+        if position is None:
+            row = self.conn.execute(
+                "SELECT COALESCE(MAX(position), 0) as max_pos"
+                " FROM setlist_songs WHERE setlist_id = ?",
+                (setlist_id,),
+            ).fetchone()
+            position = row["max_pos"] + 1
+        else:
+            # Shift existing songs at or after this position
+            self.conn.execute(
+                "UPDATE setlist_songs SET position = position + 1"
+                " WHERE setlist_id = ? AND position >= ?",
+                (setlist_id, position),
+            )
+        self.conn.execute(
+            "INSERT INTO setlist_songs (setlist_id, song_id, position) VALUES (?, ?, ?)",
+            (setlist_id, song_id, position),
+        )
+        self.conn.commit()
+
+    def remove_song_from_setlist(self, setlist_id: int, position: int):
+        """Remove the song at a given position and renumber remaining songs."""
+        self.conn.execute(
+            "DELETE FROM setlist_songs WHERE setlist_id = ? AND position = ?",
+            (setlist_id, position),
+        )
+        # Renumber: close the gap
+        self.conn.execute(
+            "UPDATE setlist_songs SET position = position - 1"
+            " WHERE setlist_id = ? AND position > ?",
+            (setlist_id, position),
         )
         self.conn.commit()
