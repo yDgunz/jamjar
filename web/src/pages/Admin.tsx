@@ -257,7 +257,7 @@ export default function Admin() {
                         onChange={(e) => setResetPw(e.target.value)}
                         required
                         autoFocus
-                        className="w-32 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                        className="w-32 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-xs text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
                       />
                       <button
                         type="submit"
@@ -359,14 +359,14 @@ export default function Admin() {
                 onChange={(e) => setNewEmail(e.target.value)}
                 required
                 autoFocus
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
               />
               <input
                 type="text"
                 placeholder="Name"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
               />
               <input
                 type="password"
@@ -374,14 +374,14 @@ export default function Admin() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
               />
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1">Role</label>
                 <select
                   value={newRole}
                   onChange={(e) => setNewRole(e.target.value as Role)}
-                  className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
                 >
                   {ROLES.map((r) => (
                     <option key={r} value={r}>{r}</option>
@@ -426,7 +426,7 @@ export default function Admin() {
                 onChange={(e) => setNewGroupName(e.target.value)}
                 required
                 autoFocus
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
               />
               <div className="flex justify-end gap-2 pt-1">
                 <button

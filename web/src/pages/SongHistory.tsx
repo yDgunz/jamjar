@@ -357,7 +357,7 @@ export default function SongHistory() {
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    className="ml-2 rounded border border-transparent bg-transparent py-0 text-sm font-normal text-gray-500 hover:border-gray-700 hover:text-gray-300 focus:border-indigo-500 focus:outline-none"
+                    className="ml-2 rounded border border-transparent bg-transparent py-0 text-base sm:text-sm font-normal text-gray-500 hover:border-gray-700 hover:text-gray-300 focus:border-indigo-500 focus:outline-none"
                   >
                     {user!.groups.map((g) => (
                       <option key={g.id} value={g.id}>{g.name}</option>
@@ -379,7 +379,7 @@ export default function SongHistory() {
                 }}
                 onBlur={handleSaveArtist}
                 placeholder="Artist name"
-                className="mt-0.5 w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-sm text-gray-300 placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="mt-0.5 w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-gray-300 placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
               />
             ) : song?.artist ? (
               <p

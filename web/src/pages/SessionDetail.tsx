@@ -304,7 +304,7 @@ export default function SessionDetail() {
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    className="ml-2 rounded border border-transparent bg-transparent py-0 text-sm font-normal text-gray-500 hover:border-gray-700 hover:text-gray-300 focus:border-indigo-500 focus:outline-none"
+                    className="ml-2 rounded border border-transparent bg-transparent py-0 text-base sm:text-sm font-normal text-gray-500 hover:border-gray-700 hover:text-gray-300 focus:border-indigo-500 focus:outline-none"
                   >
                     {user!.groups.map((g) => (
                       <option key={g.id} value={g.id}>{g.name}</option>
@@ -327,7 +327,7 @@ export default function SessionDetail() {
                     if (e.key === "Escape") { setEditingDate(false); setDateInput(session.date ?? ""); }
                   }}
                   onBlur={handleSaveDate}
-                  className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
                 />
               ) : canEdit(user) ? (
                 <button
@@ -376,7 +376,7 @@ export default function SessionDetail() {
               onBlur={handleSaveSessionNotes}
               placeholder="Add notes..."
               rows={3}
-              className="w-full max-w-md rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+              className="w-full max-w-md rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
             />
           ) : session.notes ? (
             canEdit(user) ? (
@@ -487,7 +487,7 @@ export default function SessionDetail() {
                     onChange={(e) => setThreshold(Number(e.target.value))}
                     min={0}
                     step={1}
-                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
                   />
                   <span className="text-sm text-gray-500">dB</span>
                 </div>

@@ -309,7 +309,7 @@ export default function SessionList() {
                   <select
                     value={uploadGroupId ?? ""}
                     onChange={(e) => setUploadGroupId(e.target.value ? Number(e.target.value) : null)}
-                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
                   >
                     <option value="">Select a group...</option>
                     {user!.groups.map((g) => (
@@ -340,7 +340,7 @@ export default function SessionList() {
                     onChange={(e) => setUploadThreshold(Number(e.target.value))}
                     min={0}
                     step={1}
-                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
                   />
                   <span className="text-sm text-gray-500">dB</span>
                 </div>

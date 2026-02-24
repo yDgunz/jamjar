@@ -248,28 +248,27 @@ export default function PerformMode() {
         </div>
 
         {/* Controls row */}
-        <div className="mt-2 flex items-center justify-center gap-4">
-          {/* Transpose + Root notes */}
+        <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
           {hasSheet && (
-            <div className="flex items-center gap-1">
+            <>
               <button
                 onClick={() => setTranspose((t) => ((t - 1) % 12 + 12) % 12)}
-                className="rounded-xl px-4 py-2.5 text-lg font-medium text-gray-300 active:bg-gray-800 hover:bg-gray-800 hover:text-white"
+                className="rounded-lg px-2.5 py-1.5 text-base font-medium text-gray-300 active:bg-gray-800"
                 title="Transpose down"
               >
                 T-
               </button>
               <button
                 onClick={() => setTranspose((t) => (t + 1) % 12)}
-                className="rounded-xl px-4 py-2.5 text-lg font-medium text-gray-300 active:bg-gray-800 hover:bg-gray-800 hover:text-white"
+                className="rounded-lg px-2.5 py-1.5 text-base font-medium text-gray-300 active:bg-gray-800"
                 title="Transpose up"
               >
                 T+
               </button>
               <button
                 onClick={() => setShowRoots((v) => !v)}
-                className={`rounded-xl px-4 py-2.5 text-lg font-medium active:bg-gray-800 ${
-                  showRoots ? "bg-indigo-600/20 text-indigo-400" : "text-gray-300 hover:bg-gray-800 hover:text-white"
+                className={`rounded-lg px-2.5 py-1.5 text-base font-medium active:bg-gray-800 ${
+                  showRoots ? "bg-indigo-600/20 text-indigo-400" : "text-gray-300"
                 }`}
                 title={showRoots ? "Hide root note frets" : "Show root note frets"}
               >
@@ -277,63 +276,57 @@ export default function PerformMode() {
               </button>
               <button
                 onClick={() => setWrapText((v) => !v)}
-                className={`rounded-xl px-4 py-2.5 active:bg-gray-800 ${
-                  wrapText ? "bg-indigo-600/20 text-indigo-400" : "text-gray-300 hover:bg-gray-800 hover:text-white"
+                className={`rounded-lg px-2 py-1.5 active:bg-gray-800 ${
+                  wrapText ? "bg-indigo-600/20 text-indigo-400" : "text-gray-300"
                 }`}
                 title={wrapText ? "Disable word wrap" : "Enable word wrap"}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
                   <line x1="3" y1="6" x2="21" y2="6" />
                   <path d="M3 12h15a3 3 0 1 1 0 6h-4" />
                   <polyline points="16 16 14 18 16 20" />
                   <line x1="3" y1="18" x2="10" y2="18" />
                 </svg>
               </button>
-            </div>
+              <span className="mx-0.5 text-gray-800">|</span>
+            </>
           )}
-
-          {/* Font size */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setFontIdx((i) => Math.max(0, i - 1))}
-              disabled={fontIdx === 0}
-              className="rounded-xl px-4 py-2.5 text-lg font-medium text-gray-300 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
-              title="Decrease font size"
-            >
-              A-
-            </button>
-            <button
-              onClick={() => setFontIdx((i) => Math.min(FONT_SIZES.length - 1, i + 1))}
-              disabled={fontIdx === FONT_SIZES.length - 1}
-              className="rounded-xl px-4 py-2.5 text-lg font-medium text-gray-300 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
-              title="Increase font size"
-            >
-              A+
-            </button>
-          </div>
-
-          {/* Scroll speed: − value × + */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setSpeedIdx((i) => Math.max(0, i - 1))}
-              disabled={speedIdx === 0}
-              className="rounded-xl px-3 py-2.5 text-lg font-bold leading-none text-gray-300 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
-              title="Slower scroll"
-            >
-              −
-            </button>
-            <span className="min-w-[3ch] text-center text-sm tabular-nums text-gray-400">
-              {SPEED_MULTIPLIERS[speedIdx]}×
-            </span>
-            <button
-              onClick={() => setSpeedIdx((i) => Math.min(SPEED_MULTIPLIERS.length - 1, i + 1))}
-              disabled={speedIdx === SPEED_MULTIPLIERS.length - 1}
-              className="rounded-xl px-3 py-2.5 text-lg font-bold leading-none text-gray-300 active:bg-gray-800 hover:bg-gray-800 hover:text-white disabled:opacity-30"
-              title="Faster scroll"
-            >
-              +
-            </button>
-          </div>
+          <button
+            onClick={() => setFontIdx((i) => Math.max(0, i - 1))}
+            disabled={fontIdx === 0}
+            className="rounded-lg px-2.5 py-1.5 text-base font-medium text-gray-300 active:bg-gray-800 disabled:opacity-30"
+            title="Decrease font size"
+          >
+            A-
+          </button>
+          <button
+            onClick={() => setFontIdx((i) => Math.min(FONT_SIZES.length - 1, i + 1))}
+            disabled={fontIdx === FONT_SIZES.length - 1}
+            className="rounded-lg px-2.5 py-1.5 text-base font-medium text-gray-300 active:bg-gray-800 disabled:opacity-30"
+            title="Increase font size"
+          >
+            A+
+          </button>
+          <span className="mx-0.5 text-gray-800">|</span>
+          <button
+            onClick={() => setSpeedIdx((i) => Math.max(0, i - 1))}
+            disabled={speedIdx === 0}
+            className="rounded-lg px-2 py-1.5 text-base font-bold leading-none text-gray-300 active:bg-gray-800 disabled:opacity-30"
+            title="Slower scroll"
+          >
+            &#8722;
+          </button>
+          <span className="min-w-[3ch] text-center text-xs tabular-nums text-gray-400">
+            {SPEED_MULTIPLIERS[speedIdx]}&times;
+          </span>
+          <button
+            onClick={() => setSpeedIdx((i) => Math.min(SPEED_MULTIPLIERS.length - 1, i + 1))}
+            disabled={speedIdx === SPEED_MULTIPLIERS.length - 1}
+            className="rounded-lg px-2 py-1.5 text-base font-bold leading-none text-gray-300 active:bg-gray-800 disabled:opacity-30"
+            title="Faster scroll"
+          >
+            +
+          </button>
         </div>
       </header>
 

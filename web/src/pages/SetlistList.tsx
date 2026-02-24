@@ -148,19 +148,19 @@ export default function SetlistList() {
               if (e.key === "Escape") { setCreating(false); setNewName(""); setNewDate(""); }
             }}
             placeholder="Setlist name"
-            className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+            className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
           />
           <input
             type="date"
             value={newDate}
             onChange={(e) => setNewDate(e.target.value)}
-            className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+            className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
           />
           {user && user.groups.length > 1 && (
             <select
               value={newGroupId ?? defaultGroupId ?? ""}
               onChange={(e) => setNewGroupId(Number(e.target.value))}
-              className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
             >
               <option value="" disabled>Group</option>
               {user.groups.map((g) => (

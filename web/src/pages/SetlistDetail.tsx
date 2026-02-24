@@ -50,15 +50,13 @@ function SortableRow({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900 px-4 py-3"
+      {...(readOnly ? {} : { ...attributes, ...listeners })}
+      className={`flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 ${
+        !readOnly ? "cursor-grab touch-none active:cursor-grabbing" : ""
+      }`}
     >
       {!readOnly && (
-        <button
-          {...attributes}
-          {...listeners}
-          className="cursor-grab touch-none text-gray-500 hover:text-gray-300 active:cursor-grabbing"
-          title="Drag to reorder"
-        >
+        <div className="text-gray-500">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
             <circle cx="9" cy="6" r="1.5" />
             <circle cx="15" cy="6" r="1.5" />
@@ -67,7 +65,7 @@ function SortableRow({
             <circle cx="9" cy="18" r="1.5" />
             <circle cx="15" cy="18" r="1.5" />
           </svg>
-        </button>
+        </div>
       )}
       <span className="w-6 text-center text-sm font-medium text-gray-500">
         {item.position}
@@ -86,10 +84,10 @@ function SortableRow({
       {!readOnly && (
         <button
           onClick={onRemove}
-          className="rounded p-1 text-gray-600 hover:bg-red-950 hover:text-red-400"
+          className="rounded p-2 text-gray-600 hover:bg-red-950 hover:text-red-400"
           title="Remove from setlist"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
             <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
           </svg>
         </button>
@@ -329,7 +327,7 @@ export default function SetlistDetail() {
                   if (e.key === "Escape") { setEditingDate(false); setDateInput(setlist?.date ?? ""); }
                 }}
                 onBlur={handleSaveDate}
-                className="mt-0.5 rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-sm text-gray-300 focus:border-indigo-500 focus:outline-none"
+                className="mt-0.5 rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-gray-300 focus:border-indigo-500 focus:outline-none"
               />
             ) : setlist?.date ? (
               <p
@@ -466,7 +464,7 @@ export default function SetlistDetail() {
               onFocus={() => setDropdownOpen(true)}
               onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
               placeholder="Add a song..."
-              className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+              className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
             />
             {dropdownOpen && !addSongId && availableSongs.length > 0 && (
               <div className="absolute left-0 right-0 z-10 bottom-full mb-1 max-h-48 overflow-y-auto rounded border border-gray-700 bg-gray-800 shadow-lg">
