@@ -128,17 +128,18 @@ export default function SessionDetail() {
           const job = await api.getJob(activeJobId);
           if (cancelled) return;
           if (job.status === "completed") {
-            setProcessingProgress(null);
-            if (jobId) setSearchParams({}, { replace: true });
             const [s, t] = await Promise.all([
               api.getSession(sessionId),
               api.getSessionTracks(sessionId),
             ]);
+            if (cancelled) return;
+            setProcessingProgress(null);
             setSession(s);
             setTracks(t);
             setNameInput(s?.name ?? "");
             setDateInput(s?.date ?? "");
             setNotesInput(s?.notes ?? "");
+            if (jobId) setSearchParams({}, { replace: true });
             return;
           }
           if (job.status === "failed") {
