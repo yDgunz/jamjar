@@ -5,7 +5,7 @@ import type { Song, SongTrack } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
 import Modal, { Toast } from "../components/Modal";
 import { useAuth } from "../context/AuthContext";
-import { annotateEStringRoots } from "../utils/chordUtils";
+
 
 function formatTime(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -204,7 +204,7 @@ export default function SongHistory() {
   const [nameInput, setNameInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
-  const [showRoots, setShowRoots] = useState(false);
+
   const [editingArtist, setEditingArtist] = useState(false);
   const [artistInput, setArtistInput] = useState("");
   const [fetchingLyrics, setFetchingLyrics] = useState(false);
@@ -433,37 +433,24 @@ export default function SongHistory() {
       {/* Song metadata */}
       <div className="mb-4 space-y-4 rounded-lg border border-gray-800 bg-gray-900 p-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Sheet</label>
-            {song?.sheet && (
-              <button
-                onClick={() => setShowRoots((v) => !v)}
-                className={`text-xs px-2 py-0.5 rounded ${showRoots ? "bg-indigo-600/20 text-indigo-400" : "text-gray-500 hover:text-gray-300"}`}
-              >
-                Root notes
-              </button>
-            )}
+          <div className="flex items-center gap-3 mb-1">
+            <label className="mr-1 text-xs font-medium text-gray-500 uppercase tracking-wide">Sheet</label>
             {canEdit(user) && (
               <button
                 onClick={handleFetchLyrics}
                 disabled={!song?.artist || fetchingLyrics}
                 title={!song?.artist ? "Set artist first" : "Fetch lyrics from lrclib.net"}
-                className={`text-xs px-2 py-0.5 rounded ${
+                className={`text-xs rounded border px-2 py-0.5 ${
                   !song?.artist || fetchingLyrics
-                    ? "text-gray-600 cursor-not-allowed"
-                    : "text-gray-500 hover:text-gray-300"
+                    ? "border-gray-800 text-gray-600 cursor-not-allowed"
+                    : "border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-300"
                 }`}
               >
                 {fetchingLyrics ? "Fetching..." : "Fetch lyrics"}
               </button>
             )}
           </div>
-          {showRoots && song?.sheet ? (
-            <div className="overflow-x-auto">
-              <pre className="font-mono text-sm whitespace-pre text-gray-300">{annotateEStringRoots(song.sheet)}</pre>
-            </div>
-          ) : (
-            <EditableField
+          <EditableField
               label=""
               value={song?.sheet ?? ""}
               placeholder="Add sheet (chords, lyrics, tabs...)"
@@ -472,7 +459,6 @@ export default function SongHistory() {
               readOnly={!canEdit(user)}
               onSave={(v) => handleSaveField("sheet", v)}
             />
-          )}
         </div>
         <EditableField
           label="Notes"
