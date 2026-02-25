@@ -663,10 +663,12 @@ def _process_upload(
                 )
                 return
 
-        # Update session date from audio metadata (more accurate than filename)
-        date_str = meta.recording_date.strftime("%Y-%m-%d") if meta.recording_date else None
-        if date_str:
-            db.update_session_date(session_id, date_str)
+        # Update session date from audio metadata if not already set from filename
+        session_obj = db.get_session(session_id)
+        if session_obj and not session_obj.date and meta.recording_date:
+            db.update_session_date(
+                session_id, meta.recording_date.strftime("%Y-%m-%d")
+            )
 
         # Upload full recording to R2 early so session audio is streamable immediately
         source_ext = source.suffix
