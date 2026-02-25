@@ -619,6 +619,15 @@ def _process_upload(
         if date_str:
             db.update_session_date(session_id, date_str)
 
+        # Upload full recording to R2 early so session audio is streamable immediately
+        storage = get_storage()
+        source_ext = source.suffix
+        new_source_rel = f"recordings/{session_id}{source_ext}"
+        if storage.is_remote:
+            db.update_job_progress(job_id, "Uploading recording...")
+            storage.put(new_source_rel, source)
+            db.update_session_source_file(session_id, new_source_rel)
+
         if single:
             segments = [(0.0, meta.duration_seconds)]
         else:
@@ -634,10 +643,6 @@ def _process_upload(
                 segments,
                 output_dir,
             )
-            storage = get_storage()
-            # Rename source to session-ID-based key for R2
-            source_ext = source.suffix
-            new_source_rel = f"recordings/{session_id}{source_ext}"
             for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
                 db.update_job_progress(job_id, f"Saving track {i} of {len(segments)}...")
                 rel_path = cfg.make_relative(audio_path.resolve())
@@ -651,8 +656,6 @@ def _process_upload(
                 if storage.is_remote:
                     storage.put(rel_path, audio_path.resolve())
             if storage.is_remote:
-                storage.put(new_source_rel, source)
-                db.update_session_source_file(session_id, new_source_rel)
                 # Clean up local files after successful R2 upload
                 for audio_path in exported:
                     audio_path.resolve().unlink(missing_ok=True)

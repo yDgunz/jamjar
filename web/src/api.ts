@@ -314,7 +314,14 @@ export const api = {
   getSongTracks: (songId: number) =>
     fetchJson<SongTrack[]>(`${BASE}/songs/${songId}/tracks`),
 
-  uploadSession: (file: File, groupId?: number, threshold?: number, single?: boolean, force?: boolean) => {
+  uploadSession: (
+    file: File,
+    groupId?: number,
+    threshold?: number,
+    single?: boolean,
+    force?: boolean,
+    onProgress?: (pct: number) => void,
+  ): Promise<Job> => {
     const form = new FormData();
     form.append("file", file);
     const params = new URLSearchParams();
@@ -323,9 +330,43 @@ export const api = {
     if (single) params.set("single", "true");
     if (force) params.set("force", "true");
     const qs = params.toString();
-    return fetchJson<Job>(`${BASE}/sessions/upload${qs ? `?${qs}` : ""}`, {
-      method: "POST",
-      body: form,
+    const url = `${BASE}/sessions/upload${qs ? `?${qs}` : ""}`;
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", url);
+      xhr.withCredentials = true;
+
+      if (onProgress) {
+        xhr.upload.addEventListener("progress", (e) => {
+          if (e.lengthComputable) {
+            onProgress(Math.round((e.loaded / e.total) * 100));
+          }
+        });
+      }
+
+      xhr.addEventListener("load", () => {
+        if (xhr.status === 401) {
+          if (!window.location.pathname.startsWith("/login") && navigator.onLine) {
+            window.location.href = "/login";
+          }
+          reject(new ApiError("Authentication required", 401));
+          return;
+        }
+        let body: any;
+        try { body = JSON.parse(xhr.responseText); } catch { body = null; }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(body as Job);
+        } else {
+          reject(new ApiError(body?.detail || `${xhr.status} ${xhr.statusText}`, xhr.status));
+        }
+      });
+
+      xhr.addEventListener("error", () => {
+        reject(new ApiError("Network error", 0));
+      });
+
+      xhr.send(form);
     });
   },
 

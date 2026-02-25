@@ -37,6 +37,7 @@ export default function SessionList() {
     return null;
   });
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState("Uploading...");
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
@@ -90,12 +91,19 @@ export default function SessionList() {
 
     setUploadModalOpen(false);
     setUploading(true);
+    setUploadProgress(0);
     setUploadStatus("Uploading...");
     setUploadError(null);
     setDuplicateDetected(false);
     try {
       const threshold = uploadThreshold !== 20 ? -uploadThreshold : undefined;
-      const job = await api.uploadSession(selectedFile, groupId ?? undefined, threshold, singleSong || undefined, force || undefined);
+      const job = await api.uploadSession(
+        selectedFile, groupId ?? undefined, threshold, singleSong || undefined, force || undefined,
+        (pct) => {
+          setUploadProgress(pct);
+          setUploadStatus(pct < 100 ? `Uploading... ${pct}%` : "Processing...");
+        },
+      );
       navigate(`/sessions/${job.session_id}?job=${job.id}`);
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status === 409 && err.message.includes("duplicate")) {
@@ -150,12 +158,26 @@ export default function SessionList() {
     <div>
       {uploading && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="flex flex-col items-center gap-4">
-            <svg className="h-8 w-8 animate-spin text-indigo-400" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            <p className="text-lg text-gray-200">{uploadStatus}</p>
+          <div className="flex w-72 flex-col items-center gap-4">
+            {uploadProgress < 100 ? (
+              <>
+                <div className="w-full overflow-hidden rounded-full bg-gray-700">
+                  <div
+                    className="h-2 rounded-full bg-indigo-500 transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <p className="text-lg text-gray-200">{uploadStatus}</p>
+              </>
+            ) : (
+              <>
+                <svg className="h-8 w-8 animate-spin text-indigo-400" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <p className="text-lg text-gray-200">{uploadStatus}</p>
+              </>
+            )}
           </div>
         </div>
       )}
