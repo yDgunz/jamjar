@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Protocol
 
 import boto3
+from botocore.config import Config as BotoConfig
 
 from jam_session_processor.config import get_config
 
@@ -113,6 +114,7 @@ class R2Storage:
             aws_access_key_id=cfg.r2_access_key_id,
             aws_secret_access_key=cfg.r2_secret_access_key,
             region_name="auto",
+            config=BotoConfig(signature_version="s3v4"),
         )
 
     @property

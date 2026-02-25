@@ -133,13 +133,14 @@ class TestR2Storage:
 
         with patch("jam_session_processor.storage.boto3") as mock_boto:
             R2Storage()
-            mock_boto.client.assert_called_once_with(
-                "s3",
-                endpoint_url="https://acct123.r2.cloudflarestorage.com",
-                aws_access_key_id="key123",
-                aws_secret_access_key="secret123",
-                region_name="auto",
-            )
+            mock_boto.client.assert_called_once()
+            call_kwargs = mock_boto.client.call_args
+            assert call_kwargs[0] == ("s3",)
+            assert call_kwargs[1]["endpoint_url"] == "https://acct123.r2.cloudflarestorage.com"
+            assert call_kwargs[1]["aws_access_key_id"] == "key123"
+            assert call_kwargs[1]["aws_secret_access_key"] == "secret123"
+            assert call_kwargs[1]["region_name"] == "auto"
+            assert call_kwargs[1]["config"].signature_version == "s3v4"
 
     def test_put_uploads_file(self, mock_boto3, tmp_path):
         import mimetypes
