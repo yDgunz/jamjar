@@ -190,7 +190,6 @@ class R2Storage:
             Params={
                 "Bucket": self._bucket,
                 "Key": key,
-                "ContentType": content_type,
             },
             ExpiresIn=ttl,
         )
