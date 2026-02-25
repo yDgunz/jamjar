@@ -30,36 +30,21 @@ This wipes the SQLite database, uploaded recordings, and exported tracks from th
 
 ### 3. Clear R2 storage
 
-From your **local machine** (requires R2 credentials in `.env`):
+From your **local machine** using [rclone](https://rclone.org/) (`brew install rclone`):
 
 ```bash
 source .env
-python3 -c "
-import boto3
-
-client = boto3.client(
-    's3',
-    endpoint_url=f'https://${JAM_R2_ACCOUNT_ID}.r2.cloudflarestorage.com',
-    aws_access_key_id='${JAM_R2_ACCESS_KEY_ID}',
-    aws_secret_access_key='${JAM_R2_SECRET_ACCESS_KEY}',
-    region_name='auto',
-)
-
-bucket = '${JAM_R2_BUCKET}'
-deleted = 0
-paginator = client.get_paginator('list_objects_v2')
-for page in paginator.paginate(Bucket=bucket):
-    objects = page.get('Contents', [])
-    if not objects:
-        break
-    keys = [{'Key': obj['Key']} for obj in objects]
-    client.delete_objects(Bucket=bucket, Delete={'Objects': keys})
-    deleted += len(keys)
-    print(f'Deleted {deleted} objects...')
-
-print(f'Done. Purged {deleted} objects.' if deleted else 'Bucket already empty.')
-"
+rclone delete ":s3,provider=Cloudflare,access_key_id=${JAM_R2_ACCESS_KEY_ID},secret_access_key=${JAM_R2_SECRET_ACCESS_KEY},endpoint=https://${JAM_R2_ACCOUNT_ID}.r2.cloudflarestorage.com:${JAM_R2_BUCKET}"
 ```
+
+To preview what will be deleted first (dry run), add `--dry-run`:
+
+```bash
+source .env
+rclone delete ":s3,provider=Cloudflare,access_key_id=${JAM_R2_ACCESS_KEY_ID},secret_access_key=${JAM_R2_SECRET_ACCESS_KEY},endpoint=https://${JAM_R2_ACCOUNT_ID}.r2.cloudflarestorage.com:${JAM_R2_BUCKET}" --dry-run
+```
+
+This deletes all objects but keeps the bucket itself.
 
 ### 4. Recreate the superadmin user
 
@@ -100,7 +85,7 @@ Each upload returns a 202 and the CLI polls the processing job until it complete
 ### Upload a single file
 
 ```bash
-jam-session upload "path/to/recording.m4a" -s https://jam-jar.app -g Solo
+jam-session upload "path/to/recording.m4a" -s https://jam-jar.app -g <group-name>
 ```
 
 ### Notes
