@@ -123,63 +123,71 @@ export default function SetlistList() {
           ))}
         </select>
         {canEdit(user) && (
-          <div className="ml-auto flex items-center gap-2">
-            {errorMsg && (
-              <span className="text-sm text-red-400">{errorMsg}</span>
-            )}
+          <div className="ml-auto">
             <button
-              onClick={() => setCreating(true)}
+              onClick={() => { setCreating(true); setNewName(""); setNewDate(""); setNewGroupId(null); setErrorMsg(null); }}
               className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500"
+              title="New Setlist"
             >
-              New Setlist
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 sm:hidden">
+                <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+              </svg>
+              <span className="hidden sm:inline">New Setlist</span>
             </button>
           </div>
         )}
       </div>
 
       {creating && canEdit(user) && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <input
-            autoFocus
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleCreate();
-              if (e.key === "Escape") { setCreating(false); setNewName(""); setNewDate(""); }
-            }}
-            placeholder="Setlist name"
-            className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
-          />
-          <input
-            type="date"
-            value={newDate}
-            onChange={(e) => setNewDate(e.target.value)}
-            className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
-          />
-          {user && user.groups.length > 1 && (
-            <select
-              value={newGroupId ?? defaultGroupId ?? ""}
-              onChange={(e) => setNewGroupId(Number(e.target.value))}
-              className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
-            >
-              <option value="" disabled>Group</option>
-              {user.groups.map((g) => (
-                <option key={g.id} value={g.id}>{g.name}</option>
-              ))}
-            </select>
-          )}
-          <button
-            onClick={handleCreate}
-            className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
-          >
-            Add
-          </button>
-          <button
-            onClick={() => { setCreating(false); setNewName(""); setNewDate(""); }}
-            className="rounded px-3 py-1.5 text-sm text-gray-400 hover:text-white"
-          >
-            Cancel
-          </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center"
+             onKeyDown={(e) => { if (e.key === "Escape") { setCreating(false); setErrorMsg(null); } }}>
+          <div className="absolute inset-0 bg-black/60" onClick={() => { setCreating(false); setErrorMsg(null); }} />
+          <div className="relative mx-4 w-full max-w-sm rounded-lg border border-gray-700 bg-gray-900 px-6 py-5 shadow-xl">
+            <h3 className="text-sm font-semibold text-white">New Setlist</h3>
+            <div className="mt-4 space-y-4">
+              <input
+                autoFocus
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+                placeholder="Setlist name"
+                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+              />
+              <input
+                type="date"
+                value={newDate}
+                onChange={(e) => setNewDate(e.target.value)}
+                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+              />
+              {user && user.groups.length > 1 && (
+                <select
+                  value={newGroupId ?? defaultGroupId ?? ""}
+                  onChange={(e) => setNewGroupId(Number(e.target.value))}
+                  className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="" disabled>Group</option>
+                  {user.groups.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+              )}
+              {errorMsg && <p className="text-sm text-red-400">{errorMsg}</p>}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => { setCreating(false); setErrorMsg(null); }}
+                className="rounded px-3 py-1.5 text-sm text-gray-400 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreate}
+                className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
+              >
+                Add
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

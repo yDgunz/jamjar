@@ -140,8 +140,10 @@ export default function SessionList() {
       if (err instanceof ApiError && err.status === 409 && err.message.includes("duplicate")) {
         setDuplicateDetected(true);
         setUploadError(err.message);
+        setUploadModalOpen(true);
       } else {
         setUploadError(err instanceof Error ? err.message : "Upload failed");
+        setUploadModalOpen(true);
       }
     } finally {
       setUploading(false);
@@ -248,26 +250,18 @@ export default function SessionList() {
           </select>
         )}
         {canAdmin(user) && (
-          <div className="ml-auto flex items-center gap-2">
-            {uploadError && (
-              <span className="text-sm text-red-400">
-                {uploadError}
-                {duplicateDetected && (
-                  <button
-                    onClick={() => doUpload(true)}
-                    className="ml-2 rounded bg-yellow-600 px-2 py-0.5 text-xs font-medium text-white transition hover:bg-yellow-500"
-                  >
-                    Upload Anyway
-                  </button>
-                )}
-              </span>
-            )}
+          <div className="ml-auto">
             <button
               onClick={openUploadModal}
               disabled={uploading}
               className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+              title="Upload"
             >
-              Upload
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 sm:hidden">
+                <path d="M9.25 13.25a.75.75 0 0 0 1.5 0V4.636l2.955 3.129a.75.75 0 0 0 1.09-1.03l-4.25-4.5a.75.75 0 0 0-1.09 0l-4.25 4.5a.75.75 0 1 0 1.09 1.03L9.25 4.636v8.614Z" />
+                <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
+              </svg>
+              <span className="hidden sm:inline">Upload</span>
             </button>
           </div>
         )}
@@ -403,6 +397,9 @@ export default function SessionList() {
               </div>
               )}
             </div>
+            {uploadError && (
+              <p className="mt-4 text-sm text-red-400">{uploadError}</p>
+            )}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={() => setUploadModalOpen(false)}
@@ -410,13 +407,22 @@ export default function SessionList() {
               >
                 Cancel
               </button>
-              <button
-                onClick={handleUpload}
-                disabled={!selectedFile || (multiGroup && !uploadGroupId)}
-                className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
-              >
-                Upload
-              </button>
+              {duplicateDetected ? (
+                <button
+                  onClick={() => doUpload(true)}
+                  className="rounded bg-yellow-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-yellow-500"
+                >
+                  Upload Anyway
+                </button>
+              ) : (
+                <button
+                  onClick={handleUpload}
+                  disabled={!selectedFile || (multiGroup && !uploadGroupId)}
+                  className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                >
+                  Upload
+                </button>
+              )}
             </div>
           </div>
         </div>
