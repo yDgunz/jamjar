@@ -768,11 +768,10 @@ def upload_init(req: UploadInitRequest, request: Request):
     cfg = get_config()
     storage = get_storage()
 
-    # Create session record
+    # Create session record using original filename for name derivation
     filename_date = parse_date_from_filename(Path(req.filename).stem)
     date_str = filename_date.strftime("%Y-%m-%d") if filename_date else None
-    # Use a placeholder source_file; will be updated during processing
-    session_id = db.create_session(f"recordings/pending{ext}", group_id=group_id, date=date_str)
+    session_id = db.create_session(req.filename, group_id=group_id, date=date_str)
 
     # Update source_file to canonical path using session_id
     source_rel = f"recordings/{session_id}{ext}"
