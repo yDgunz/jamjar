@@ -509,10 +509,17 @@ class Database:
         )
         self.conn.commit()
 
-    def find_duplicate_session(self, group_id: int, duration_sec: float) -> Session | None:
+    def find_duplicate_session(
+        self, group_id: int, duration_sec: float, exclude_session_id: int | None = None
+    ) -> Session | None:
         """Find a session in the same group with exactly matching duration."""
+        where = "s.group_id = ? AND s.duration_sec = ?"
+        params: list = [group_id, duration_sec]
+        if exclude_session_id is not None:
+            where += " AND s.id != ?"
+            params.append(exclude_session_id)
         row = self.conn.execute(
-            """SELECT s.*,
+            f"""SELECT s.*,
                       COUNT(t.id) as track_count,
                       COUNT(t.song_id) as tagged_count,
                       COALESCE((SELECT GROUP_CONCAT(DISTINCT s2.name)
@@ -525,10 +532,10 @@ class Database:
                       ) as active_job_id
                FROM sessions s
                LEFT JOIN tracks t ON t.session_id = s.id
-               WHERE s.group_id = ? AND s.duration_sec = ?
+               WHERE {where}
                GROUP BY s.id
                LIMIT 1""",
-            (group_id, duration_sec),
+            params,
         ).fetchone()
         if not row:
             return None

@@ -46,6 +46,10 @@ class Storage(Protocol):
         """Return a URL to access the file, or None for local backend."""
         ...
 
+    def presigned_put_url(self, key: str, content_type: str, ttl: int = 900) -> str | None:
+        """Return a presigned PUT URL for direct upload, or None for local backend."""
+        ...
+
 
 class LocalStorage:
     """Storage backend using the local filesystem.
@@ -84,6 +88,9 @@ class LocalStorage:
         return cfg.resolve_path(key).exists()
 
     def url(self, key: str) -> str | None:
+        return None
+
+    def presigned_put_url(self, key: str, content_type: str, ttl: int = 900) -> str | None:
         return None
 
 
@@ -173,6 +180,17 @@ class R2Storage:
             "get_object",
             Params={"Bucket": self._bucket, "Key": key},
             ExpiresIn=self.PRESIGN_TTL,
+        )
+
+    def presigned_put_url(self, key: str, content_type: str, ttl: int = 900) -> str | None:
+        return self._client.generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": self._bucket,
+                "Key": key,
+                "ContentType": content_type,
+            },
+            ExpiresIn=ttl,
         )
 
 

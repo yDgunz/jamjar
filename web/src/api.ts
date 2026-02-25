@@ -109,6 +109,13 @@ export interface Job {
   error: string | null;
 }
 
+export interface UploadInitResponse {
+  upload_url: string | null;
+  r2_key: string | null;
+  job: Job;
+  session_id: number;
+}
+
 export interface Setlist {
   id: number;
   group_id: number;
@@ -367,6 +374,79 @@ export const api = {
       });
 
       xhr.send(form);
+    });
+  },
+
+  initUpload: (
+    filename: string,
+    groupId?: number,
+    threshold?: number,
+    single?: boolean,
+    force?: boolean,
+  ) =>
+    fetchJson<UploadInitResponse>(`${BASE}/sessions/upload/init`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename,
+        ...(groupId !== undefined && { group_id: groupId }),
+        ...(threshold !== undefined && { threshold }),
+        ...(single && { single: true }),
+        ...(force && { force: true }),
+      }),
+    }),
+
+  completeUpload: (
+    jobId: string,
+    sessionId: number,
+    threshold?: number,
+    single?: boolean,
+    force?: boolean,
+  ) =>
+    fetchJson<Job>(`${BASE}/sessions/upload/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        job_id: jobId,
+        session_id: sessionId,
+        ...(threshold !== undefined && { threshold }),
+        ...(single && { single: true }),
+        ...(force && { force: true }),
+      }),
+    }),
+
+  uploadToPresignedUrl: (
+    url: string,
+    file: File,
+    contentType: string,
+    onProgress?: (pct: number) => void,
+  ): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", url);
+      xhr.setRequestHeader("Content-Type", contentType);
+
+      if (onProgress) {
+        xhr.upload.addEventListener("progress", (e) => {
+          if (e.lengthComputable) {
+            onProgress(Math.round((e.loaded / e.total) * 100));
+          }
+        });
+      }
+
+      xhr.addEventListener("load", () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+        } else {
+          reject(new ApiError(`Upload failed: ${xhr.status} ${xhr.statusText}`, xhr.status));
+        }
+      });
+
+      xhr.addEventListener("error", () => {
+        reject(new ApiError("Network error during upload", 0));
+      });
+
+      xhr.send(file);
     });
   },
 

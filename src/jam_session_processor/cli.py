@@ -36,6 +36,37 @@ def serve(port: int | None, use_reload: bool):
 UPLOAD_EXTENSIONS = {".m4a", ".wav", ".mp3", ".flac", ".ogg"}
 
 
+def _poll_job(base: str, headers: dict, job_id: str, session_id: int):
+    """Poll a job until it completes or fails."""
+    import time
+
+    import requests
+
+    job_url = f"{base}/api/jobs/{job_id}"
+    while True:
+        time.sleep(3)
+        try:
+            job_resp = requests.get(job_url, headers=headers, timeout=10)
+            job_data = job_resp.json()
+        except Exception:
+            click.echo("  Waiting...")
+            continue
+
+        status = job_data.get("status", "unknown")
+        progress = job_data.get("progress", "")
+        if progress:
+            click.echo(f"  {status}: {progress}")
+        else:
+            click.echo(f"  {status}")
+
+        if status == "completed":
+            click.echo(f"Done. Session id={session_id}")
+            break
+        elif status == "failed":
+            click.echo(f"Error: Processing failed — {job_data.get('error', 'unknown')}")
+            raise SystemExit(1)
+
+
 @cli.command()
 @click.argument("file", type=click.Path(exists=True, path_type=Path))
 @click.option(
@@ -90,6 +121,78 @@ def upload(file: Path, server: str, group: str, api_key: str):
         raise SystemExit(1)
     group_id = matched[0]["id"]
 
+    # Try presigned upload flow first
+    try:
+        init_resp = requests.post(
+            f"{base}/api/sessions/upload/init",
+            headers={**headers, "Content-Type": "application/json"},
+            json={"filename": file.name, "group_id": group_id},
+            timeout=30,
+        )
+    except requests.ConnectionError:
+        click.echo(f"Error: Could not connect to {server}")
+        raise SystemExit(1)
+
+    if init_resp.status_code == 200:
+        init_data = init_resp.json()
+        upload_url = init_data.get("upload_url")
+        job_id = init_data["job"]["id"]
+        session_id = init_data["session_id"]
+
+        if upload_url:
+            # Presigned upload: PUT directly to R2
+            content_types = {
+                ".m4a": "audio/mp4", ".wav": "audio/wav", ".mp3": "audio/mpeg",
+                ".flac": "audio/flac", ".ogg": "audio/ogg",
+            }
+            content_type = content_types.get(ext, "application/octet-stream")
+            click.echo("Uploading directly to storage...")
+            try:
+                with open(file, "rb") as f:
+                    put_resp = requests.put(
+                        upload_url,
+                        data=f,
+                        headers={"Content-Type": content_type},
+                        timeout=600,
+                    )
+                if put_resp.status_code not in (200, 201):
+                    click.echo(f"Error: Direct upload failed (status {put_resp.status_code})")
+                    raise SystemExit(1)
+            except requests.ConnectionError:
+                click.echo("Error: Upload connection failed")
+                raise SystemExit(1)
+            except requests.Timeout:
+                click.echo("Error: Upload timed out")
+                raise SystemExit(1)
+
+            # Signal completion
+            try:
+                complete_resp = requests.post(
+                    f"{base}/api/sessions/upload/complete",
+                    headers={**headers, "Content-Type": "application/json"},
+                    json={"job_id": job_id, "session_id": session_id},
+                    timeout=30,
+                )
+            except requests.ConnectionError:
+                click.echo(f"Error: Could not connect to {server}")
+                raise SystemExit(1)
+            if complete_resp.status_code not in (200, 202):
+                detail = ""
+                try:
+                    detail = complete_resp.json().get("detail", "")
+                except Exception:
+                    pass
+                msg = f"Error: Complete request failed ({complete_resp.status_code})"
+                if detail:
+                    msg += f" — {detail}"
+                click.echo(msg)
+                raise SystemExit(1)
+
+            click.echo(f"Uploaded. Session id={session_id}, processing (job {job_id})...")
+            _poll_job(base, headers, job_id, session_id)
+            return
+
+    # Fall back to direct multipart upload
     try:
         with open(file, "rb") as f:
             resp = requests.post(
@@ -121,36 +224,10 @@ def upload(file: Path, server: str, group: str, api_key: str):
     data = resp.json()
 
     if resp.status_code == 202:
-        # Async processing — poll job until complete
-        import time
-
         job_id = data.get("id")
         session_id = data.get("session_id")
         click.echo(f"Uploaded. Session id={session_id}, processing (job {job_id})...")
-
-        job_url = f"{base}/api/jobs/{job_id}"
-        while True:
-            time.sleep(3)
-            try:
-                job_resp = requests.get(job_url, headers=headers, timeout=10)
-                job_data = job_resp.json()
-            except Exception:
-                click.echo("  Waiting...")
-                continue
-
-            status = job_data.get("status", "unknown")
-            progress = job_data.get("progress", "")
-            if progress:
-                click.echo(f"  {status}: {progress}")
-            else:
-                click.echo(f"  {status}")
-
-            if status == "completed":
-                click.echo(f"Done. Session id={session_id}")
-                break
-            elif status == "failed":
-                click.echo(f"Error: Processing failed — {job_data.get('error', 'unknown')}")
-                raise SystemExit(1)
+        _poll_job(base, headers, job_id, session_id)
     else:
         click.echo(f"Session created (id={data['id']})")
         click.echo(f"  Date: {data.get('date') or 'unknown'}")

@@ -84,7 +84,7 @@ created_at, updated_at
 All `/api` endpoints require authentication (JWT cookie or API key header). Role requirements noted in parentheses.
 
 **Auth:** `POST /api/auth/login` | `POST /api/auth/logout` | `GET /api/auth/me`
-**Sessions:** `GET /api/sessions` | `GET /api/sessions/{id}` | `GET /api/sessions/{id}/tracks` | `GET /api/sessions/{id}/audio` | `PUT /api/sessions/{id}/name` | `PUT /api/sessions/{id}/notes` | `PUT /api/sessions/{id}/date` | `PUT /api/sessions/{id}/group` (admin) | `DELETE /api/sessions/{id}` (admin) | `POST /api/sessions/{id}/reprocess` (admin) | `POST /api/sessions/upload` (admin, returns 202 + job)
+**Sessions:** `GET /api/sessions` | `GET /api/sessions/{id}` | `GET /api/sessions/{id}/tracks` | `GET /api/sessions/{id}/audio` | `PUT /api/sessions/{id}/name` | `PUT /api/sessions/{id}/notes` | `PUT /api/sessions/{id}/date` | `PUT /api/sessions/{id}/group` (admin) | `DELETE /api/sessions/{id}` (admin) | `POST /api/sessions/{id}/reprocess` (admin) | `POST /api/sessions/upload/init` (admin, returns presigned URL + job) | `POST /api/sessions/upload/complete` (admin, starts processing after R2 upload) | `POST /api/sessions/upload` (admin, direct multipart fallback, returns 202 + job)
 **Jobs:** `GET /api/jobs/{id}` — poll for upload progress (status: pending → processing → completed/failed)
 **Tracks:** `POST /api/tracks/{id}/tag` | `DELETE /api/tracks/{id}/tag` | `PUT /api/tracks/{id}/notes` | `GET /api/tracks/{id}/audio` | `POST /api/tracks/{id}/merge` (admin) | `POST /api/tracks/{id}/split` (admin)
 **Songs:** `GET /api/songs` | `GET /api/songs/{id}` | `GET /api/songs/{id}/tracks` | `PUT /api/songs/{id}/details` | `PUT /api/songs/{id}/name` | `PUT /api/songs/{id}/group` (admin) | `DELETE /api/songs/{id}` (admin)

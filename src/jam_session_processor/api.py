@@ -301,6 +301,29 @@ class ReprocessRequest(BaseModel):
     single: bool = False
 
 
+class UploadInitRequest(BaseModel):
+    filename: str
+    group_id: int | None = None
+    threshold: float | None = None
+    single: bool = False
+    force: bool = False
+
+
+class UploadInitResponse(BaseModel):
+    upload_url: str | None
+    r2_key: str | None
+    job: JobResponse
+    session_id: int
+
+
+class UploadCompleteRequest(BaseModel):
+    job_id: str
+    session_id: int
+    threshold: float | None = None
+    single: bool = False
+    force: bool = False
+
+
 # --- Response helpers ---
 
 
@@ -596,6 +619,8 @@ def _process_upload(
     group_id: int,
     threshold: float,
     single: bool,
+    r2_key: str | None = None,
+    force: bool = False,
 ):
     """Run the processing pipeline in a background thread."""
     from jam_session_processor.metadata import extract_metadata
@@ -605,8 +630,15 @@ def _process_upload(
 
     db = get_db()
     cfg = get_config()
+    storage = get_storage()
 
     try:
+        # If file was uploaded directly to R2, download it locally first
+        if r2_key:
+            db.update_job_progress(job_id, "Downloading from storage...")
+            source.parent.mkdir(parents=True, exist_ok=True)
+            storage.get(r2_key, source)
+
         db.update_job_progress(job_id, "Analyzing audio...")
         meta = extract_metadata(source)
 
@@ -614,18 +646,40 @@ def _process_upload(
         if meta.duration_seconds:
             db.update_session_duration(session_id, meta.duration_seconds)
 
+        # Duration-based duplicate detection (for presigned uploads where
+        # we couldn't check before the file was uploaded)
+        if r2_key and not force and meta.duration_seconds:
+            dup = db.find_duplicate_session(
+                group_id, meta.duration_seconds, exclude_session_id=session_id
+            )
+            if dup:
+                # Clean up: remove R2 file and session record
+                storage.delete(r2_key)
+                db.delete_session(session_id)
+                db.fail_job(
+                    job_id,
+                    f"Possible duplicate: a session with the same duration"
+                    f" already exists ('{dup.name}', {dup.date})",
+                )
+                return
+
         # Update session date from audio metadata (more accurate than filename)
         date_str = meta.recording_date.strftime("%Y-%m-%d") if meta.recording_date else None
         if date_str:
             db.update_session_date(session_id, date_str)
 
         # Upload full recording to R2 early so session audio is streamable immediately
-        storage = get_storage()
         source_ext = source.suffix
         new_source_rel = f"recordings/{session_id}{source_ext}"
-        if storage.is_remote:
+        if storage.is_remote and not r2_key:
+            # Only upload if the file isn't already in R2
             db.update_job_progress(job_id, "Uploading recording...")
             storage.put(new_source_rel, source)
+            db.update_session_source_file(session_id, new_source_rel)
+        elif r2_key:
+            # File is already in R2 at r2_key — rename to canonical path if different
+            if r2_key != new_source_rel:
+                storage.rename(r2_key, new_source_rel)
             db.update_session_source_file(session_id, new_source_rel)
 
         if single:
@@ -665,6 +719,173 @@ def _process_upload(
     except Exception as e:
         logger.exception("Background upload processing failed")
         db.fail_job(job_id, str(e))
+
+
+def _resolve_upload_group(request: Request, group_id_param: int | None) -> int:
+    """Resolve and validate group_id for upload endpoints."""
+    db = get_db()
+    if request.state.auth_type == "api_key":
+        if group_id_param is None:
+            raise HTTPException(
+                status_code=400,
+                detail="group_id required for API key uploads",
+            )
+        if not db.get_group(group_id_param):
+            raise HTTPException(status_code=400, detail="Group not found")
+        return group_id_param
+
+    group_ids = request.state.group_ids
+    if len(group_ids) == 1:
+        return group_ids[0]
+    if group_id_param is None:
+        raise HTTPException(
+            status_code=400,
+            detail="group_id required when user belongs to multiple groups",
+        )
+    if group_id_param not in group_ids:
+        raise HTTPException(status_code=400, detail="Not a member of that group")
+    return group_id_param
+
+
+@app.post("/api/sessions/upload/init", response_model=UploadInitResponse, status_code=200)
+def upload_init(req: UploadInitRequest, request: Request):
+    """Initialize an upload: create session + job, return presigned PUT URL if remote."""
+    from jam_session_processor.metadata import parse_date_from_filename
+    from jam_session_processor.storage import get_storage
+
+    _require_role(request, "admin")
+    group_id = _resolve_upload_group(request, req.group_id)
+
+    # Validate extension
+    ext = Path(req.filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type '{ext}'. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+        )
+
+    db = get_db()
+    cfg = get_config()
+    storage = get_storage()
+
+    # Create session record
+    filename_date = parse_date_from_filename(Path(req.filename).stem)
+    date_str = filename_date.strftime("%Y-%m-%d") if filename_date else None
+    # Use a placeholder source_file; will be updated during processing
+    session_id = db.create_session(f"recordings/pending{ext}", group_id=group_id, date=date_str)
+
+    # Update source_file to canonical path using session_id
+    source_rel = f"recordings/{session_id}{ext}"
+    db.update_session_source_file(session_id, source_rel)
+
+    # Check for filename-based duplicates
+    source_name = Path(req.filename).name
+    existing = db.find_session_by_source(
+        cfg.make_relative(cfg.input_dir / source_name), group_id
+    )
+    if existing:
+        db.delete_session(session_id)
+        raise HTTPException(
+            status_code=409,
+            detail=f"A session with the filename '{source_name}' already exists",
+        )
+
+    # Create job
+    job_id = uuid4().hex[:16]
+    job = db.create_job(job_id, group_id, session_id=session_id)
+
+    # Generate presigned URL if remote storage
+    upload_url = None
+    r2_key = None
+    if storage.is_remote:
+        content_types = {
+            ".m4a": "audio/mp4",
+            ".wav": "audio/wav",
+            ".mp3": "audio/mpeg",
+            ".flac": "audio/flac",
+            ".ogg": "audio/ogg",
+        }
+        content_type = content_types.get(ext, "application/octet-stream")
+        r2_key = source_rel
+        upload_url = storage.presigned_put_url(r2_key, content_type)
+
+    db.update_job_progress(job_id, "Waiting for upload...")
+    # Set status back to pending (update_job_progress sets it to processing)
+    db.conn.execute(
+        "UPDATE jobs SET status = 'pending' WHERE id = ?", (job_id,)
+    )
+    db.conn.commit()
+
+    job = db.get_job(job_id)
+    return UploadInitResponse(
+        upload_url=upload_url,
+        r2_key=r2_key,
+        job=JobResponse(
+            id=job.id,
+            type=job.type,
+            group_id=job.group_id,
+            status=job.status,
+            progress=job.progress,
+            session_id=job.session_id,
+            error=job.error,
+        ),
+        session_id=session_id,
+    )
+
+
+@app.post("/api/sessions/upload/complete", response_model=JobResponse, status_code=202)
+async def upload_complete(req: UploadCompleteRequest, request: Request):
+    """Signal that a presigned upload to R2 is complete. Starts background processing."""
+    _require_role(request, "admin")
+
+    db = get_db()
+    job = db.get_job(req.job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != "pending":
+        raise HTTPException(status_code=400, detail=f"Job is not pending (status: {job.status})")
+
+    session = db.get_session(req.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    _require_group_access(request, session.group_id)
+
+    from jam_session_processor.storage import get_storage
+
+    storage = get_storage()
+    r2_key = session.source_file
+    if not storage.exists(r2_key):
+        raise HTTPException(status_code=400, detail="File not found in storage")
+
+    cfg = get_config()
+    source = cfg.resolve_path(r2_key)
+    threshold = req.threshold if req.threshold is not None else -20.0
+    single = req.single
+    force = req.force
+
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(
+        None,
+        _process_upload,
+        job.id,
+        session.id,
+        source,
+        session.group_id,
+        threshold,
+        single,
+        r2_key,
+        force,
+    )
+
+    return JobResponse(
+        id=job.id,
+        type=job.type,
+        group_id=job.group_id,
+        status="processing",
+        progress="Starting...",
+        session_id=job.session_id,
+        error=job.error,
+    )
 
 
 @app.post("/api/sessions/upload", response_model=JobResponse, status_code=202)

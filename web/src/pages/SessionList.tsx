@@ -97,14 +97,45 @@ export default function SessionList() {
     setDuplicateDetected(false);
     try {
       const threshold = uploadThreshold !== 20 ? -uploadThreshold : undefined;
-      const job = await api.uploadSession(
-        selectedFile, groupId ?? undefined, threshold, singleSong || undefined, force || undefined,
-        (pct) => {
-          setUploadProgress(pct);
-          setUploadStatus(pct < 100 ? `Uploading... ${pct}%` : "Processing...");
-        },
+
+      // Try presigned upload flow first
+      const initResp = await api.initUpload(
+        selectedFile.name, groupId ?? undefined, threshold, singleSong || undefined, force || undefined,
       );
-      navigate(`/sessions/${job.session_id}?job=${job.id}`);
+
+      if (initResp.upload_url) {
+        // Presigned R2 upload: PUT directly to R2
+        const contentTypes: Record<string, string> = {
+          ".m4a": "audio/mp4", ".wav": "audio/wav", ".mp3": "audio/mpeg",
+          ".flac": "audio/flac", ".ogg": "audio/ogg",
+        };
+        const ext = selectedFile.name.substring(selectedFile.name.lastIndexOf(".")).toLowerCase();
+        const contentType = contentTypes[ext] || "application/octet-stream";
+
+        await api.uploadToPresignedUrl(
+          initResp.upload_url, selectedFile, contentType,
+          (pct) => {
+            setUploadProgress(pct);
+            setUploadStatus(pct < 100 ? `Uploading... ${pct}%` : "Processing...");
+          },
+        );
+
+        // Signal completion — server starts background processing
+        await api.completeUpload(
+          initResp.job.id, initResp.session_id, threshold, singleSong || undefined, force || undefined,
+        );
+        navigate(`/sessions/${initResp.session_id}?job=${initResp.job.id}`);
+      } else {
+        // Local storage fallback: use existing direct upload
+        const job = await api.uploadSession(
+          selectedFile, groupId ?? undefined, threshold, singleSong || undefined, force || undefined,
+          (pct) => {
+            setUploadProgress(pct);
+            setUploadStatus(pct < 100 ? `Uploading... ${pct}%` : "Processing...");
+          },
+        );
+        navigate(`/sessions/${job.session_id}?job=${job.id}`);
+      }
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status === 409 && err.message.includes("duplicate")) {
         setDuplicateDetected(true);
