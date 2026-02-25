@@ -196,7 +196,7 @@ export default function SessionList() {
               <>
                 <div className="w-full overflow-hidden rounded-full bg-gray-700">
                   <div
-                    className="h-2 rounded-full bg-indigo-500 transition-all duration-300"
+                    className="h-2 rounded-full bg-accent-500 transition-all duration-300"
                     style={{ width: `${uploadProgress}%` }}
                   />
                 </div>
@@ -204,7 +204,7 @@ export default function SessionList() {
               </>
             ) : (
               <>
-                <svg className="h-8 w-8 animate-spin text-indigo-400" viewBox="0 0 24 24" fill="none">
+                <svg className="h-8 w-8 animate-spin text-accent-400" viewBox="0 0 24 24" fill="none">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
@@ -224,7 +224,7 @@ export default function SessionList() {
             onBlur={() => { if (!filter) setFilterOpen(false); }}
             onKeyDown={(e) => { if (e.key === "Escape") { setFilter(""); setFilterOpen(false); } }}
             placeholder="Filter..."
-            className="w-36 rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:w-44 sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+            className="w-36 rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:w-44 sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
           />
         ) : (
           <button
@@ -241,7 +241,7 @@ export default function SessionList() {
           <select
             value={groupFilter ?? ""}
             onChange={(e) => setGroupFilter(e.target.value ? Number(e.target.value) : null)}
-            className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+            className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
           >
             <option value="">All groups</option>
             {user!.groups.map((g) => (
@@ -254,7 +254,7 @@ export default function SessionList() {
             <button
               onClick={openUploadModal}
               disabled={uploading}
-              className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+              className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500 disabled:opacity-50"
               title="Upload"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 sm:hidden">
@@ -282,7 +282,7 @@ export default function SessionList() {
                 <Link
                   key={s.id}
                   to={`/sessions/${s.id}`}
-                  className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4 transition hover:border-indigo-500 hover:bg-gray-800"
+                  className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4 transition hover:border-accent-500 hover:bg-gray-800"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium text-white">
@@ -311,7 +311,7 @@ export default function SessionList() {
                   </div>
                   <div className="hidden shrink-0 text-right text-sm text-gray-400 sm:block">
                     {s.active_job_id ? (
-                      <div className="flex items-center gap-2 text-indigo-400">
+                      <div className="flex items-center gap-2 text-accent-400">
                         <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -356,7 +356,7 @@ export default function SessionList() {
                   <select
                     value={uploadGroupId ?? ""}
                     onChange={(e) => setUploadGroupId(e.target.value ? Number(e.target.value) : null)}
-                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
                   >
                     <option value="">Select a group...</option>
                     {user!.groups.map((g) => (
@@ -370,7 +370,7 @@ export default function SessionList() {
                   type="checkbox"
                   checked={singleSong}
                   onChange={(e) => setSingleSong(e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0"
+                  className="rounded border-gray-600 bg-gray-800 text-accent-500 focus:ring-accent-500 focus:ring-offset-0"
                 />
                 <span className="text-sm text-gray-300">Single song recording</span>
               </label>
@@ -387,7 +387,7 @@ export default function SessionList() {
                     onChange={(e) => setUploadThreshold(Number(e.target.value))}
                     min={0}
                     step={1}
-                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
                   />
                   <span className="text-sm text-gray-500">dB</span>
                 </div>
@@ -418,7 +418,7 @@ export default function SessionList() {
                 <button
                   onClick={handleUpload}
                   disabled={!selectedFile || (multiGroup && !uploadGroupId)}
-                  className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                  className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500 disabled:opacity-50"
                 >
                   Upload
                 </button>

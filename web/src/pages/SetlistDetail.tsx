@@ -73,7 +73,7 @@ function SortableRow({
       <div className="min-w-0 flex-1">
         <Link
           to={`/songs/${item.song_id}`}
-          className="text-sm font-medium text-gray-200 hover:text-indigo-400"
+          className="text-sm font-medium text-gray-200 hover:text-accent-400"
         >
           {item.song_name}
         </Link>
@@ -285,7 +285,7 @@ export default function SetlistDetail() {
 
   return (
     <div>
-      <Link to="/setlists" className="text-sm text-indigo-400 hover:text-indigo-300">
+      <Link to="/setlists" className="text-sm text-accent-400 hover:text-accent-300">
         &larr; Setlists
       </Link>
 
@@ -302,12 +302,12 @@ export default function SetlistDetail() {
                   if (e.key === "Escape") { setEditingName(false); setNameInput(setlist?.name ?? ""); }
                 }}
                 onBlur={handleSaveName}
-                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-lg font-bold text-white focus:border-indigo-500 focus:outline-none"
+                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-lg font-bold text-white focus:border-accent-500 focus:outline-none"
               />
             ) : (
               <h1
                 onClick={() => canEdit(user) && setEditingName(true)}
-                className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-indigo-400" : ""}`}
+                className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
                 title={canEdit(user) ? "Click to rename" : undefined}
               >
                 {setlist?.name ?? "Unknown Setlist"}
@@ -327,7 +327,7 @@ export default function SetlistDetail() {
                   if (e.key === "Escape") { setEditingDate(false); setDateInput(setlist?.date ?? ""); }
                 }}
                 onBlur={handleSaveDate}
-                className="mt-0.5 rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-gray-300 focus:border-indigo-500 focus:outline-none"
+                className="mt-0.5 rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-gray-300 focus:border-accent-500 focus:outline-none"
               />
             ) : setlist?.date ? (
               <p
@@ -352,7 +352,7 @@ export default function SetlistDetail() {
             {hasSheets && songs.length > 0 && (
               <Link
                 to={`/setlists/${setlistId}/perform`}
-                className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500"
+                className="rounded bg-accent-600 px-3 py-1.5 text-xs text-white hover:bg-accent-500"
               >
                 Perform
               </Link>
@@ -383,13 +383,13 @@ export default function SetlistDetail() {
                 if (e.key === "Escape") { setEditingNotes(false); setNotesInput(setlist?.notes ?? ""); }
               }}
               rows={3}
-              className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+              className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
               placeholder="Setlist notes..."
             />
             <div className="mt-1 flex items-center gap-2">
               <button
                 onMouseDown={(e) => { e.preventDefault(); handleSaveNotes(); }}
-                className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500"
+                className="rounded bg-accent-600 px-3 py-1.5 text-xs text-white hover:bg-accent-500"
               >
                 Save
               </button>
@@ -464,7 +464,7 @@ export default function SetlistDetail() {
               onFocus={() => setDropdownOpen(true)}
               onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
               placeholder="Add a song..."
-              className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+              className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
             />
             {dropdownOpen && !addSongId && availableSongs.length > 0 && (
               <div className="absolute left-0 right-0 z-10 bottom-full mb-1 max-h-48 overflow-y-auto rounded border border-gray-700 bg-gray-800 shadow-lg">
@@ -489,7 +489,7 @@ export default function SetlistDetail() {
           <button
             onClick={handleAddSong}
             disabled={!addSongId}
-            className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Add
           </button>

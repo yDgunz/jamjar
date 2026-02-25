@@ -47,7 +47,7 @@ export default function SetlistPerformMode() {
   if (!setlist || songs.length === 0) return (
     <div className="min-h-screen bg-gray-950 p-4 text-gray-400">
       No songs in this setlist.{" "}
-      <Link to={`/setlists/${setlistId}`} className="text-indigo-400">Go back</Link>
+      <Link to={`/setlists/${setlistId}`} className="text-accent-400">Go back</Link>
     </div>
   );
 
@@ -115,7 +115,7 @@ export default function SetlistPerformMode() {
               onClick={(e) => { e.stopPropagation(); perform.setScrolling((s) => !s); }}
               className={`shrink-0 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${
                 perform.scrolling
-                  ? "bg-indigo-600 text-white"
+                  ? "bg-accent-600 text-white"
                   : "bg-gray-800 text-gray-200 hover:bg-gray-700 hover:text-white"
               }`}
               title={perform.scrolling ? "Pause scroll" : "Start auto-scroll"}
@@ -141,7 +141,7 @@ export default function SetlistPerformMode() {
         ) : (
           <p className="text-gray-500">
             No sheet content for this song.{" "}
-            <Link to={`/songs/${currentSong.song_id}`} className="text-indigo-400 hover:text-indigo-300">
+            <Link to={`/songs/${currentSong.song_id}`} className="text-accent-400 hover:text-accent-300">
               Add content
             </Link>{" "}
             first.

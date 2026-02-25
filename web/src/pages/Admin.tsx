@@ -179,7 +179,7 @@ export default function Admin() {
           <h2 className="text-base font-semibold text-gray-200">Users</h2>
           <button
             onClick={openAddUser}
-            className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500"
+            className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500"
           >
             Add User
           </button>
@@ -203,7 +203,7 @@ export default function Admin() {
                   <select
                     value={user.role}
                     onChange={(e) => handleRoleChange(user.id, e.target.value)}
-                    className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-xs text-gray-300 focus:border-indigo-500 focus:outline-none"
+                    className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-xs text-gray-300 focus:border-accent-500 focus:outline-none"
                   >
                     {ROLES.map((r) => (
                       <option key={r} value={r}>{r}</option>
@@ -234,7 +234,7 @@ export default function Admin() {
                       onChange={(e) => {
                         if (e.target.value) handleAssignGroup(user.id, Number(e.target.value));
                       }}
-                      className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-xs text-gray-400 focus:border-indigo-500 focus:outline-none"
+                      className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-xs text-gray-400 focus:border-accent-500 focus:outline-none"
                     >
                       <option value="">+ Group</option>
                       {groups
@@ -267,11 +267,11 @@ export default function Admin() {
                         onChange={(e) => setResetPw(e.target.value)}
                         required
                         autoFocus
-                        className="w-32 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-xs text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                        className="w-32 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-xs text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
                       />
                       <button
                         type="submit"
-                        className="rounded bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-500"
+                        className="rounded bg-accent-600 px-2 py-1 text-xs text-white hover:bg-accent-500"
                       >
                         Save
                       </button>
@@ -321,7 +321,7 @@ export default function Admin() {
           <h2 className="text-base font-semibold text-gray-200">Groups</h2>
           <button
             onClick={openAddGroup}
-            className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500"
+            className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500"
           >
             Add Group
           </button>
@@ -372,14 +372,14 @@ export default function Admin() {
                 onChange={(e) => setNewEmail(e.target.value)}
                 required
                 autoFocus
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
               />
               <input
                 type="text"
                 placeholder="Name"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
               />
               <input
                 type="password"
@@ -387,14 +387,14 @@ export default function Admin() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
               />
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1">Role</label>
                 <select
                   value={newRole}
                   onChange={(e) => setNewRole(e.target.value as Role)}
-                  className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
                 >
                   {ROLES.map((r) => (
                     <option key={r} value={r}>{r}</option>
@@ -412,7 +412,7 @@ export default function Admin() {
                 <button
                   type="submit"
                   disabled={addingUser}
-                  className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                  className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500 disabled:opacity-50"
                 >
                   Add User
                 </button>
@@ -439,7 +439,7 @@ export default function Admin() {
                 onChange={(e) => setNewGroupName(e.target.value)}
                 required
                 autoFocus
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
               />
               <div className="flex justify-end gap-2 pt-1">
                 <button
@@ -452,7 +452,7 @@ export default function Admin() {
                 <button
                   type="submit"
                   disabled={addingGroup}
-                  className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                  className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500 disabled:opacity-50"
                 >
                   Add Group
                 </button>

@@ -70,7 +70,7 @@ export default function PerformMode() {
               onClick={(e) => { e.stopPropagation(); perform.setScrolling((s) => !s); }}
               className={`shrink-0 rounded-xl px-4 py-2 text-base font-semibold transition-colors ${
                 perform.scrolling
-                  ? "bg-indigo-600 text-white"
+                  ? "bg-accent-600 text-white"
                   : "bg-gray-800 text-gray-200 hover:bg-gray-700 hover:text-white"
               }`}
               title={perform.scrolling ? "Pause scroll" : "Start auto-scroll"}
@@ -96,7 +96,7 @@ export default function PerformMode() {
         ) : (
           <p className="text-gray-500">
             No sheet content to display.{" "}
-            <Link to={`/songs/${songId}`} className="text-indigo-400 hover:text-indigo-300">
+            <Link to={`/songs/${songId}`} className="text-accent-400 hover:text-accent-300">
               Add content
             </Link>{" "}
             first.

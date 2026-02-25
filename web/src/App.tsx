@@ -45,7 +45,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       )}
       <header className={`border-b border-gray-800 px-4 py-3 ${online ? "pt-[max(0.75rem,env(safe-area-inset-top))]" : ""}`}>
         <div className="mx-auto flex max-w-5xl items-center gap-x-3 sm:gap-x-8">
-          <NavLink to="/" className="flex items-center gap-1.5 text-xl font-bold text-white hover:text-indigo-300 transition">
+          <NavLink to="/" className="flex items-center gap-1.5 text-xl font-bold text-white hover:text-accent-300 transition">
             <span className="text-2xl" role="img" aria-label="jar">🫙</span>
             <span className="hidden sm:inline">JamJar</span>
           </NavLink>
@@ -54,7 +54,7 @@ function Layout({ children }: { children: React.ReactNode }) {
               to="/"
               end
               className={({ isActive }) =>
-                `py-2 px-1.5 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
+                `py-2 px-1.5 sm:px-3 ${isActive ? "text-accent-400" : "text-gray-400 hover:text-gray-200"}`
               }
             >
               <span className="sm:hidden">Recs</span>
@@ -63,7 +63,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             <NavLink
               to="/songs"
               className={({ isActive }) =>
-                `py-2 px-1.5 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
+                `py-2 px-1.5 sm:px-3 ${isActive ? "text-accent-400" : "text-gray-400 hover:text-gray-200"}`
               }
             >
               Songs
@@ -71,7 +71,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             <NavLink
               to="/setlists"
               className={({ isActive }) =>
-                `py-2 px-1.5 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
+                `py-2 px-1.5 sm:px-3 ${isActive ? "text-accent-400" : "text-gray-400 hover:text-gray-200"}`
               }
             >
               Setlists
@@ -79,7 +79,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             <NavLink
               to="/tuner"
               className={({ isActive }) =>
-                `py-2 px-1.5 sm:px-3 ${isActive ? "text-indigo-400" : "text-gray-400 hover:text-gray-200"}`
+                `py-2 px-1.5 sm:px-3 ${isActive ? "text-accent-400" : "text-gray-400 hover:text-gray-200"}`
               }
             >
               Tuner
@@ -89,7 +89,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setMenuOpen(!menuOpen)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white hover:bg-indigo-500"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-600 text-xs font-semibold text-white hover:bg-accent-500"
                 aria-label="Account menu"
               >
                 {(user.name || user.email).slice(0, 2).toUpperCase()}
@@ -103,7 +103,7 @@ function Layout({ children }: { children: React.ReactNode }) {
                     <NavLink
                       to="/admin"
                       className={({ isActive }) =>
-                        `block px-3 py-2 text-sm ${isActive ? "text-indigo-400" : "text-gray-300 hover:bg-gray-700"}`
+                        `block px-3 py-2 text-sm ${isActive ? "text-accent-400" : "text-gray-300 hover:bg-gray-700"}`
                       }
                     >
                       Admin

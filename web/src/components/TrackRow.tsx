@@ -76,7 +76,7 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
   const canSplit = !playerPlaying && playerTime > 1 && playerTime < track.duration_sec - 1;
 
   return (
-    <div className={`relative rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 ${track.song_name ? "border-l-2 border-l-indigo-500" : "border-l-2 border-l-gray-700"}`}>
+    <div className={`relative rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 ${track.song_name ? "border-l-2 border-l-accent-500" : "border-l-2 border-l-gray-700"}`}>
       {/* Loading overlay */}
       {operationLoading && (
         <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-gray-900/80">
@@ -104,7 +104,7 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
                   if (e.key === "Escape") { setTagging(false); setTagInput(track.song_name ?? ""); }
                 }}
                 placeholder="Search or type new song..."
-                className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm font-medium text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm font-medium text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
               />
               {track.song_name && (
                 <button
@@ -133,7 +133,7 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
                       onUpdate();
                     });
                   }}
-                  className="rounded-full bg-gray-800 px-3 py-2 text-xs text-gray-300 transition hover:bg-indigo-600 hover:text-white"
+                  className="rounded-full bg-gray-800 px-3 py-2 text-xs text-gray-300 transition hover:bg-accent-600 hover:text-white"
                 >
                   {s.name}
                   <span className="ml-1 text-gray-600">{s.take_count}</span>
@@ -143,7 +143,7 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
                 <button
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={handleTag}
-                  className="rounded-full border border-dashed border-gray-600 px-3 py-2 text-xs text-indigo-400 transition hover:border-indigo-500 hover:bg-indigo-600/20"
+                  className="rounded-full border border-dashed border-gray-600 px-3 py-2 text-xs text-accent-400 transition hover:border-accent-500 hover:bg-accent-600/20"
                 >
                   + &ldquo;{tagInput.trim()}&rdquo;
                 </button>
@@ -154,7 +154,7 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
           <div className="flex items-center gap-2">
             <Link
               to={`/songs/${track.song_id}`}
-              className="text-sm font-medium text-indigo-400 hover:text-indigo-300"
+              className="text-sm font-medium text-accent-400 hover:text-accent-300"
             >
               {track.song_name}
             </Link>
@@ -170,7 +170,7 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
         ) : canEdit(user) ? (
           <button
             onClick={() => setTagging(true)}
-            className="text-sm font-medium text-gray-500 hover:text-indigo-400"
+            className="text-sm font-medium text-gray-500 hover:text-accent-400"
           >
             Track {track.track_number}
           </button>
@@ -236,7 +236,7 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
             onBlur={handleSaveNotes}
             placeholder="Add notes..."
             rows={2}
-            className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-xs text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+            className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-xs text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
           />
         ) : track.notes ? (
           canEdit(user) ? (

@@ -67,13 +67,13 @@ function EditableField({
               if (e.key === "Escape") handleCancel();
             }}
             rows={rows}
-            className={`w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none ${mono ? "font-mono" : ""}`}
+            className={`w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none ${mono ? "font-mono" : ""}`}
             placeholder={placeholder}
           />
           <div className="mt-1 flex items-center gap-2">
             <button
               onMouseDown={(e) => { e.preventDefault(); handleSave(); }}
-              className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500"
+              className="rounded bg-accent-600 px-3 py-1.5 text-xs text-white hover:bg-accent-500"
             >
               Save
             </button>
@@ -141,7 +141,7 @@ function TakeRow({ take, onUpdate, readOnly }: { take: SongTrack; onUpdate: () =
       <div className="mb-2 flex items-center gap-2">
         <Link
           to={`/sessions/${take.session_id}`}
-          className="text-sm font-medium text-gray-300 hover:text-indigo-400"
+          className="text-sm font-medium text-gray-300 hover:text-accent-400"
         >
           {take.session_name || `Session ${take.session_id}`}
         </Link>
@@ -166,7 +166,7 @@ function TakeRow({ take, onUpdate, readOnly }: { take: SongTrack; onUpdate: () =
             onBlur={handleSaveNotes}
             placeholder="Add notes..."
             rows={2}
-            className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-xs text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+            className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-xs text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
           />
         ) : take.notes ? (
           readOnly ? (
@@ -319,7 +319,7 @@ export default function SongHistory() {
 
   return (
     <div>
-      <Link to="/songs" className="text-sm text-indigo-400 hover:text-indigo-300">
+      <Link to="/songs" className="text-sm text-accent-400 hover:text-accent-300">
         &larr; Song Catalog
       </Link>
 
@@ -336,12 +336,12 @@ export default function SongHistory() {
                   if (e.key === "Escape") { setEditingName(false); setNameInput(song?.name ?? ""); }
                 }}
                 onBlur={handleSaveName}
-                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-lg font-bold text-white focus:border-indigo-500 focus:outline-none"
+                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-lg font-bold text-white focus:border-accent-500 focus:outline-none"
               />
             ) : (
               <h1
                 onClick={() => canEdit(user) && setEditingName(true)}
-                className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-indigo-400" : ""}`}
+                className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
                 title={canEdit(user) ? "Click to rename" : undefined}
               >
                 {song?.name ?? "Unknown Song"}
@@ -357,7 +357,7 @@ export default function SongHistory() {
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    className="ml-2 rounded border border-transparent bg-transparent py-0 text-base sm:text-sm font-normal text-gray-500 hover:border-gray-700 hover:text-gray-300 focus:border-indigo-500 focus:outline-none"
+                    className="ml-2 rounded border border-transparent bg-transparent py-0 text-base sm:text-sm font-normal text-gray-500 hover:border-gray-700 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
                   >
                     {user!.groups.map((g) => (
                       <option key={g.id} value={g.id}>{g.name}</option>
@@ -379,7 +379,7 @@ export default function SongHistory() {
                 }}
                 onBlur={handleSaveArtist}
                 placeholder="Artist name"
-                className="mt-0.5 w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-gray-300 placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="mt-0.5 w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-gray-300 placeholder-gray-500 focus:border-accent-500 focus:outline-none"
               />
             ) : song?.artist ? (
               <p
@@ -412,7 +412,7 @@ export default function SongHistory() {
             {song?.sheet && (
               <Link
                 to={`/songs/${songId}/perform`}
-                className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500"
+                className="rounded bg-accent-600 px-3 py-1.5 text-xs text-white hover:bg-accent-500"
               >
                 Perform
               </Link>

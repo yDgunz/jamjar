@@ -258,7 +258,7 @@ export default function SessionDetail() {
       {reprocessing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
           <div className="flex flex-col items-center gap-4">
-            <svg className="h-8 w-8 animate-spin text-indigo-400" viewBox="0 0 24 24" fill="none">
+            <svg className="h-8 w-8 animate-spin text-accent-400" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
@@ -266,7 +266,7 @@ export default function SessionDetail() {
           </div>
         </div>
       )}
-      <Link to="/" className="text-sm text-indigo-400 hover:text-indigo-300">
+      <Link to="/" className="text-sm text-accent-400 hover:text-accent-300">
         &larr; All Recordings
       </Link>
 
@@ -283,12 +283,12 @@ export default function SessionDetail() {
                   if (e.key === "Escape") { setEditingName(false); setNameInput(session.name); }
                 }}
                 onBlur={handleSaveName}
-                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-lg font-bold text-white focus:border-indigo-500 focus:outline-none"
+                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-lg font-bold text-white focus:border-accent-500 focus:outline-none"
               />
             ) : (
               <h1
                 onClick={() => canEdit(user) && setEditingName(true)}
-                className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-indigo-400" : ""}`}
+                className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
                 title={canEdit(user) ? "Click to rename" : undefined}
               >
                 {session.name || `Session ${session.id}`}
@@ -305,7 +305,7 @@ export default function SessionDetail() {
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    className="ml-2 rounded border border-transparent bg-transparent py-0 text-base sm:text-sm font-normal text-gray-500 hover:border-gray-700 hover:text-gray-300 focus:border-indigo-500 focus:outline-none"
+                    className="ml-2 rounded border border-transparent bg-transparent py-0 text-base sm:text-sm font-normal text-gray-500 hover:border-gray-700 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
                   >
                     {user!.groups.map((g) => (
                       <option key={g.id} value={g.id}>{g.name}</option>
@@ -328,12 +328,12 @@ export default function SessionDetail() {
                     if (e.key === "Escape") { setEditingDate(false); setDateInput(session.date ?? ""); }
                   }}
                   onBlur={handleSaveDate}
-                  className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
                 />
               ) : canEdit(user) ? (
                 <button
                   onClick={() => setEditingDate(true)}
-                  className="hover:text-indigo-400"
+                  className="hover:text-accent-400"
                   title="Click to change date"
                 >
                   {formatDate(session.date)}
@@ -377,7 +377,7 @@ export default function SessionDetail() {
               onBlur={handleSaveSessionNotes}
               placeholder="Add notes..."
               rows={3}
-              className="w-full max-w-md rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+              className="w-full max-w-md rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
             />
           ) : session.notes ? (
             canEdit(user) ? (
@@ -424,7 +424,7 @@ export default function SessionDetail() {
 
       {processingProgress ? (
         <div className="flex flex-col items-center gap-3 py-12">
-          <svg className="h-6 w-6 animate-spin text-indigo-400" viewBox="0 0 24 24" fill="none">
+          <svg className="h-6 w-6 animate-spin text-accent-400" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
@@ -471,7 +471,7 @@ export default function SessionDetail() {
                   type="checkbox"
                   checked={singleSong}
                   onChange={(e) => setSingleSong(e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0"
+                  className="rounded border-gray-600 bg-gray-800 text-accent-500 focus:ring-accent-500 focus:ring-offset-0"
                 />
                 <span className="text-sm text-gray-300">Single song recording</span>
               </label>
@@ -488,7 +488,7 @@ export default function SessionDetail() {
                     onChange={(e) => setThreshold(Number(e.target.value))}
                     min={0}
                     step={1}
-                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
                   />
                   <span className="text-sm text-gray-500">dB</span>
                 </div>
@@ -507,7 +507,7 @@ export default function SessionDetail() {
               </button>
               <button
                 onClick={handleReprocess}
-                className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+                className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500"
               >
                 Reprocess
               </button>

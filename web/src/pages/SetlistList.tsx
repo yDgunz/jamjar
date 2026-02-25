@@ -105,7 +105,7 @@ export default function SetlistList() {
           <select
             value={groupFilter ?? ""}
             onChange={(e) => setGroupFilter(e.target.value ? Number(e.target.value) : null)}
-            className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+            className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
           >
             <option value="">All groups</option>
             {user.groups.map((g) => (
@@ -116,7 +116,7 @@ export default function SetlistList() {
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortKey)}
-          className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+          className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
         >
           {sortOptions.map((opt) => (
             <option key={opt.key} value={opt.key}>{opt.label}</option>
@@ -126,7 +126,7 @@ export default function SetlistList() {
           <div className="ml-auto">
             <button
               onClick={() => { setCreating(true); setNewName(""); setNewDate(""); setNewGroupId(null); setErrorMsg(null); }}
-              className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500"
+              className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500"
               title="New Setlist"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 sm:hidden">
@@ -151,19 +151,19 @@ export default function SetlistList() {
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
                 placeholder="Setlist name"
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
               />
               <input
                 type="date"
                 value={newDate}
                 onChange={(e) => setNewDate(e.target.value)}
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
               />
               {user && user.groups.length > 1 && (
                 <select
                   value={newGroupId ?? defaultGroupId ?? ""}
                   onChange={(e) => setNewGroupId(Number(e.target.value))}
-                  className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-indigo-500 focus:outline-none"
+                  className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
                 >
                   <option value="" disabled>Group</option>
                   {user.groups.map((g) => (
@@ -182,7 +182,7 @@ export default function SetlistList() {
               </button>
               <button
                 onClick={handleCreate}
-                className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
+                className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-500"
               >
                 Add
               </button>
@@ -201,7 +201,7 @@ export default function SetlistList() {
             <Link
               key={sl.id}
               to={`/setlists/${sl.id}`}
-              className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4 transition hover:border-indigo-500 hover:bg-gray-800"
+              className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4 transition hover:border-accent-500 hover:bg-gray-800"
             >
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium text-white">

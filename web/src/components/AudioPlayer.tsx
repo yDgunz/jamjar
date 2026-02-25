@@ -140,7 +140,7 @@ export default function AudioPlayer({ src, durationSec, markers, onPlayStateChan
     <div
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      className="flex flex-wrap items-center gap-3 rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500/50"
+      className="flex flex-wrap items-center gap-3 rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-500/50"
     >
       {/* Restart button */}
       <button
@@ -157,7 +157,7 @@ export default function AudioPlayer({ src, durationSec, markers, onPlayStateChan
       {/* Play/Pause button */}
       <button
         onClick={togglePlay}
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white transition hover:bg-indigo-500"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent-600 text-white transition hover:bg-accent-500"
         title={playing ? "Pause" : "Play"}
       >
         {playing ? (
@@ -202,7 +202,7 @@ export default function AudioPlayer({ src, durationSec, markers, onPlayStateChan
       >
         <div className="relative h-2 rounded-full bg-gray-800">
           <div
-            className="absolute top-0 left-0 h-full rounded-full bg-indigo-500 transition-[width] duration-100"
+            className="absolute top-0 left-0 h-full rounded-full bg-accent-500 transition-[width] duration-100"
             style={{ width: `${progress}%` }}
           />
           {/* Take boundary markers */}

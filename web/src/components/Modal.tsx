@@ -41,7 +41,7 @@ export default function Modal({
   const confirmColor =
     variant === "danger"
       ? "bg-red-600 hover:bg-red-500"
-      : "bg-indigo-600 hover:bg-indigo-500";
+      : "bg-accent-600 hover:bg-accent-500";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">

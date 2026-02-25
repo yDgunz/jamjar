@@ -77,7 +77,7 @@ export default function Tuner() {
                 <p className="max-w-xs text-center text-sm text-red-400">{error}</p>
                 <button
                   onClick={start}
-                  className="flex items-center gap-2 rounded-2xl bg-indigo-600 px-8 py-4 text-lg font-semibold text-white transition hover:bg-indigo-500 active:bg-indigo-700"
+                  className="flex items-center gap-2 rounded-2xl bg-accent-600 px-8 py-4 text-lg font-semibold text-white transition hover:bg-accent-500 active:bg-accent-700"
                 >
                   Try Again
                 </button>
