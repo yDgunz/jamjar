@@ -19,6 +19,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { api, formatDate, canEdit, canAdmin } from "../api";
 import type { Setlist, SetlistSong, Song } from "../api";
+import EditableField from "../components/EditableField";
 import Modal, { Toast } from "../components/Modal";
 import { useAuth } from "../context/AuthContext";
 
@@ -109,8 +110,6 @@ export default function SetlistDetail() {
   const [nameInput, setNameInput] = useState("");
   const [editingDate, setEditingDate] = useState(false);
   const [dateInput, setDateInput] = useState("");
-  const [editingNotes, setEditingNotes] = useState(false);
-  const [notesInput, setNotesInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
   const [addSongId, setAddSongId] = useState<number | "">("");
@@ -132,7 +131,6 @@ export default function SetlistDetail() {
       setSetlist(sl);
       setNameInput(sl.name);
       setDateInput(sl.date ?? "");
-      setNotesInput(sl.notes);
       setSongs(slSongs);
       setAllSongs(allS);
       setLoading(false);
@@ -147,7 +145,6 @@ export default function SetlistDetail() {
     setSetlist(sl);
     setNameInput(sl.name);
     setDateInput(sl.date ?? "");
-    setNotesInput(sl.notes);
     setSongs(slSongs);
   };
 
@@ -197,12 +194,10 @@ export default function SetlistDetail() {
     }
   };
 
-  const handleSaveNotes = async () => {
-    setEditingNotes(false);
-    const trimmed = notesInput.trim();
-    if (trimmed !== (setlist?.notes ?? "")) {
+  const handleSaveNotes = async (value: string) => {
+    if (value !== (setlist?.notes ?? "")) {
       try {
-        await api.updateSetlistNotes(setlistId, trimmed);
+        await api.updateSetlistNotes(setlistId, value);
         refresh();
       } catch (err) {
         setErrorMsg(`Failed to save notes: ${err instanceof Error ? err.message : err}`);
@@ -372,54 +367,13 @@ export default function SetlistDetail() {
 
       {/* Notes */}
       <div className="mt-3 mb-4">
-        {editingNotes && canEdit(user) ? (
-          <div>
-            <textarea
-              autoFocus
-              value={notesInput}
-              onChange={(e) => setNotesInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && e.metaKey) { e.preventDefault(); handleSaveNotes(); }
-                if (e.key === "Escape") { setEditingNotes(false); setNotesInput(setlist?.notes ?? ""); }
-              }}
-              rows={3}
-              className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
-              placeholder="Setlist notes..."
-            />
-            <div className="mt-1 flex items-center gap-2">
-              <button
-                onMouseDown={(e) => { e.preventDefault(); handleSaveNotes(); }}
-                className="rounded bg-accent-600 px-3 py-1.5 text-xs text-white hover:bg-accent-500"
-              >
-                Save
-              </button>
-              <button
-                onMouseDown={(e) => { e.preventDefault(); setEditingNotes(false); setNotesInput(setlist?.notes ?? ""); }}
-                className="rounded px-3 py-1.5 text-xs text-gray-400 hover:text-white"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : setlist?.notes ? (
-          canEdit(user) ? (
-            <button
-              onClick={() => setEditingNotes(true)}
-              className="text-left text-sm text-gray-400 hover:text-gray-300 whitespace-pre-wrap"
-            >
-              {setlist.notes}
-            </button>
-          ) : (
-            <p className="text-sm text-gray-400 whitespace-pre-wrap">{setlist.notes}</p>
-          )
-        ) : canEdit(user) ? (
-          <button
-            onClick={() => setEditingNotes(true)}
-            className="text-sm text-gray-600 hover:text-gray-400"
-          >
-            + add notes
-          </button>
-        ) : null}
+        <EditableField
+          label=""
+          value={setlist?.notes ?? ""}
+          placeholder="Add notes"
+          readOnly={!canEdit(user)}
+          onSave={handleSaveNotes}
+        />
       </div>
 
       {/* Song list with drag-and-drop */}
