@@ -21,7 +21,7 @@ export default function SetlistList() {
     return "date";
   });
   const [groupFilter, setGroupFilter] = useState<number | null>(() => {
-    const stored = localStorage.getItem("setlist-group");
+    const stored = localStorage.getItem("group-filter");
     if (stored) { const n = Number(stored); if (!isNaN(n)) return n; }
     return null;
   });
@@ -33,8 +33,8 @@ export default function SetlistList() {
 
   useEffect(() => { localStorage.setItem("setlist-sort", sortBy); }, [sortBy]);
   useEffect(() => {
-    if (groupFilter !== null) localStorage.setItem("setlist-group", String(groupFilter));
-    else localStorage.removeItem("setlist-group");
+    if (groupFilter !== null) localStorage.setItem("group-filter", String(groupFilter));
+    else localStorage.removeItem("group-filter");
   }, [groupFilter]);
 
   useEffect(() => {

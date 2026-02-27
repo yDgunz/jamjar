@@ -21,7 +21,7 @@ export default function SongCatalog() {
     return "name";
   });
   const [groupFilter, setGroupFilter] = useState<number | null>(() => {
-    const stored = localStorage.getItem("song-catalog-group");
+    const stored = localStorage.getItem("group-filter");
     if (stored) { const n = Number(stored); if (!isNaN(n)) return n; }
     return null;
   });
@@ -32,8 +32,8 @@ export default function SongCatalog() {
 
   useEffect(() => { localStorage.setItem("song-catalog-sort", sortBy); }, [sortBy]);
   useEffect(() => {
-    if (groupFilter !== null) localStorage.setItem("song-catalog-group", String(groupFilter));
-    else localStorage.removeItem("song-catalog-group");
+    if (groupFilter !== null) localStorage.setItem("group-filter", String(groupFilter));
+    else localStorage.removeItem("group-filter");
   }, [groupFilter]);
 
   useEffect(() => {
