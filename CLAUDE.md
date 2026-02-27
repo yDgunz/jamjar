@@ -142,6 +142,20 @@ cd web && npm run dev
 - Commit each phase/feature independently
 - **Keep docs up to date** — when changing behavior (new/modified endpoints, CLI commands, env vars, schema changes, defaults), update `CLAUDE.md` and `docs/pipeline.md` in the same commit
 
+### UI Refinement Workflow
+
+When making UI/CSS changes, follow this workflow for **each** change:
+
+1. Read the current component code
+2. Make the CSS/JSX change (prefer minimal CSS changes over restructuring HTML)
+3. Run `npx playwright screenshot http://localhost:5173/[path] /tmp/screenshot.png --color-scheme dark` to capture the result (note: authenticated pages will show the login screen unless `--load-storage` is used with a saved auth state)
+4. Verify the build compiles with no errors (`cd web && npx tsc --noEmit`)
+5. If positioning/layout change, check computed styles for mobile (375px) and desktop (1280px) viewports
+
+Rules:
+- Commit each logical change separately with descriptive messages
+- If a change requires more than 3 files, stop and explain why before proceeding
+
 ### Key patterns for working in this codebase
 
 - **Config/storage singletons:** `get_config()` and `get_storage()` are module-level singletons. In tests, call `reset_config()` and `reset_storage()` (via `monkeypatch` env vars) to reinitialize.
