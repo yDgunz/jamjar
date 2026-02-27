@@ -119,7 +119,7 @@ export default function SongCatalog() {
         {canEdit(user) && (
           <div className="ml-auto shrink-0">
             <button
-              onClick={() => { setCreating(true); setNewName(""); setNewGroupId(null); setErrorMsg(null); }}
+              onClick={() => { setCreating(true); setNewName(""); setNewGroupId(groupFilter); setErrorMsg(null); }}
               className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500"
               title="New Song"
             >
