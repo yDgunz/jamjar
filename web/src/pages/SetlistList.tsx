@@ -140,7 +140,6 @@ export default function SetlistList() {
           autoFocus
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
           placeholder="Setlist name"
           className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
         />

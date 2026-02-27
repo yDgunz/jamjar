@@ -32,10 +32,14 @@ export default function FormModal({
     if (!open) return;
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();
+      if (e.key === "Enter" && !confirmDisabled && !confirmLoading) {
+        e.preventDefault();
+        onConfirm();
+      }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [open, onCancel]);
+  }, [open, onCancel, onConfirm, confirmDisabled, confirmLoading]);
 
   if (!open) return null;
 
