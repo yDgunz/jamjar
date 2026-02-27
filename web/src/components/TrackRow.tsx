@@ -4,6 +4,7 @@ import { api, canEdit, canAdmin } from "../api";
 import type { Track, Song } from "../api";
 import AudioPlayer from "./AudioPlayer";
 import Modal from "./Modal";
+import Spinner from "./Spinner";
 import { useAuth } from "../context/AuthContext";
 
 function formatTime(sec: number): string {
@@ -81,10 +82,7 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
       {operationLoading && (
         <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-gray-900/80">
           <div className="flex items-center gap-2 text-sm text-gray-300">
-            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
+            <Spinner size="sm" />
             Processing...
           </div>
         </div>

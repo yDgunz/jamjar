@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, ApiError, formatDate, canAdmin } from "../api";
 import type { Session } from "../api";
+import Spinner from "../components/Spinner";
 import { useAuth } from "../context/AuthContext";
 
 function formatMonthHeader(yearMonth: string): string {
@@ -204,10 +205,7 @@ export default function SessionList() {
               </>
             ) : (
               <>
-                <svg className="h-8 w-8 animate-spin text-accent-400" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
+                <Spinner size="lg" className="text-accent-400" />
                 <p className="text-lg text-gray-200">{uploadStatus}</p>
               </>
             )}
@@ -312,10 +310,7 @@ export default function SessionList() {
                   <div className="hidden shrink-0 text-right text-sm text-gray-400 sm:block">
                     {s.active_job_id ? (
                       <div className="flex items-center gap-2 text-accent-400">
-                        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
+                        <Spinner size="sm" />
                         Processing
                       </div>
                     ) : (
