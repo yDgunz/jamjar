@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, formatDate, canEdit } from "../api";
 import type { Song } from "../api";
+import GroupSelector from "../components/GroupSelector";
 import { useAuth } from "../context/AuthContext";
 
 type SortKey = "name" | "last_played" | "takes";
@@ -103,18 +104,12 @@ export default function SongCatalog() {
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h1 className="text-lg font-bold">Songs</h1>
-        {user && user.groups.length > 1 && (
-          <select
-            value={groupFilter ?? ""}
-            onChange={(e) => setGroupFilter(e.target.value ? Number(e.target.value) : null)}
-            className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
-          >
-            <option value="">All groups</option>
-            {user.groups.map((g) => (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            ))}
-          </select>
-        )}
+        <GroupSelector
+          groups={user?.groups ?? []}
+          value={groupFilter}
+          onChange={setGroupFilter}
+          allLabel="All groups"
+        />
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortKey)}

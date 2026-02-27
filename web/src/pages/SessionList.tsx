@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, ApiError, formatDate, canAdmin } from "../api";
 import type { Session } from "../api";
+import GroupSelector from "../components/GroupSelector";
 import Spinner from "../components/Spinner";
 import { useAuth } from "../context/AuthContext";
 
@@ -235,18 +236,12 @@ export default function SessionList() {
             </svg>
           </button>
         )}
-        {multiGroup && (
-          <select
-            value={groupFilter ?? ""}
-            onChange={(e) => setGroupFilter(e.target.value ? Number(e.target.value) : null)}
-            className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
-          >
-            <option value="">All groups</option>
-            {user!.groups.map((g) => (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            ))}
-          </select>
-        )}
+        <GroupSelector
+          groups={user?.groups ?? []}
+          value={groupFilter}
+          onChange={setGroupFilter}
+          allLabel="All groups"
+        />
         {canAdmin(user) && (
           <div className="ml-auto">
             <button
