@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## General Behavior
+
+- When asked to implement something, start coding immediately. Do not spend excessive time on codebase exploration, task creation, or planning unless explicitly asked to plan. Bias toward action.
+- After committing and pushing, stop. Do not automatically start new tasks, brainstorming, or invoke skills unless the user explicitly asks for the next thing.
+- Never commit and push anything without an explicit directive to do so.
+
 ## Project Overview
 
 Tool for processing and cataloging band jam session recordings. Splits full iPhone recordings into individual songs, stores them in a catalog database, and provides a web UI for reviewing, tagging, and comparing takes across sessions.
