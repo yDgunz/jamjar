@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, ApiError, formatDate, canAdmin } from "../api";
 import type { Session } from "../api";
+import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
 import Spinner from "../components/Spinner";
 import { useAuth } from "../context/AuthContext";
@@ -323,100 +324,71 @@ export default function SessionList() {
           </div>
         ))}
       </div>
-      {uploadModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          onKeyDown={(e) => { if (e.key === "Escape") setUploadModalOpen(false); }}
-        >
-          <div className="absolute inset-0 bg-black/60" onClick={() => setUploadModalOpen(false)} />
-          <div className="relative mx-4 w-full max-w-sm rounded-lg border border-gray-700 bg-gray-900 px-6 py-5 shadow-xl">
-            <h3 className="text-sm font-semibold text-white">Upload Recording</h3>
-            <div className="mt-4 space-y-4">
-              <div>
-                <input
-                  type="file"
-                  accept=".m4a,.wav,.mp3,.flac,.ogg"
-                  onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
-                  className="w-full text-sm text-gray-300 file:mr-3 file:rounded file:border-0 file:bg-gray-800 file:px-3 file:py-1.5 file:text-sm file:text-gray-300 hover:file:bg-gray-700"
-                />
-              </div>
-              {multiGroup && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1">Group</label>
-                  <select
-                    value={uploadGroupId ?? ""}
-                    onChange={(e) => setUploadGroupId(e.target.value ? Number(e.target.value) : null)}
-                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
-                  >
-                    <option value="">Select a group...</option>
-                    {user!.groups.map((g) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={singleSong}
-                  onChange={(e) => setSingleSong(e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-800 text-accent-500 focus:ring-accent-500 focus:ring-offset-0"
-                />
-                <span className="text-sm text-gray-300">Single song recording</span>
-              </label>
-              {!singleSong && (
-              <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">
-                  Threshold (dB)
-                </label>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm text-gray-400">&minus;</span>
-                  <input
-                    type="number"
-                    value={uploadThreshold}
-                    onChange={(e) => setUploadThreshold(Number(e.target.value))}
-                    min={0}
-                    step={1}
-                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
-                  />
-                  <span className="text-sm text-gray-500">dB</span>
-                </div>
-                <p className="mt-1 text-xs text-gray-500">
-                  Higher = more tracks, lower = fewer tracks
-                </p>
-              </div>
-              )}
-            </div>
-            {uploadError && (
-              <p className="mt-4 text-sm text-red-400">{uploadError}</p>
-            )}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => setUploadModalOpen(false)}
-                className="rounded px-4 py-2 text-sm text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
-              >
-                Cancel
-              </button>
-              {duplicateDetected ? (
-                <button
-                  onClick={() => doUpload(true)}
-                  className="rounded bg-yellow-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-yellow-500"
-                >
-                  Upload Anyway
-                </button>
-              ) : (
-                <button
-                  onClick={handleUpload}
-                  disabled={!selectedFile || (multiGroup && !uploadGroupId)}
-                  className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500 disabled:opacity-50"
-                >
-                  Upload
-                </button>
-              )}
-            </div>
-          </div>
+      <FormModal
+        open={uploadModalOpen}
+        title="Upload Recording"
+        error={uploadError}
+        confirmLabel={duplicateDetected ? "Upload Anyway" : "Upload"}
+        confirmDisabled={!duplicateDetected && (!selectedFile || (multiGroup && !uploadGroupId))}
+        confirmVariant={duplicateDetected ? "warning" : "default"}
+        onConfirm={duplicateDetected ? () => doUpload(true) : handleUpload}
+        onCancel={() => setUploadModalOpen(false)}
+      >
+        <div>
+          <input
+            type="file"
+            accept=".m4a,.wav,.mp3,.flac,.ogg"
+            onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+            className="w-full text-sm text-gray-300 file:mr-3 file:rounded file:border-0 file:bg-gray-800 file:px-3 file:py-1.5 file:text-sm file:text-gray-300 hover:file:bg-gray-700"
+          />
         </div>
-      )}
+        {multiGroup && (
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1">Group</label>
+            <select
+              value={uploadGroupId ?? ""}
+              onChange={(e) => setUploadGroupId(e.target.value ? Number(e.target.value) : null)}
+              className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
+            >
+              <option value="">Select a group...</option>
+              {user!.groups.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={singleSong}
+            onChange={(e) => setSingleSong(e.target.checked)}
+            className="rounded border-gray-600 bg-gray-800 text-accent-500 focus:ring-accent-500 focus:ring-offset-0"
+          />
+          <span className="text-sm text-gray-300">Single song recording</span>
+        </label>
+        {!singleSong && (
+        <div>
+          <label className="block text-xs font-medium text-gray-400 mb-1">
+            Threshold (dB)
+          </label>
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm text-gray-400">&minus;</span>
+            <input
+              type="number"
+              value={uploadThreshold}
+              onChange={(e) => setUploadThreshold(Number(e.target.value))}
+              min={0}
+              step={1}
+              className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
+            />
+            <span className="text-sm text-gray-500">dB</span>
+          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            Higher = more tracks, lower = fewer tracks
+          </p>
+        </div>
+        )}
+      </FormModal>
     </div>
   );
 }

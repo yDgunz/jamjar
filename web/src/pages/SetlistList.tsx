@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, formatDate, canEdit } from "../api";
 import type { Setlist } from "../api";
+import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
 import { useAuth } from "../context/AuthContext";
 
@@ -133,58 +134,41 @@ export default function SetlistList() {
         )}
       </div>
 
-      {creating && canEdit(user) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center"
-             onKeyDown={(e) => { if (e.key === "Escape") { setCreating(false); setErrorMsg(null); } }}>
-          <div className="absolute inset-0 bg-black/60" onClick={() => { setCreating(false); setErrorMsg(null); }} />
-          <div className="relative mx-4 w-full max-w-sm rounded-lg border border-gray-700 bg-gray-900 px-6 py-5 shadow-xl">
-            <h3 className="text-sm font-semibold text-white">New Setlist</h3>
-            <div className="mt-4 space-y-4">
-              <input
-                autoFocus
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
-                placeholder="Setlist name"
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
-              />
-              <input
-                type="date"
-                value={newDate}
-                onChange={(e) => setNewDate(e.target.value)}
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
-              />
-              {user && user.groups.length > 1 && (
-                <select
-                  value={newGroupId ?? defaultGroupId ?? ""}
-                  onChange={(e) => setNewGroupId(Number(e.target.value))}
-                  className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
-                >
-                  <option value="" disabled>Group</option>
-                  {user.groups.map((g) => (
-                    <option key={g.id} value={g.id}>{g.name}</option>
-                  ))}
-                </select>
-              )}
-              {errorMsg && <p className="text-sm text-red-400">{errorMsg}</p>}
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => { setCreating(false); setErrorMsg(null); }}
-                className="rounded px-3 py-1.5 text-sm text-gray-400 hover:text-white"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreate}
-                className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-500"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <FormModal
+        open={creating && canEdit(user) === true}
+        title="New Setlist"
+        error={errorMsg}
+        confirmLabel="Add"
+        onConfirm={handleCreate}
+        onCancel={() => { setCreating(false); setErrorMsg(null); }}
+      >
+        <input
+          autoFocus
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+          placeholder="Setlist name"
+          className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+        />
+        <input
+          type="date"
+          value={newDate}
+          onChange={(e) => setNewDate(e.target.value)}
+          className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
+        />
+        {user && user.groups.length > 1 && (
+          <select
+            value={newGroupId ?? defaultGroupId ?? ""}
+            onChange={(e) => setNewGroupId(Number(e.target.value))}
+            className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
+          >
+            <option value="" disabled>Group</option>
+            {user.groups.map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        )}
+      </FormModal>
 
       {setlists.length === 0 && !creating ? (
         <p className="text-gray-400">

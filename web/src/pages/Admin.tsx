@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, isSuperAdmin } from "../api";
 import type { AdminUser, AdminGroup, Role } from "../api";
+import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
 import { useAuth } from "../context/AuthContext";
 
@@ -64,8 +65,7 @@ export default function Admin() {
     setAddUserOpen(true);
   };
 
-  const handleAddUser = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddUser = async () => {
     if (!newEmail || !newPassword) return;
     setAddingUser(true);
     try {
@@ -85,8 +85,7 @@ export default function Admin() {
     setAddGroupOpen(true);
   };
 
-  const handleAddGroup = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddGroup = async () => {
     if (!newGroupName) return;
     setAddingGroup(true);
     try {
@@ -356,111 +355,71 @@ export default function Admin() {
       </section>
 
       {/* Add user modal */}
-      {addUserOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          onKeyDown={(e) => { if (e.key === "Escape") setAddUserOpen(false); }}
-        >
-          <div className="absolute inset-0 bg-black/60" onClick={() => setAddUserOpen(false)} />
-          <div className="relative mx-4 w-full max-w-sm rounded-lg border border-gray-700 bg-gray-900 px-6 py-5 shadow-xl">
-            <h3 className="text-sm font-semibold text-white">Add User</h3>
-            <form onSubmit={handleAddUser} className="mt-4 space-y-3">
-              <input
-                type="text"
-                placeholder="Username"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                required
-                autoFocus
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
-              />
-              <input
-                type="text"
-                placeholder="Name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
-              />
-              <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">Role</label>
-                <select
-                  value={newRole}
-                  onChange={(e) => setNewRole(e.target.value as Role)}
-                  className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
-                >
-                  {ROLES.map((r) => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setAddUserOpen(false)}
-                  className="rounded px-4 py-2 text-sm text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={addingUser}
-                  className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500 disabled:opacity-50"
-                >
-                  Add User
-                </button>
-              </div>
-            </form>
-          </div>
+      <FormModal
+        open={addUserOpen}
+        title="Add User"
+        confirmLabel="Add User"
+        confirmLoading={addingUser}
+        onConfirm={handleAddUser}
+        onCancel={() => setAddUserOpen(false)}
+      >
+        <input
+          type="text"
+          placeholder="Username"
+          value={newEmail}
+          onChange={(e) => setNewEmail(e.target.value)}
+          required
+          autoFocus
+          className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+        />
+        <input
+          type="text"
+          placeholder="Name"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          required
+          className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+        />
+        <div>
+          <label className="block text-xs font-medium text-gray-400 mb-1">Role</label>
+          <select
+            value={newRole}
+            onChange={(e) => setNewRole(e.target.value as Role)}
+            className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
+          >
+            {ROLES.map((r) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
         </div>
-      )}
+      </FormModal>
 
       {/* Add group modal */}
-      {addGroupOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          onKeyDown={(e) => { if (e.key === "Escape") setAddGroupOpen(false); }}
-        >
-          <div className="absolute inset-0 bg-black/60" onClick={() => setAddGroupOpen(false)} />
-          <div className="relative mx-4 w-full max-w-sm rounded-lg border border-gray-700 bg-gray-900 px-6 py-5 shadow-xl">
-            <h3 className="text-sm font-semibold text-white">Add Group</h3>
-            <form onSubmit={handleAddGroup} className="mt-4 space-y-3">
-              <input
-                type="text"
-                placeholder="Group name"
-                value={newGroupName}
-                onChange={(e) => setNewGroupName(e.target.value)}
-                required
-                autoFocus
-                className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
-              />
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setAddGroupOpen(false)}
-                  className="rounded px-4 py-2 text-sm text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={addingGroup}
-                  className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500 disabled:opacity-50"
-                >
-                  Add Group
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <FormModal
+        open={addGroupOpen}
+        title="Add Group"
+        confirmLabel="Add Group"
+        confirmLoading={addingGroup}
+        onConfirm={handleAddGroup}
+        onCancel={() => setAddGroupOpen(false)}
+      >
+        <input
+          type="text"
+          placeholder="Group name"
+          value={newGroupName}
+          onChange={(e) => setNewGroupName(e.target.value)}
+          required
+          autoFocus
+          className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+        />
+      </FormModal>
 
       {/* Delete confirmation modal */}
       <Modal

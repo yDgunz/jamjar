@@ -4,6 +4,7 @@ import { api, formatDate, canEdit, canAdmin } from "../api";
 import type { Session, Track, Song } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
 import type { Marker } from "../components/AudioPlayer";
+import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
 import Spinner from "../components/Spinner";
 import TrackRow from "../components/TrackRow";
@@ -446,67 +447,48 @@ export default function SessionDetail() {
         ))}
       </div>
       )}
-      {reprocessOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          onKeyDown={(e) => { if (e.key === "Escape") setReprocessOpen(false); }}
-        >
-          <div className="absolute inset-0 bg-black/60" onClick={() => setReprocessOpen(false)} />
-          <div className="relative mx-4 w-full max-w-sm rounded-lg border border-gray-700 bg-gray-900 px-6 py-5 shadow-xl">
-            <h3 className="text-sm font-semibold text-white">Reprocess</h3>
-            <p className="mt-2 text-sm text-gray-400">
-              Current tracks and tags will be replaced.
-            </p>
-            <div className="mt-4 space-y-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={singleSong}
-                  onChange={(e) => setSingleSong(e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-800 text-accent-500 focus:ring-accent-500 focus:ring-offset-0"
-                />
-                <span className="text-sm text-gray-300">Single song recording</span>
-              </label>
-              {!singleSong && (
-              <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">
-                  Threshold (dB)
-                </label>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm text-gray-400">&minus;</span>
-                  <input
-                    type="number"
-                    value={threshold}
-                    onChange={(e) => setThreshold(Number(e.target.value))}
-                    min={0}
-                    step={1}
-                    className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
-                  />
-                  <span className="text-sm text-gray-500">dB</span>
-                </div>
-                <p className="mt-1 text-xs text-gray-500">
-                  Higher = more tracks, lower = fewer tracks
-                </p>
-              </div>
-              )}
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => setReprocessOpen(false)}
-                className="rounded px-4 py-2 text-sm text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleReprocess}
-                className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500"
-              >
-                Reprocess
-              </button>
-            </div>
+      <FormModal
+        open={reprocessOpen}
+        title="Reprocess"
+        confirmLabel="Reprocess"
+        onConfirm={handleReprocess}
+        onCancel={() => setReprocessOpen(false)}
+      >
+        <p className="-mt-2 text-sm text-gray-400">
+          Current tracks and tags will be replaced.
+        </p>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={singleSong}
+            onChange={(e) => setSingleSong(e.target.checked)}
+            className="rounded border-gray-600 bg-gray-800 text-accent-500 focus:ring-accent-500 focus:ring-offset-0"
+          />
+          <span className="text-sm text-gray-300">Single song recording</span>
+        </label>
+        {!singleSong && (
+        <div>
+          <label className="block text-xs font-medium text-gray-400 mb-1">
+            Threshold (dB)
+          </label>
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm text-gray-400">&minus;</span>
+            <input
+              type="number"
+              value={threshold}
+              onChange={(e) => setThreshold(Number(e.target.value))}
+              min={0}
+              step={1}
+              className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
+            />
+            <span className="text-sm text-gray-500">dB</span>
           </div>
+          <p className="mt-1 text-xs text-gray-500">
+            Higher = more tracks, lower = fewer tracks
+          </p>
         </div>
-      )}
+        )}
+      </FormModal>
       <Modal
         open={confirmDelete}
         title="Delete recording"
