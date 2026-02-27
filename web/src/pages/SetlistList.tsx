@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { api, formatDate, canEdit } from "../api";
 import type { Setlist } from "../api";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
+import ListItemCard from "../components/ListItemCard";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
 
@@ -171,26 +172,21 @@ export default function SetlistList() {
       ) : (
         <div className="space-y-3">
           {sorted.map((sl) => (
-            <Link
+            <ListItemCard
               key={sl.id}
               to={`/setlists/${sl.id}`}
-              className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4 transition hover:border-accent-500 hover:bg-gray-800"
+              title={<>
+                {sl.name}
+                {user && user.groups.length > 1 && !groupFilter && sl.group_name && (
+                  <span className="ml-2 text-xs font-normal text-gray-500">{sl.group_name}</span>
+                )}
+              </>}
+              right={<>{sl.song_count} song{sl.song_count !== 1 ? "s" : ""}</>}
             >
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium text-white">
-                  {sl.name}
-                  {user && user.groups.length > 1 && !groupFilter && sl.group_name && (
-                    <span className="ml-2 text-xs font-normal text-gray-500">{sl.group_name}</span>
-                  )}
-                </div>
-                <div className="mt-1 text-sm text-gray-400">
-                  {sl.date ? formatDate(sl.date) : "No date set"}
-                </div>
+              <div className="mt-1 text-sm text-gray-400">
+                {sl.date ? formatDate(sl.date) : "No date set"}
               </div>
-              <div className="shrink-0 text-right text-sm text-gray-400">
-                {sl.song_count} song{sl.song_count !== 1 ? "s" : ""}
-              </div>
-            </Link>
+            </ListItemCard>
           ))}
         </div>
       )}

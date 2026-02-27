@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { api, ApiError, formatDate, canAdmin } from "../api";
 import type { Session } from "../api";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
+import ListItemCard from "../components/ListItemCard";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import Spinner from "../components/Spinner";
 import { useAuth } from "../context/AuthContext";
@@ -253,38 +254,17 @@ export default function SessionList() {
             </h2>
             <div className="space-y-3">
               {group.map((s) => (
-                <Link
+                <ListItemCard
                   key={s.id}
                   to={`/sessions/${s.id}`}
-                  className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4 transition hover:border-accent-500 hover:bg-gray-800"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium text-white">
-                      {s.name || `Session ${s.id}`}
-                      {multiGroup && !groupFilter && s.group_name && (
-                        <span className="ml-2 text-xs font-normal text-gray-500">{s.group_name}</span>
-                      )}
-                    </div>
-                    <div className="mt-1 text-sm text-gray-400">
-                      {formatDate(s.date)}
-                    </div>
-                    {(s.song_names || s.track_count - s.tagged_count > 0) && (
-                      <div className="mt-0.5 text-sm text-gray-500">
-                        {(() => {
-                          const names = s.song_names ? s.song_names.split(",") : [];
-                          const untagged = s.track_count - s.tagged_count;
-                          const shown = names.slice(0, 3);
-                          const extra = names.length - 3;
-                          let text = shown.join(", ");
-                          if (extra > 0) text += `, +${extra + untagged} more`;
-                          else if (untagged > 0) text += (text ? ", " : "") + `${untagged} untagged`;
-                          return text;
-                        })()}
-                      </div>
+                  title={<>
+                    {s.name || `Session ${s.id}`}
+                    {multiGroup && !groupFilter && s.group_name && (
+                      <span className="ml-2 text-xs font-normal text-gray-500">{s.group_name}</span>
                     )}
-                  </div>
-                  <div className="hidden shrink-0 text-right text-sm text-gray-400 sm:block">
-                    {s.active_job_id ? (
+                  </>}
+                  right={
+                    s.active_job_id ? (
                       <div className="flex items-center gap-2 text-accent-400">
                         <Spinner size="sm" />
                         Processing
@@ -296,9 +276,28 @@ export default function SessionList() {
                           {s.tagged_count}/{s.track_count} tagged
                         </div>
                       </>
-                    )}
+                    )
+                  }
+                  rightClassName="hidden shrink-0 text-right text-sm text-gray-400 sm:block"
+                >
+                  <div className="mt-1 text-sm text-gray-400">
+                    {formatDate(s.date)}
                   </div>
-                </Link>
+                  {(s.song_names || s.track_count - s.tagged_count > 0) && (
+                    <div className="mt-0.5 text-sm text-gray-500">
+                      {(() => {
+                        const names = s.song_names ? s.song_names.split(",") : [];
+                        const untagged = s.track_count - s.tagged_count;
+                        const shown = names.slice(0, 3);
+                        const extra = names.length - 3;
+                        let text = shown.join(", ");
+                        if (extra > 0) text += `, +${extra + untagged} more`;
+                        else if (untagged > 0) text += (text ? ", " : "") + `${untagged} untagged`;
+                        return text;
+                      })()}
+                    </div>
+                  )}
+                </ListItemCard>
               ))}
             </div>
           </div>

@@ -4,6 +4,7 @@ import { api, formatDate, canEdit } from "../api";
 import type { Song } from "../api";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
+import ListItemCard from "../components/ListItemCard";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
 
@@ -167,31 +168,26 @@ export default function SongCatalog() {
       ) : (
         <div className="space-y-3">
           {sorted.map((song) => (
-            <Link
+            <ListItemCard
               key={song.id}
               to={`/songs/${song.id}`}
-              className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4 transition hover:border-accent-500 hover:bg-gray-800"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium text-white">
-                  {song.name}
-                  {user && user.groups.length > 1 && !groupFilter && song.group_name && (
-                    <span className="ml-2 text-xs font-normal text-gray-500">{song.group_name}</span>
-                  )}
-                </div>
-                {song.artist && (
-                  <div className="text-sm text-gray-500">{song.artist}</div>
+              title={<>
+                {song.name}
+                {user && user.groups.length > 1 && !groupFilter && song.group_name && (
+                  <span className="ml-2 text-xs font-normal text-gray-500">{song.group_name}</span>
                 )}
-                <div className="mt-1 text-sm text-gray-400">
-                  {song.last_date
-                    ? `Last played ${formatDate(song.last_date)}`
-                    : "No date info"}
-                </div>
+              </>}
+              right={<>{song.take_count} track{song.take_count !== 1 ? "s" : ""}</>}
+            >
+              {song.artist && (
+                <div className="text-sm text-gray-500">{song.artist}</div>
+              )}
+              <div className="mt-1 text-sm text-gray-400">
+                {song.last_date
+                  ? `Last played ${formatDate(song.last_date)}`
+                  : "No date info"}
               </div>
-              <div className="shrink-0 text-right text-sm text-gray-400">
-                {song.take_count} track{song.take_count !== 1 ? "s" : ""}
-              </div>
-            </Link>
+            </ListItemCard>
           ))}
         </div>
       )}
