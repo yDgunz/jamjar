@@ -21,6 +21,7 @@ import { api, formatDate, canEdit, canAdmin } from "../api";
 import type { Setlist, SetlistSong, Song } from "../api";
 import EditableField from "../components/EditableField";
 import Modal, { Toast } from "../components/Modal";
+import { DetailSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
 
 function SortableRow({
@@ -261,20 +262,7 @@ export default function SetlistDetail() {
     }
   };
 
-  if (loading) return (
-    <div>
-      <div className="h-4 w-28 animate-pulse rounded bg-gray-800" />
-      <div className="mt-4 mb-6 space-y-2">
-        <div className="h-8 w-48 animate-pulse rounded bg-gray-800" />
-        <div className="h-4 w-36 animate-pulse rounded bg-gray-800" />
-      </div>
-      <div className="space-y-2">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 h-14 animate-pulse" />
-        ))}
-      </div>
-    </div>
-  );
+  if (loading) return <DetailSkeleton />;
 
   const hasSheets = songs.some((s) => s.sheet);
 

@@ -4,6 +4,7 @@ import { api, ApiError, formatDate, canAdmin } from "../api";
 import type { Session } from "../api";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
+import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import Spinner from "../components/Spinner";
 import { useAuth } from "../context/AuthContext";
 
@@ -165,28 +166,7 @@ export default function SessionList() {
     return true;
   });
 
-  if (loading) return (
-    <div>
-      <div className="mb-3 flex items-center gap-2">
-        <div className="h-8 w-44 animate-pulse rounded bg-gray-800" />
-        <div className="ml-auto h-8 w-24 animate-pulse rounded bg-gray-800" />
-      </div>
-      <div className="space-y-3">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4">
-            <div className="space-y-2">
-              <div className="h-5 w-48 animate-pulse rounded bg-gray-800" />
-              <div className="h-4 w-28 animate-pulse rounded bg-gray-800" />
-            </div>
-            <div className="space-y-1 text-right">
-              <div className="h-4 w-16 animate-pulse rounded bg-gray-800" />
-              <div className="h-4 w-20 animate-pulse rounded bg-gray-800" />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  if (loading) return <ListSkeleton rightSide="two-lines" />;
 
   const monthGroups = groupByMonth(filtered);
 

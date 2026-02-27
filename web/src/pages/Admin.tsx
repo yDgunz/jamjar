@@ -3,6 +3,7 @@ import { api, isSuperAdmin } from "../api";
 import type { AdminUser, AdminGroup, Role } from "../api";
 import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
+import { AdminSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
 
 const ROLES: Role[] = ["readonly", "editor", "admin", "superadmin"];
@@ -155,18 +156,7 @@ export default function Admin() {
     }
   };
 
-  if (loading) {
-    return (
-      <div>
-        <h1 className="mb-6 text-lg font-bold">Admin</h1>
-        <div className="space-y-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 animate-pulse rounded-lg bg-gray-800" />
-          ))}
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <AdminSkeleton title="Admin" />;
 
   return (
     <div className="space-y-10">

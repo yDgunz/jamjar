@@ -4,6 +4,7 @@ import { api, formatDate, canEdit } from "../api";
 import type { Setlist } from "../api";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
+import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
 
 type SortKey = "name" | "date";
@@ -71,27 +72,20 @@ export default function SetlistList() {
   };
 
   if (loading) return (
-    <div>
-      <div className="mb-4 flex items-center justify-between">
-        <div className="h-8 w-40 animate-pulse rounded bg-gray-800" />
-        <div className="flex gap-1">
-          {[1, 2].map((i) => (
-            <div key={i} className="h-8 w-20 animate-pulse rounded bg-gray-800" />
-          ))}
-        </div>
-      </div>
-      <div className="space-y-3">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4">
-            <div className="space-y-2">
-              <div className="h-5 w-40 animate-pulse rounded bg-gray-800" />
-              <div className="h-4 w-32 animate-pulse rounded bg-gray-800" />
-            </div>
-            <div className="h-4 w-16 animate-pulse rounded bg-gray-800" />
+    <ListSkeleton
+      toolbar={
+        <div className="mb-4 flex items-center justify-between">
+          <div className="h-8 w-40 animate-pulse rounded bg-gray-800" />
+          <div className="flex gap-1">
+            {[1, 2].map((i) => (
+              <div key={i} className="h-8 w-20 animate-pulse rounded bg-gray-800" />
+            ))}
           </div>
-        ))}
-      </div>
-    </div>
+        </div>
+      }
+      cards={3}
+      rightSide="one-line"
+    />
   );
 
   const sortOptions: { key: SortKey; label: string }[] = [
