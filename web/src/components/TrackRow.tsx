@@ -76,7 +76,7 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
   const canSplit = !playerPlaying && playerTime > 1 && playerTime < track.duration_sec - 1;
 
   return (
-    <div className={`relative rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 ${track.song_name ? "border-l-2 border-l-accent-500" : "border-l-2 border-l-gray-700"}`}>
+    <div className={`relative rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 ${track.song_name ? "border-l-3 border-l-accent-500" : "border-l-2 border-l-gray-700"}`}>
       {/* Loading overlay */}
       {operationLoading && (
         <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-gray-900/80">
