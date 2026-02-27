@@ -79,17 +79,17 @@ export default function EditableField({
         readOnly ? (
           mono ? (
             <div className="overflow-x-auto">
-              <p className="text-sm text-gray-300 font-mono whitespace-pre">{value}</p>
+              <p className="text-base sm:text-sm text-gray-300 font-mono whitespace-pre">{value}</p>
             </div>
           ) : (
-            <p className="text-sm text-gray-300 whitespace-pre-wrap">{value}</p>
+            <p className="text-base sm:text-sm text-gray-300 whitespace-pre-wrap">{value}</p>
           )
         ) : (
           mono ? (
             <div className="overflow-x-auto">
               <button
                 onClick={() => setEditing(true)}
-                className="text-left text-sm text-gray-300 hover:text-white font-mono whitespace-pre"
+                className="text-left text-base sm:text-sm text-gray-300 hover:text-white font-mono whitespace-pre"
               >
                 {value}
               </button>
@@ -97,7 +97,7 @@ export default function EditableField({
           ) : (
             <button
               onClick={() => setEditing(true)}
-              className="text-left text-sm text-gray-300 hover:text-white whitespace-pre-wrap"
+              className="text-left text-base sm:text-sm text-gray-300 hover:text-white whitespace-pre-wrap"
             >
               {value}
             </button>

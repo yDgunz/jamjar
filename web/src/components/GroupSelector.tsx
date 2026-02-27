@@ -14,7 +14,7 @@ export default function GroupSelector({ groups, value, onChange, allLabel }: Gro
     <select
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
-      className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
+      className="min-w-0 truncate rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
     >
       {allLabel !== undefined ? (
         <option value="">{allLabel}</option>

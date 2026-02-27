@@ -19,7 +19,7 @@ export default function ListItemCard({
   return (
     <Link
       to={to}
-      className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4 transition hover:border-accent-500 hover:bg-gray-800"
+      className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-4 py-2.5 transition hover:border-accent-500 hover:bg-gray-800"
     >
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium text-white">

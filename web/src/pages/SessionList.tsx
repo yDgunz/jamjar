@@ -195,7 +195,7 @@ export default function SessionList() {
           </div>
         </div>
       )}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="mb-3 flex items-center gap-2">
         {filterOpen ? (
           <input
             ref={filterInputRef}
@@ -225,7 +225,7 @@ export default function SessionList() {
           allLabel="All groups"
         />
         {canAdmin(user) && (
-          <div className="ml-auto">
+          <div className="ml-auto shrink-0">
             <button
               onClick={openUploadModal}
               disabled={uploading}

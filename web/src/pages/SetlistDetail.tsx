@@ -268,74 +268,92 @@ export default function SetlistDetail() {
 
   return (
     <div>
-      <Link to="/setlists" className="text-sm text-accent-400 hover:text-accent-300">
-        &larr; Setlists
-      </Link>
-
-      <div className="mt-1">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            {editingName && canEdit(user) ? (
-              <input
-                autoFocus
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSaveName();
-                  if (e.key === "Escape") { setEditingName(false); setNameInput(setlist?.name ?? ""); }
-                }}
-                onBlur={handleSaveName}
-                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-lg font-bold text-white focus:border-accent-500 focus:outline-none"
-              />
-            ) : (
-              <h1
-                onClick={() => canEdit(user) && setEditingName(true)}
-                className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
-                title={canEdit(user) ? "Click to rename" : undefined}
-              >
-                {setlist?.name ?? "Unknown Setlist"}
-                {setlist?.group_name && user && user.groups.length > 1 && (
-                  <span className="ml-2 text-sm font-normal text-gray-500">{setlist.group_name}</span>
-                )}
-              </h1>
-            )}
-            {editingDate && canEdit(user) ? (
-              <input
-                autoFocus
-                type="date"
-                value={dateInput}
-                onChange={(e) => setDateInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSaveDate();
-                  if (e.key === "Escape") { setEditingDate(false); setDateInput(setlist?.date ?? ""); }
-                }}
-                onBlur={handleSaveDate}
-                className="mt-0.5 rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-gray-300 focus:border-accent-500 focus:outline-none"
-              />
-            ) : setlist?.date ? (
-              <p
-                onClick={() => canEdit(user) && setEditingDate(true)}
-                className={`mt-0.5 text-sm text-gray-400 ${canEdit(user) ? "cursor-pointer hover:text-gray-300" : ""}`}
-              >
-                {formatDate(setlist.date)}
+      <div>
+        <div>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              {editingName && canEdit(user) ? (
+                <input
+                  autoFocus
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveName();
+                    if (e.key === "Escape") { setEditingName(false); setNameInput(setlist?.name ?? ""); }
+                  }}
+                  onBlur={handleSaveName}
+                  className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-lg font-bold text-white focus:border-accent-500 focus:outline-none"
+                />
+              ) : (
+                <h1
+                  onClick={() => canEdit(user) && setEditingName(true)}
+                  className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
+                  title={canEdit(user) ? "Click to rename" : undefined}
+                >
+                  {setlist?.name ?? "Unknown Setlist"}
+                  {setlist?.group_name && user && user.groups.length > 1 && (
+                    <span className="ml-2 text-sm font-normal text-gray-500">{setlist.group_name}</span>
+                  )}
+                </h1>
+              )}
+              {editingDate && canEdit(user) ? (
+                <input
+                  autoFocus
+                  type="date"
+                  value={dateInput}
+                  onChange={(e) => setDateInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveDate();
+                    if (e.key === "Escape") { setEditingDate(false); setDateInput(setlist?.date ?? ""); }
+                  }}
+                  onBlur={handleSaveDate}
+                  className="mt-0.5 rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-gray-300 focus:border-accent-500 focus:outline-none"
+                />
+              ) : setlist?.date ? (
+                <p
+                  onClick={() => canEdit(user) && setEditingDate(true)}
+                  className={`mt-0.5 text-sm text-gray-400 ${canEdit(user) ? "cursor-pointer hover:text-gray-300" : ""}`}
+                >
+                  {formatDate(setlist.date)}
+                </p>
+              ) : canEdit(user) ? (
+                <button
+                  onClick={() => setEditingDate(true)}
+                  className="mt-0.5 text-sm text-gray-600 hover:text-gray-400"
+                >
+                  + add date
+                </button>
+              ) : null}
+              <p className="mt-0.5 text-sm text-gray-400">
+                {songs.length} song{songs.length !== 1 ? "s" : ""}
               </p>
-            ) : canEdit(user) ? (
-              <button
-                onClick={() => setEditingDate(true)}
-                className="mt-0.5 text-sm text-gray-600 hover:text-gray-400"
-              >
-                + add date
-              </button>
-            ) : null}
-            <p className="mt-0.5 text-sm text-gray-400">
-              {songs.length} song{songs.length !== 1 ? "s" : ""}
-            </p>
+            </div>
+            <div className="hidden items-center gap-1 sm:flex">
+              {hasSheets && songs.length > 0 && (
+                <Link
+                  to={`/setlists/${setlistId}/perform`}
+                  className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
+                >
+                  Perform
+                </Link>
+              )}
+              {canAdmin(user) && (
+                <button
+                  onClick={() => setShowDelete(true)}
+                  className="rounded px-3 py-1.5 text-xs text-gray-600 hover:bg-red-950 hover:text-red-400"
+                  title="Delete setlist"
+                >
+                  Delete
+                </button>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-1">
+          {/* Action buttons on mobile — below title */}
+          <div className="mt-2 flex items-center gap-2 sm:hidden">
             {hasSheets && songs.length > 0 && (
               <Link
                 to={`/setlists/${setlistId}/perform`}
-                className="rounded bg-accent-600 px-3 py-1.5 text-xs text-white hover:bg-accent-500"
+                className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
               >
                 Perform
               </Link>
@@ -343,7 +361,7 @@ export default function SetlistDetail() {
             {canAdmin(user) && (
               <button
                 onClick={() => setShowDelete(true)}
-                className="rounded px-3 py-1.5 text-xs text-gray-600 hover:bg-red-950 hover:text-red-400"
+                className="rounded px-3 py-2 text-xs text-gray-500 hover:bg-red-950 hover:text-red-400"
                 title="Delete setlist"
               >
                 Delete

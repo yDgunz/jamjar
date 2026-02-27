@@ -198,11 +198,7 @@ export default function SongHistory() {
 
   return (
     <div>
-      <Link to="/songs" className="text-sm text-accent-400 hover:text-accent-300">
-        &larr; Song Catalog
-      </Link>
-
-      <div className="mt-1">
+      <div>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             {editingName && canEdit(user) ? (
@@ -291,7 +287,7 @@ export default function SongHistory() {
             {song?.sheet && (
               <Link
                 to={`/songs/${songId}/perform`}
-                className="rounded bg-accent-600 px-3 py-1.5 text-xs text-white hover:bg-accent-500"
+                className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
               >
                 Perform
               </Link>

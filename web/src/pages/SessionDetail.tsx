@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams, Link, useNavigate, useSearchParams } from "react-router";
+import { useParams, useNavigate, useSearchParams } from "react-router";
 import { api, formatDate, canEdit, canAdmin } from "../api";
 import type { Session, Track, Song } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
@@ -50,9 +50,9 @@ function MergeButton({ trackId, nextTrackId, onTracksChanged, onError }: {
           ) : (
             <>
               <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" d="M7 8l5 4-5 4M17 8l-5 4 5 4" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12l7-4 7 4" />
               </svg>
-              Merge
+              Merge with above
             </>
           )}
         </button>
@@ -239,11 +239,7 @@ export default function SessionDetail() {
           </div>
         </div>
       )}
-      <Link to="/" className="text-sm text-accent-400 hover:text-accent-300">
-        &larr; All Recordings
-      </Link>
-
-      <div className="mt-1">
+      <div>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             {editingName && canEdit(user) ? (
@@ -319,17 +315,17 @@ export default function SessionDetail() {
             </p>
           </div>
           {canAdmin(user) && (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-3">
               <button
                 onClick={() => setReprocessOpen(true)}
                 disabled={!!processingProgress}
-                className="rounded px-2 py-1.5 text-xs text-gray-500 transition hover:text-gray-300 disabled:opacity-30 disabled:hover:text-gray-500"
+                className="rounded px-2 py-2 text-xs text-gray-500 transition hover:text-gray-300 disabled:opacity-30 disabled:hover:text-gray-500"
               >
                 Reprocess
               </button>
               <button
                 onClick={() => setConfirmDelete(true)}
-                className="rounded px-2 py-1.5 text-xs text-gray-500 transition hover:text-red-400"
+                className="rounded px-2 py-2 text-xs text-gray-500 transition hover:text-red-400"
               >
                 Delete
               </button>

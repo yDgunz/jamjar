@@ -96,8 +96,7 @@ export default function SetlistList() {
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h1 className="text-lg font-bold">Setlists</h1>
+      <div className="mb-3 flex items-center gap-2">
         <GroupSelector
           groups={user?.groups ?? []}
           value={groupFilter}
@@ -107,14 +106,14 @@ export default function SetlistList() {
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortKey)}
-          className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
+          className="min-w-0 truncate rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
         >
           {sortOptions.map((opt) => (
             <option key={opt.key} value={opt.key}>{opt.label}</option>
           ))}
         </select>
         {canEdit(user) && (
-          <div className="ml-auto">
+          <div className="ml-auto shrink-0">
             <button
               onClick={() => { setCreating(true); setNewName(""); setNewDate(""); setNewGroupId(null); setErrorMsg(null); }}
               className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500"

@@ -8,7 +8,7 @@ import ListItemCard from "../components/ListItemCard";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
 
-type SortKey = "name" | "last_played" | "takes";
+type SortKey = "name" | "artist" | "last_played" | "takes";
 
 export default function SongCatalog() {
   const { user } = useAuth();
@@ -17,7 +17,7 @@ export default function SongCatalog() {
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>(() => {
     const stored = localStorage.getItem("song-catalog-sort");
-    if (stored === "name" || stored === "last_played" || stored === "takes") return stored;
+    if (stored === "name" || stored === "artist" || stored === "last_played" || stored === "takes") return stored;
     return "name";
   });
   const [groupFilter, setGroupFilter] = useState<number | null>(() => {
@@ -51,6 +51,8 @@ export default function SongCatalog() {
     switch (sortBy) {
       case "name":
         return copy.sort((a, b) => a.name.localeCompare(b.name));
+      case "artist":
+        return copy.sort((a, b) => (a.artist ?? "").localeCompare(b.artist ?? "") || a.name.localeCompare(b.name));
       case "last_played":
         return copy.sort((a, b) => (b.last_date ?? "").localeCompare(a.last_date ?? ""));
       case "takes":
@@ -91,14 +93,14 @@ export default function SongCatalog() {
 
   const sortOptions: { key: SortKey; label: string }[] = [
     { key: "name", label: "Name" },
-    { key: "last_played", label: "Last played" },
+    { key: "artist", label: "Artist" },
+    { key: "last_played", label: "Last recorded" },
     { key: "takes", label: "Most tracks" },
   ];
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h1 className="text-lg font-bold">Songs</h1>
+      <div className="mb-3 flex items-center gap-2">
         <GroupSelector
           groups={user?.groups ?? []}
           value={groupFilter}
@@ -108,14 +110,14 @@ export default function SongCatalog() {
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortKey)}
-          className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
+          className="min-w-0 truncate rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
         >
           {sortOptions.map((opt) => (
             <option key={opt.key} value={opt.key}>{opt.label}</option>
           ))}
         </select>
         {canEdit(user) && (
-          <div className="ml-auto">
+          <div className="ml-auto shrink-0">
             <button
               onClick={() => { setCreating(true); setNewName(""); setNewGroupId(null); setErrorMsg(null); }}
               className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500"
@@ -177,14 +179,14 @@ export default function SongCatalog() {
                   <span className="ml-2 text-xs font-normal text-gray-500">{song.group_name}</span>
                 )}
               </>}
-              right={<>{song.take_count} track{song.take_count !== 1 ? "s" : ""}</>}
+              right={<>{song.take_count} recording{song.take_count !== 1 ? "s" : ""}</>}
             >
               {song.artist && (
                 <div className="text-sm text-gray-500">{song.artist}</div>
               )}
               <div className="mt-1 text-sm text-gray-400">
                 {song.last_date
-                  ? `Last played ${formatDate(song.last_date)}`
+                  ? `Last recorded ${formatDate(song.last_date)}`
                   : "No date info"}
               </div>
             </ListItemCard>

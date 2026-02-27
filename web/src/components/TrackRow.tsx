@@ -89,7 +89,7 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
       )}
 
       {/* Header row: take name + info */}
-      <div className="mb-2 flex items-center gap-2">
+      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-0.5">
         {tagging && canEdit(user) ? (
           <div>
             <div className="flex items-center gap-2">
