@@ -36,6 +36,23 @@ def serve(port: int | None, use_reload: bool):
 UPLOAD_EXTENSIONS = {".m4a", ".wav", ".mp3", ".flac", ".ogg"}
 
 
+class _ProgressFileReader:
+    """Wraps a file object to update a click progress bar as data is read."""
+
+    def __init__(self, fobj, progress_bar):
+        self._fobj = fobj
+        self._bar = progress_bar
+
+    def read(self, size=-1):
+        data = self._fobj.read(size)
+        if data:
+            self._bar.update(len(data))
+        return data
+
+    def __getattr__(self, attr):
+        return getattr(self._fobj, attr)
+
+
 def _poll_job(base: str, headers: dict, job_id: str, session_id: int):
     """Poll a job until it completes or fails."""
     import time
@@ -146,13 +163,17 @@ def upload(file: Path, server: str, group: str, api_key: str):
                 ".flac": "audio/flac", ".ogg": "audio/ogg",
             }
             content_type = content_types.get(ext, "application/octet-stream")
-            click.echo("Uploading directly to storage...")
             try:
-                with open(file, "rb") as f:
+                with open(file, "rb") as f, click.progressbar(
+                    length=file_size, label="Uploading", width=40
+                ) as bar:
                     put_resp = requests.put(
                         upload_url,
-                        data=f,
-                        headers={"Content-Type": content_type},
+                        data=_ProgressFileReader(f, bar),
+                        headers={
+                            "Content-Type": content_type,
+                            "Content-Length": str(file_size),
+                        },
                         timeout=600,
                     )
                 if put_resp.status_code not in (200, 201):
@@ -194,10 +215,13 @@ def upload(file: Path, server: str, group: str, api_key: str):
 
     # Fall back to direct multipart upload
     try:
-        with open(file, "rb") as f:
+        with open(file, "rb") as f, click.progressbar(
+            length=file_size, label="Uploading", width=40
+        ) as bar:
+            wrapped = _ProgressFileReader(f, bar)
             resp = requests.post(
                 url,
-                files={"file": (file.name, f)},
+                files={"file": (file.name, wrapped)},
                 headers=headers,
                 params={"group_id": group_id},
                 timeout=600,
