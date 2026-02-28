@@ -284,7 +284,7 @@ class Database:
         return cur.lastrowid
 
     def get_user_by_email(self, email: str) -> User | None:
-        row = self.conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        row = self.conn.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", (email,)).fetchone()
         if not row:
             return None
         return User(**row)
