@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os as _os
+import time
 from pathlib import Path
 from uuid import uuid4
 
@@ -45,6 +46,7 @@ def get_db() -> Database:
 # --- Auth middleware ---
 
 _PUBLIC_PATHS = {"/health", "/api/auth/login"}
+_last_active_cache: dict[int, float] = {}
 
 
 @app.middleware("http")
@@ -86,6 +88,10 @@ async def auth_middleware(request: Request, call_next):
         request.state.auth_type = "cookie"
         request.state.user = user
         request.state.group_ids = db.get_group_ids_for_user(user.id)
+        now = time.monotonic()
+        if now - _last_active_cache.get(user.id, 0) > 300:
+            db.update_last_active(user.id)
+            _last_active_cache[user.id] = now
         return await call_next(request)
 
     return JSONResponse(status_code=401, content={"detail": "Authentication required"})
@@ -152,6 +158,7 @@ def login(req: LoginRequest):
         raise HTTPException(status_code=401, detail="Invalid username or password")
     token = create_jwt(user.id, user.email)
     groups = db.get_user_groups(user.id)
+    db.log_activity(user.id, None, "login")
     response = JSONResponse(
         content={
             "id": user.id,
@@ -883,6 +890,9 @@ async def upload_complete(req: UploadCompleteRequest, request: Request):
     single = req.single
     force = req.force
 
+    if request.state.user:
+        db.log_activity(request.state.user.id, session.group_id, "upload", session.source_file)
+
     loop = asyncio.get_event_loop()
     loop.run_in_executor(
         None,
@@ -1045,6 +1055,9 @@ async def upload_session(request: Request, file: UploadFile):
     job_id = uuid4().hex[:16]
     job = db.create_job(job_id, group_id, session_id=session_id)
 
+    if request.state.user:
+        db.log_activity(request.state.user.id, group_id, "upload", file.filename)
+
     loop = asyncio.get_event_loop()
     loop.run_in_executor(
         None, _process_upload, job_id, session_id, source, group_id, threshold, single
@@ -1082,6 +1095,8 @@ def tag_track(track_id: int, req: TagRequest, request: Request):
     track, session = _get_track_with_access(db, track_id, request)
     _require_role(request, "editor")
     db.tag_track(track_id, req.song_name, session.group_id)
+    if request.state.user:
+        db.log_activity(request.state.user.id, session.group_id, "tag", req.song_name)
     track = db.get_track(track_id)
     return _track_response(track)
 
@@ -1211,9 +1226,11 @@ def get_song(song_id: int, request: Request):
 @app.put("/api/songs/{song_id}/details", response_model=SongResponse)
 def update_song_details(song_id: int, req: SongDetailsRequest, request: Request):
     db = get_db()
-    _get_song_with_access(db, song_id, request)
+    song = _get_song_with_access(db, song_id, request)
     _require_role(request, "editor")
     db.update_song_details(song_id, req.sheet, req.notes, req.artist)
+    if request.state.user:
+        db.log_activity(request.state.user.id, song.group_id, "song_edit", song.name)
     song = db.get_song(song_id)
     return _song_response(song)
 
@@ -1269,12 +1286,14 @@ def delete_song(song_id: int, request: Request):
 @app.put("/api/songs/{song_id}/name", response_model=SongResponse)
 def rename_song(song_id: int, req: NameRequest, request: Request):
     db = get_db()
-    _get_song_with_access(db, song_id, request)
+    song = _get_song_with_access(db, song_id, request)
     _require_role(request, "editor")
     try:
         db.rename_song(song_id, req.name.strip())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if request.state.user:
+        db.log_activity(request.state.user.id, song.group_id, "song_edit", req.name.strip())
     song = db.get_song(song_id)
     if not song:
         raise HTTPException(status_code=404, detail="Song not found")
@@ -1380,6 +1399,8 @@ def create_setlist(req: CreateSetlistRequest, request: Request):
     if existing:
         raise HTTPException(status_code=409, detail="Setlist already exists in this group")
     sl_id = db.create_setlist(name, req.group_id, date=req.date, notes=req.notes)
+    if request.state.user:
+        db.log_activity(request.state.user.id, req.group_id, "setlist_create", name)
     setlist = db.get_setlist(sl_id)
     return _setlist_response(setlist)
 
@@ -1401,12 +1422,14 @@ def get_setlist_songs(setlist_id: int, request: Request):
 @app.put("/api/setlists/{setlist_id}/name", response_model=SetlistResponse)
 def update_setlist_name(setlist_id: int, req: NameRequest, request: Request):
     db = get_db()
-    _get_setlist_with_access(db, setlist_id, request)
+    setlist = _get_setlist_with_access(db, setlist_id, request)
     _require_role(request, "editor")
     try:
         db.update_setlist_name(setlist_id, req.name.strip())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if request.state.user:
+        db.log_activity(request.state.user.id, setlist.group_id, "setlist_edit", req.name.strip())
     setlist = db.get_setlist(setlist_id)
     return _setlist_response(setlist)
 
@@ -1414,9 +1437,11 @@ def update_setlist_name(setlist_id: int, req: NameRequest, request: Request):
 @app.put("/api/setlists/{setlist_id}/date", response_model=SetlistResponse)
 def update_setlist_date(setlist_id: int, req: DateRequest, request: Request):
     db = get_db()
-    _get_setlist_with_access(db, setlist_id, request)
+    setlist = _get_setlist_with_access(db, setlist_id, request)
     _require_role(request, "editor")
     db.update_setlist_date(setlist_id, req.date)
+    if request.state.user:
+        db.log_activity(request.state.user.id, setlist.group_id, "setlist_edit", setlist.name)
     setlist = db.get_setlist(setlist_id)
     return _setlist_response(setlist)
 
@@ -1424,9 +1449,11 @@ def update_setlist_date(setlist_id: int, req: DateRequest, request: Request):
 @app.put("/api/setlists/{setlist_id}/notes", response_model=SetlistResponse)
 def update_setlist_notes(setlist_id: int, req: NotesRequest, request: Request):
     db = get_db()
-    _get_setlist_with_access(db, setlist_id, request)
+    setlist = _get_setlist_with_access(db, setlist_id, request)
     _require_role(request, "editor")
     db.update_setlist_notes(setlist_id, req.notes)
+    if request.state.user:
+        db.log_activity(request.state.user.id, setlist.group_id, "setlist_edit", setlist.name)
     setlist = db.get_setlist(setlist_id)
     return _setlist_response(setlist)
 
@@ -1434,18 +1461,22 @@ def update_setlist_notes(setlist_id: int, req: NotesRequest, request: Request):
 @app.put("/api/setlists/{setlist_id}/songs", response_model=list[SetlistSongResponse])
 def set_setlist_songs(setlist_id: int, req: SetlistSongsRequest, request: Request):
     db = get_db()
-    _get_setlist_with_access(db, setlist_id, request)
+    setlist = _get_setlist_with_access(db, setlist_id, request)
     _require_role(request, "editor")
     db.set_setlist_songs(setlist_id, req.song_ids)
+    if request.state.user:
+        db.log_activity(request.state.user.id, setlist.group_id, "setlist_edit", setlist.name)
     return db.get_setlist_songs(setlist_id)
 
 
 @app.post("/api/setlists/{setlist_id}/songs", response_model=list[SetlistSongResponse])
 def add_setlist_song(setlist_id: int, req: AddSetlistSongRequest, request: Request):
     db = get_db()
-    _get_setlist_with_access(db, setlist_id, request)
+    setlist = _get_setlist_with_access(db, setlist_id, request)
     _require_role(request, "editor")
     db.add_song_to_setlist(setlist_id, req.song_id, req.position)
+    if request.state.user:
+        db.log_activity(request.state.user.id, setlist.group_id, "setlist_edit", setlist.name)
     return db.get_setlist_songs(setlist_id)
 
 
@@ -1643,6 +1674,16 @@ def admin_delete_group(group_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Group not found")
     db.delete_group(group_id)
     return {"ok": True}
+
+
+# --- Admin stats endpoint ---
+
+
+@app.get("/api/admin/stats")
+def admin_get_stats(request: Request):
+    _require_role(request, "superadmin")
+    db = get_db()
+    return db.get_activity_stats()
 
 
 # --- SPA static file serving ---

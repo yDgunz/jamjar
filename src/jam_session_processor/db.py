@@ -89,6 +89,18 @@ CREATE TABLE IF NOT EXISTS setlist_songs (
     position INTEGER NOT NULL,
     UNIQUE(setlist_id, position)
 );
+
+CREATE TABLE IF NOT EXISTS activity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+    event_type TEXT NOT NULL,
+    detail TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_activity_log_event ON activity_log(event_type);
+CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at);
 """
 
 
@@ -103,6 +115,7 @@ class User:
     role: str
     password_hash: str
     created_at: str
+    last_active_at: str | None = None
 
 
 @dataclass
@@ -250,12 +263,17 @@ class Database:
             self.conn.execute("ALTER TABLE songs ADD COLUMN artist TEXT NOT NULL DEFAULT ''")
             self.conn.commit()
 
+        if "last_active_at" not in cols:
+            self.conn.execute("ALTER TABLE users ADD COLUMN last_active_at TEXT")
+            self.conn.commit()
+
     def close(self):
         self.conn.close()
 
     def reset(self):
         """Drop all tables and recreate the schema."""
         self.conn.executescript("""
+            DROP TABLE IF EXISTS activity_log;
             DROP TABLE IF EXISTS setlist_songs;
             DROP TABLE IF EXISTS setlists;
             DROP TABLE IF EXISTS jobs;
@@ -267,6 +285,72 @@ class Database:
             DROP TABLE IF EXISTS users;
         """)
         self._init_schema()
+
+    # --- Activity tracking ---
+
+    def update_last_active(self, user_id: int):
+        self.conn.execute(
+            "UPDATE users SET last_active_at = datetime('now') WHERE id = ?", (user_id,)
+        )
+        self.conn.commit()
+
+    def log_activity(
+        self, user_id: int, group_id: int | None, event_type: str, detail: str | None = None
+    ):
+        self.conn.execute(
+            "INSERT INTO activity_log (user_id, group_id, event_type, detail) VALUES (?, ?, ?, ?)",
+            (user_id, group_id, event_type, detail),
+        )
+        self.conn.commit()
+
+    def get_activity_stats(self) -> dict:
+        """Return per-user stats and recent activity for the admin stats page."""
+        # Per-user event counts
+        user_rows = self.conn.execute(
+            """SELECT u.id, u.email, u.name, u.last_active_at,
+                      al.event_type, COUNT(al.id) as cnt
+               FROM users u
+               LEFT JOIN activity_log al ON al.user_id = u.id
+               GROUP BY u.id, al.event_type
+               ORDER BY u.email"""
+        ).fetchall()
+        users: dict[int, dict] = {}
+        for row in user_rows:
+            uid = row["id"]
+            if uid not in users:
+                users[uid] = {
+                    "id": uid,
+                    "email": row["email"],
+                    "name": row["name"],
+                    "last_active_at": row["last_active_at"],
+                    "event_counts": {},
+                }
+            if row["event_type"]:
+                users[uid]["event_counts"][row["event_type"]] = row["cnt"]
+
+        # Recent activity
+        recent = self.conn.execute(
+            """SELECT u.name as user_name, al.event_type, al.detail, al.created_at
+               FROM activity_log al
+               JOIN users u ON al.user_id = u.id
+               ORDER BY al.created_at DESC
+               LIMIT 50"""
+        ).fetchall()
+
+        # Totals
+        session_count = self.conn.execute("SELECT COUNT(*) as cnt FROM sessions").fetchone()["cnt"]
+        song_count = self.conn.execute("SELECT COUNT(*) as cnt FROM songs").fetchone()["cnt"]
+        setlist_count = self.conn.execute("SELECT COUNT(*) as cnt FROM setlists").fetchone()["cnt"]
+
+        return {
+            "users": list(users.values()),
+            "recent_activity": [dict(r) for r in recent],
+            "totals": {
+                "sessions": session_count,
+                "songs": song_count,
+                "setlists": setlist_count,
+            },
+        }
 
     # --- Users ---
 

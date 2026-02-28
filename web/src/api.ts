@@ -148,6 +148,27 @@ export interface AdminGroup {
   member_count: number;
 }
 
+export interface UsageStatsUser {
+  id: number;
+  email: string;
+  name: string;
+  last_active_at: string | null;
+  event_counts: Record<string, number>;
+}
+
+export interface UsageStatsActivity {
+  user_name: string;
+  event_type: string;
+  detail: string | null;
+  created_at: string;
+}
+
+export interface UsageStats {
+  users: UsageStatsUser[];
+  recent_activity: UsageStatsActivity[];
+  totals: { sessions: number; songs: number; setlists: number };
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -570,4 +591,6 @@ export const api = {
     fetchJson<{ ok: boolean }>(`${BASE}/admin/groups/${groupId}`, {
       method: "DELETE",
     }),
+
+  adminGetUsageStats: () => fetchJson<UsageStats>(`${BASE}/admin/stats`),
 };
