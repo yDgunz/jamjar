@@ -4,11 +4,12 @@ import { isChordPro, parseChordProLine } from "../utils/chordpro";
 interface ChordSheetProps {
   text: string;
   wrapText: boolean;
+  lyricsOnly?: boolean;
 }
 
-export default function ChordSheet({ text, wrapText }: ChordSheetProps) {
+export default function ChordSheet({ text, wrapText, lyricsOnly }: ChordSheetProps) {
   if (isChordPro(text)) {
-    return <ChordProSheet text={text} wrapText={wrapText} />;
+    return <ChordProSheet text={text} wrapText={wrapText} lyricsOnly={lyricsOnly} />;
   }
 
   if (!wrapText) {
@@ -19,10 +20,10 @@ export default function ChordSheet({ text, wrapText }: ChordSheetProps) {
     );
   }
 
-  return <LegacySheet text={text} />;
+  return <LegacySheet text={text} lyricsOnly={lyricsOnly} />;
 }
 
-function ChordProSheet({ text, wrapText }: { text: string; wrapText: boolean }) {
+function ChordProSheet({ text, wrapText, lyricsOnly }: { text: string; wrapText: boolean; lyricsOnly?: boolean }) {
   const lines = text.split("\n");
 
   return (
@@ -39,6 +40,15 @@ function ChordProSheet({ text, wrapText }: { text: string; wrapText: boolean }) 
               </div>
             );
           case "paired":
+            if (lyricsOnly) {
+              const lyricText = parsed.segments.map((seg) => seg.text || "").join("");
+              if (!lyricText.trim()) return <div key={i} className="h-[1.5em]" />;
+              return (
+                <div key={i} className={wrapText ? "whitespace-pre-wrap" : "whitespace-pre"}>
+                  {lyricText}
+                </div>
+              );
+            }
             return (
               <div key={i} className={!wrapText ? "whitespace-nowrap" : ""}>
                 {parsed.segments.map((seg, j) => (
@@ -57,7 +67,7 @@ function ChordProSheet({ text, wrapText }: { text: string; wrapText: boolean }) 
   );
 }
 
-function LegacySheet({ text }: { text: string }) {
+function LegacySheet({ text, lyricsOnly }: { text: string; lyricsOnly?: boolean }) {
   const lines = parseSheet(text);
 
   return (
@@ -73,6 +83,7 @@ function LegacySheet({ text }: { text: string }) {
               </div>
             );
           case "chords-only":
+            if (lyricsOnly) return null;
             return (
               <div key={i} className="whitespace-pre font-bold text-accent-400">
                 {line.text}
@@ -85,6 +96,15 @@ function LegacySheet({ text }: { text: string }) {
               </div>
             );
           case "paired":
+            if (lyricsOnly) {
+              const lyricText = line.segments.map((seg) => seg.lyric || "").join("");
+              if (!lyricText.trim()) return <div key={i} className="h-[1.5em]" />;
+              return (
+                <div key={i} className="whitespace-pre-wrap">
+                  {lyricText}
+                </div>
+              );
+            }
             return (
               <div key={i}>
                 {line.segments.map((seg, j) => (

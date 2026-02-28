@@ -95,7 +95,7 @@ export default function PerformMode() {
       <div className={`p-4 sm:p-6 ${perform.fontClass}`}>
         {hasSheet ? (
           <div className="mx-auto max-w-3xl">
-            <ChordSheet text={sheetText} wrapText={perform.wrapText} />
+            <ChordSheet text={sheetText} wrapText={perform.wrapText} lyricsOnly={perform.lyricsOnly} />
           </div>
         ) : (
           <p className="text-gray-500">

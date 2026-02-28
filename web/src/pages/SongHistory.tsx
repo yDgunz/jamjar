@@ -98,6 +98,8 @@ export default function SongHistory() {
   const [editingArtist, setEditingArtist] = useState(false);
   const [artistInput, setArtistInput] = useState("");
   const [fetchingLyrics, setFetchingLyrics] = useState(false);
+  const [editingSheet, setEditingSheet] = useState(false);
+  const [sheetInput, setSheetInput] = useState("");
 
   useEffect(() => {
     Promise.all([api.getSong(songId), api.getSongTracks(songId)]).then(
@@ -105,6 +107,7 @@ export default function SongHistory() {
         setSong(songData);
         setNameInput(songData.name);
         setArtistInput(songData.artist);
+        setSheetInput(songData.sheet ?? "");
         setTakes(trackData);
         setLoading(false);
       }
@@ -117,6 +120,7 @@ export default function SongHistory() {
       setSong(s);
       setNameInput(s.name);
       setArtistInput(s.artist);
+      setSheetInput(s.sheet ?? "");
     });
   };
 
@@ -165,7 +169,8 @@ export default function SongHistory() {
 
   const handleFetchLyrics = () => {
     if (!song) return;
-    if (song.sheet) {
+    const currentSheet = editingSheet ? sheetInput : song.sheet;
+    if (currentSheet) {
       setShowFetchConfirm(true);
       return;
     }
@@ -178,10 +183,35 @@ export default function SongHistory() {
     try {
       const result = await api.fetchLyrics(songId);
       setSong(result.song);
+      setSheetInput(result.song.sheet ?? "");
     } catch (err) {
       setErrorMsg(`Fetch lyrics failed: ${err instanceof Error ? err.message : err}`);
     } finally {
       setFetchingLyrics(false);
+    }
+  };
+
+  const handleSaveSheet = async () => {
+    setEditingSheet(false);
+    if (sheetInput.trim() !== (song?.sheet ?? "")) {
+      await handleSaveField("sheet", sheetInput.trim());
+    }
+  };
+
+  const handleCancelSheet = () => {
+    setEditingSheet(false);
+    setSheetInput(song?.sheet ?? "");
+  };
+
+  const handleConvertToChordPro = () => {
+    if (!song) return;
+    const currentSheet = editingSheet ? sheetInput : song.sheet;
+    if (!currentSheet || isChordPro(currentSheet)) return;
+    const converted = toChordPro(currentSheet);
+    if (editingSheet) {
+      setSheetInput(converted);
+    } else {
+      handleSaveField("sheet", converted);
     }
   };
 
@@ -335,9 +365,9 @@ export default function SongHistory() {
                 {fetchingLyrics ? "Fetching..." : "Fetch lyrics"}
               </button>
             )}
-            {canEdit(user) && song?.sheet && !isChordPro(song.sheet) && (
+            {canEdit(user) && (editingSheet ? sheetInput : song?.sheet) && !isChordPro(editingSheet ? sheetInput : song?.sheet ?? "") && (
               <button
-                onClick={() => handleSaveField("sheet", toChordPro(song.sheet))}
+                onClick={handleConvertToChordPro}
                 title="Convert chords-above-lyrics to ChordPro format"
                 className="text-xs rounded border px-2 py-0.5 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-300"
               >
@@ -345,15 +375,59 @@ export default function SongHistory() {
               </button>
             )}
           </div>
-          <EditableField
-              label=""
-              value={song?.sheet ?? ""}
-              placeholder="Add sheet (chords, lyrics, tabs...)"
-              mono
-              rows={12}
-              readOnly={!canEdit(user)}
-              onSave={(v) => handleSaveField("sheet", v)}
-            />
+          {editingSheet && canEdit(user) ? (
+            <div>
+              <textarea
+                autoFocus
+                value={sheetInput}
+                onChange={(e) => setSheetInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && e.metaKey) { e.preventDefault(); handleSaveSheet(); }
+                  if (e.key === "Escape") handleCancelSheet();
+                }}
+                rows={12}
+                className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none font-mono"
+                placeholder="Add sheet (chords, lyrics, tabs...)"
+              />
+              <div className="mt-1 flex items-center gap-2">
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); handleSaveSheet(); }}
+                  className="rounded bg-accent-600 px-3 py-1.5 text-xs text-white hover:bg-accent-500"
+                >
+                  Save
+                </button>
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); handleCancelSheet(); }}
+                  className="rounded px-3 py-1.5 text-xs text-gray-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <span className="hidden text-xs text-gray-600 sm:inline">⌘Enter to save · Esc to cancel</span>
+              </div>
+            </div>
+          ) : song?.sheet ? (
+            canEdit(user) ? (
+              <div className="overflow-x-auto">
+                <button
+                  onClick={() => setEditingSheet(true)}
+                  className="text-left text-base sm:text-sm text-gray-300 hover:text-white font-mono whitespace-pre"
+                >
+                  {song.sheet}
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <p className="text-base sm:text-sm text-gray-300 font-mono whitespace-pre">{song.sheet}</p>
+              </div>
+            )
+          ) : canEdit(user) ? (
+            <button
+              onClick={() => setEditingSheet(true)}
+              className="text-sm text-gray-600 hover:text-gray-400"
+            >
+              + add sheet (chords, lyrics, tabs...)
+            </button>
+          ) : null}
         </div>
         <EditableField
           label="Notes"
