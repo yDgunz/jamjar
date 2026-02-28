@@ -15,7 +15,6 @@ import SetlistDetail from "./pages/SetlistDetail";
 import SetlistPerformMode from "./pages/SetlistPerformMode";
 import Tuner from "./pages/Tuner";
 import Admin from "./pages/Admin";
-import Usage from "./pages/Usage";
 
 function ChangePasswordModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -226,16 +225,6 @@ function Layout({ children }: { children: React.ReactNode }) {
                       Admin
                     </NavLink>
                   )}
-                  {isSuperAdmin(user) && (
-                    <NavLink
-                      to="/usage"
-                      className={({ isActive }) =>
-                        `block px-3 py-2 text-sm ${isActive ? "text-accent-400" : "text-gray-300 hover:bg-gray-700"}`
-                      }
-                    >
-                      Usage
-                    </NavLink>
-                  )}
                   <button
                     onClick={() => { setMenuOpen(false); setPwModalOpen(true); }}
                     className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700"
@@ -323,16 +312,6 @@ function Layout({ children }: { children: React.ReactNode }) {
                       Admin
                     </NavLink>
                   )}
-                  {isSuperAdmin(user) && (
-                    <NavLink
-                      to="/usage"
-                      className={({ isActive }) =>
-                        `block px-3 py-2 text-sm ${isActive ? "text-accent-400" : "text-gray-300 hover:bg-gray-700"}`
-                      }
-                    >
-                      Usage
-                    </NavLink>
-                  )}
                   <button
                     onClick={() => { setMenuOpen(false); setPwModalOpen(true); }}
                     className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700"
@@ -376,7 +355,6 @@ function AuthenticatedApp() {
               <Route path="/setlists" element={<SetlistList />} />
               <Route path="/setlists/:id" element={<SetlistDetail />} />
               <Route path="/admin" element={<Admin />} />
-              <Route path="/usage" element={<Usage />} />
             </Routes>
           </Layout>
         } />
