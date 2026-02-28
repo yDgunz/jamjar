@@ -7,6 +7,7 @@ import EditableField from "../components/EditableField";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
+import { isChordPro, toChordPro } from "../utils/chordpro";
 
 
 function formatTime(sec: number): string {
@@ -322,6 +323,15 @@ export default function SongHistory() {
                 }`}
               >
                 {fetchingLyrics ? "Fetching..." : "Fetch lyrics"}
+              </button>
+            )}
+            {canEdit(user) && song?.sheet && !isChordPro(song.sheet) && (
+              <button
+                onClick={() => handleSaveField("sheet", toChordPro(song.sheet))}
+                title="Convert chords-above-lyrics to ChordPro format"
+                className="text-xs rounded border px-2 py-0.5 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-300"
+              >
+                Convert to ChordPro
               </button>
             )}
           </div>

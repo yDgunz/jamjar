@@ -3,6 +3,8 @@ import { useParams, Link } from "react-router";
 import { api } from "../api";
 import type { Song } from "../api";
 import { transposeChartText } from "../utils/chordUtils";
+import { isChordPro, transposeChordPro } from "../utils/chordpro";
+import ChordSheet from "../components/ChordSheet";
 import PerformControls from "../components/PerformControls";
 import { usePerformMode } from "../hooks/usePerformMode";
 
@@ -35,7 +37,11 @@ export default function PerformMode() {
   if (!song) return <div className="min-h-screen bg-gray-950 p-4 text-gray-400">Song not found.</div>;
 
   const hasSheet = !!song.sheet;
-  const sheetText = hasSheet ? transposeChartText(song.sheet, perform.transpose) : "";
+  const sheetText = hasSheet
+    ? (isChordPro(song.sheet)
+        ? transposeChordPro(song.sheet, perform.transpose)
+        : transposeChartText(song.sheet, perform.transpose))
+    : "";
 
   return (
     <div
@@ -89,9 +95,7 @@ export default function PerformMode() {
       <div className={`p-4 sm:p-6 ${perform.fontClass}`}>
         {hasSheet ? (
           <div className="mx-auto max-w-3xl">
-            <pre className={`${perform.wrapText ? "whitespace-pre-wrap" : "whitespace-pre overflow-x-auto"} font-mono leading-relaxed text-gray-200`}>
-              {sheetText}
-            </pre>
+            <ChordSheet text={sheetText} wrapText={perform.wrapText} />
           </div>
         ) : (
           <p className="text-gray-500">

@@ -3,6 +3,8 @@ import { useParams, Link } from "react-router";
 import { api } from "../api";
 import type { Setlist, SetlistSong } from "../api";
 import { transposeChartText } from "../utils/chordUtils";
+import { isChordPro, transposeChordPro } from "../utils/chordpro";
+import ChordSheet from "../components/ChordSheet";
 import PerformControls from "../components/PerformControls";
 import { usePerformMode } from "../hooks/usePerformMode";
 
@@ -53,7 +55,11 @@ export default function SetlistPerformMode() {
 
   const currentSong = songs[currentIdx];
   const hasSheet = !!currentSong?.sheet;
-  const sheetText = hasSheet ? transposeChartText(currentSong.sheet, perform.transpose) : "";
+  const sheetText = hasSheet
+    ? (isChordPro(currentSong.sheet)
+        ? transposeChordPro(currentSong.sheet, perform.transpose)
+        : transposeChartText(currentSong.sheet, perform.transpose))
+    : "";
 
   return (
     <div
@@ -134,9 +140,7 @@ export default function SetlistPerformMode() {
       <div className={`p-4 sm:p-6 ${perform.fontClass}`}>
         {hasSheet ? (
           <div className="mx-auto max-w-3xl">
-            <pre className={`${perform.wrapText ? "whitespace-pre-wrap" : "whitespace-pre overflow-x-auto"} font-mono leading-relaxed text-gray-200`}>
-              {sheetText}
-            </pre>
+            <ChordSheet text={sheetText} wrapText={perform.wrapText} />
           </div>
         ) : (
           <p className="text-gray-500">
