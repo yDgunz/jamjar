@@ -559,6 +559,13 @@ export const api = {
       body: JSON.stringify({ password }),
     }),
 
+  adminUpdateName: (userId: number, name: string) =>
+    fetchJson<AdminUser>(`${BASE}/admin/users/${userId}/name`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+
   adminUpdateRole: (userId: number, role: string) =>
     fetchJson<AdminUser>(`${BASE}/admin/users/${userId}/role`, {
       method: "PUT",

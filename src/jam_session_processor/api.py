@@ -1600,6 +1600,18 @@ def admin_reset_password(user_id: int, req: PasswordRequest, request: Request):
     return {"ok": True}
 
 
+@app.put("/api/admin/users/{user_id}/name", response_model=AdminUserResponse)
+def admin_update_name(user_id: int, req: NameRequest, request: Request):
+    _require_role(request, "superadmin")
+    db = get_db()
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.update_user_name(user_id, req.name.strip())
+    user = db.get_user(user_id)
+    return _admin_user_response(db, user)
+
+
 class RoleRequest(BaseModel):
     role: str
 

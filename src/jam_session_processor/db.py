@@ -389,6 +389,10 @@ class Database:
         )
         self.conn.commit()
 
+    def update_user_name(self, user_id: int, name: str):
+        self.conn.execute("UPDATE users SET name = ? WHERE id = ?", (name, user_id))
+        self.conn.commit()
+
     def update_user_role(self, user_id: int, role: str):
         if role not in VALID_ROLES:
             valid = ", ".join(sorted(VALID_ROLES))

@@ -37,6 +37,10 @@ export default function Admin() {
   const [newGroupName, setNewGroupName] = useState("");
   const [addingGroup, setAddingGroup] = useState(false);
 
+  // Edit name
+  const [editNameUserId, setEditNameUserId] = useState<number | null>(null);
+  const [editNameValue, setEditNameValue] = useState("");
+
   // Reset password
   const [resetUserId, setResetUserId] = useState<number | null>(null);
   const [resetPassword, setResetPw] = useState("");
@@ -129,6 +133,18 @@ export default function Admin() {
     }
   };
 
+  const handleUpdateName = async (userId: number) => {
+    try {
+      await api.adminUpdateName(userId, editNameValue);
+      setEditNameUserId(null);
+      setEditNameValue("");
+      await refresh();
+      setToast({ message: "Name updated", variant: "success" });
+    } catch (err: any) {
+      setToast({ message: err.message, variant: "error" });
+    }
+  };
+
   const handleAssignGroup = async (userId: number, groupId: number) => {
     try {
       await api.adminAssignGroup(userId, groupId);
@@ -162,6 +178,17 @@ export default function Admin() {
     <div className="space-y-10">
       <h1 className="text-lg font-bold">Admin</h1>
 
+      {/* --- Role Key --- */}
+      <section className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-3">
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Role Permissions</h2>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
+          <div><span className="font-medium text-white">readonly</span> <span className="text-gray-400">— view only</span></div>
+          <div><span className="font-medium text-white">editor</span> <span className="text-gray-400">— edit & tag</span></div>
+          <div><span className="font-medium text-white">admin</span> <span className="text-gray-400">— upload & delete</span></div>
+          <div><span className="font-medium text-white">superadmin</span> <span className="text-gray-400">— manage users</span></div>
+        </div>
+      </section>
+
       {/* --- Users Section --- */}
       <section>
         <div className="mb-3 flex items-center justify-between">
@@ -185,8 +212,47 @@ export default function Admin() {
                 <div className="flex items-center gap-2">
                   <div className="min-w-0 flex-1">
                     <span className="font-medium text-white">{user.email}</span>
-                    {user.name && (
-                      <span className="ml-2 text-sm text-gray-400">{user.name}</span>
+                    {editNameUserId === user.id ? (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          handleUpdateName(user.id);
+                        }}
+                        className="ml-2 inline-flex items-center gap-1"
+                      >
+                        <input
+                          type="text"
+                          value={editNameValue}
+                          onChange={(e) => setEditNameValue(e.target.value)}
+                          autoFocus
+                          placeholder="Name"
+                          className="w-28 rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-xs text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+                        />
+                        <button
+                          type="submit"
+                          className="rounded bg-accent-600 px-2 py-0.5 text-xs text-white hover:bg-accent-500"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditNameUserId(null)}
+                          className="rounded px-2 py-0.5 text-xs text-gray-400 hover:text-gray-200"
+                        >
+                          Cancel
+                        </button>
+                      </form>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setEditNameUserId(user.id);
+                          setEditNameValue(user.name);
+                        }}
+                        className="ml-2 text-sm text-gray-400 hover:text-gray-200"
+                        title="Edit name"
+                      >
+                        {user.name || "—"}
+                      </button>
                     )}
                   </div>
                   <select
