@@ -98,8 +98,11 @@ export default function Admin() {
   const [editUser, setEditUser] = useState<AdminUser | null>(null);
   const [editName, setEditName] = useState("");
   const [editRole, setEditRole] = useState<Role>("editor");
-  const [editPw, setEditPw] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+
+  // Reset password modal
+  const [resetPwUser, setResetPwUser] = useState<AdminUser | null>(null);
+  const [resetPwValue, setResetPwValue] = useState("");
 
   // Add group modal
   const [addGroupOpen, setAddGroupOpen] = useState(false);
@@ -157,7 +160,6 @@ export default function Admin() {
     setEditUser(user);
     setEditName(user.name);
     setEditRole(user.role as Role);
-    setEditPw("");
   };
 
   const handleSaveUser = async () => {
@@ -170,9 +172,6 @@ export default function Admin() {
       if (editRole !== editUser.role) {
         await api.adminUpdateRole(editUser.id, editRole);
       }
-      if (editPw) {
-        await api.adminResetPassword(editUser.id, editPw);
-      }
       setEditUser(null);
       await refresh();
       setToast({ message: "User updated", variant: "success" });
@@ -180,6 +179,18 @@ export default function Admin() {
       setToast({ message: err.message, variant: "error" });
     } finally {
       setEditSaving(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetPwUser || !resetPwValue) return;
+    try {
+      await api.adminResetPassword(resetPwUser.id, resetPwValue);
+      setResetPwUser(null);
+      setResetPwValue("");
+      setToast({ message: "Password reset", variant: "success" });
+    } catch (err: any) {
+      setToast({ message: err.message, variant: "error" });
     }
   };
 
@@ -260,17 +271,6 @@ export default function Admin() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold">Admin</h1>
-        {/* Role key */}
-        <div className="hidden sm:flex items-center gap-4 text-xs text-gray-400">
-          <span><span className="text-gray-300">readonly</span> view</span>
-          <span><span className="text-gray-300">editor</span> edit & tag</span>
-          <span><span className="text-gray-300">admin</span> upload & delete</span>
-          <span><span className="text-gray-300">superadmin</span> manage users</span>
-        </div>
-      </div>
-
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-800">
         {TABS.map((t) => (
@@ -291,10 +291,16 @@ export default function Admin() {
       {/* === Users Tab === */}
       {tab === "users" && (
         <section>
-          <div className="mb-3 flex justify-end">
+          <div className="mb-3 flex items-center gap-4">
+            <div className="hidden sm:flex items-center gap-4 text-xs text-gray-400">
+              <span><span className="text-gray-300">readonly</span> view</span>
+              <span><span className="text-gray-300">editor</span> edit & tag</span>
+              <span><span className="text-gray-300">admin</span> upload & delete</span>
+              <span><span className="text-gray-300">superadmin</span> manage users</span>
+            </div>
             <button
               onClick={openAddUser}
-              className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500"
+              className="ml-auto rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500"
             >
               Add User
             </button>
@@ -338,6 +344,12 @@ export default function Admin() {
                           className="rounded px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
                         >
                           Edit
+                        </button>
+                        <button
+                          onClick={() => { setResetPwUser(user); setResetPwValue(""); }}
+                          className="rounded px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
+                        >
+                          Reset pw
                         </button>
                         <button
                           onClick={() => setDeleteModal({ type: "user", id: user.id, name: user.email })}
@@ -580,16 +592,25 @@ export default function Admin() {
             )}
           </div>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-400 mb-1">Reset Password</label>
-          <input
-            type="password"
-            placeholder="New password (leave blank to keep)"
-            value={editPw}
-            onChange={(e) => setEditPw(e.target.value)}
-            className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
-          />
-        </div>
+      </FormModal>
+
+      {/* Reset password modal */}
+      <FormModal
+        open={resetPwUser !== null}
+        title={`Reset password — ${resetPwUser?.email ?? ""}`}
+        confirmLabel="Reset Password"
+        onConfirm={handleResetPassword}
+        onCancel={() => setResetPwUser(null)}
+      >
+        <input
+          type="password"
+          placeholder="New password"
+          value={resetPwValue}
+          onChange={(e) => setResetPwValue(e.target.value)}
+          required
+          autoFocus
+          className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+        />
       </FormModal>
 
       {/* Add group modal */}
