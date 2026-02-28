@@ -277,7 +277,7 @@ export default function Admin() {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium transition -mb-px ${
+            className={`cursor-pointer px-4 py-2 text-sm font-medium transition -mb-px ${
               tab === t.key
                 ? "border-b-2 border-accent-500 text-accent-400"
                 : "text-gray-400 hover:text-gray-200"
