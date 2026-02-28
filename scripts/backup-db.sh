@@ -35,5 +35,11 @@ gzip "$BACKUP_FILE"
 
 echo "$(date -Iseconds) Backup created: ${BACKUP_FILE}.gz ($(du -h "${BACKUP_FILE}.gz" | cut -f1))"
 
-# Keep last 30 backups, remove older ones
+# Keep last 30 local backups, remove older ones
 ls -1t "${BACKUP_DIR}"/jam_sessions_*.db.gz 2>/dev/null | tail -n +31 | xargs -r rm -f
+
+# Push offsite to R2 if configured
+if [ -n "${JAM_R2_BUCKET:-}" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  python3 "${SCRIPT_DIR}/backup-to-r2.py" "${BACKUP_FILE}.gz"
+fi

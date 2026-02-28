@@ -2,15 +2,14 @@
 
 ## Go-live prerequisites
 
-- Pre-deploy database backup — call `scripts/backup-db.sh` in the deploy workflow before `docker compose up --build -d`
 - Health check — make `GET /health` verify DB connectivity (`SELECT 1`), add `HEALTHCHECK` directive to Dockerfile and docker-compose.yml
 - Rate limiting on login — add `slowapi` or similar with per-IP limit on `/api/auth/login` to prevent brute force
 - Input length limits — add `max_length` constraints to all Pydantic string fields (`song_name`, `notes`, `name`, `artist`, `sheet`, etc.)
 
-## Go-live follow-ups
+## Post-launch
 
+- Test restore process — pull a backup from R2, restore it to a fresh SQLite DB, and verify data integrity; document the full disaster recovery procedure (new VPS from scratch)
 - Deploy rollback strategy — tag or keep the previous Docker image before rebuilding so a bad deploy can be reverted without manual SSH fixes
-- Automated backup schedule — set up a cron job (host or container) running `backup-db.sh` daily; script already handles 30-backup rotation
 - Schema migrations — replace hand-rolled `_migrate()` in `db.py` with Alembic for versioned, reversible migrations
 
 ## Later

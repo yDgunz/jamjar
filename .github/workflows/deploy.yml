@@ -8,6 +8,18 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Pre-deploy database backup
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          script: |
+            set -e
+            cd /opt/jamjar
+            docker compose exec -T app /app/scripts/backup-db.sh || echo "Pre-deploy backup skipped (container not running)"
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
         with:
@@ -21,3 +33,14 @@ jobs:
             git pull
             docker compose up --build -d
             docker image prune -f
+
+      - name: Set up daily backup cron job
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          script: |
+            CRON_CMD="0 3 * * * cd /opt/jamjar && docker compose exec -T app /app/scripts/backup-db.sh >> /var/log/jam-backup.log 2>&1"
+            (crontab -l 2>/dev/null | grep -v "backup-db.sh" ; echo "$CRON_CMD") | crontab -
