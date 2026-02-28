@@ -161,9 +161,19 @@ export default function SongHistory() {
     }
   };
 
-  const handleFetchLyrics = async () => {
+  const [showFetchConfirm, setShowFetchConfirm] = useState(false);
+
+  const handleFetchLyrics = () => {
     if (!song) return;
-    if (song.sheet && !confirm("Append fetched lyrics to existing sheet content?")) return;
+    if (song.sheet) {
+      setShowFetchConfirm(true);
+      return;
+    }
+    doFetchLyrics();
+  };
+
+  const doFetchLyrics = async () => {
+    setShowFetchConfirm(false);
     setFetchingLyrics(true);
     try {
       const result = await api.fetchLyrics(songId);
@@ -363,6 +373,14 @@ export default function SongHistory() {
           ))}
         </div>
       )}
+      <Modal
+        open={showFetchConfirm}
+        title="Append lyrics"
+        message="Append fetched lyrics to existing sheet content?"
+        confirmLabel="Append"
+        onConfirm={doFetchLyrics}
+        onCancel={() => setShowFetchConfirm(false)}
+      />
       <Modal
         open={showDelete}
         title="Delete song"
