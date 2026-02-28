@@ -188,6 +188,25 @@ def get_me(request: Request):
     )
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@app.put("/api/auth/password")
+def change_password(req: ChangePasswordRequest, request: Request):
+    user = request.state.user
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if not verify_password(req.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    db = get_db()
+    db.update_user_password(user.id, hash_password(req.new_password))
+    return {"ok": True}
+
+
 @app.post("/api/auth/logout")
 def logout():
     response = JSONResponse(content={"ok": True})

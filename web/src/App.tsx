@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { isSuperAdmin } from "./api";
+import { api, isSuperAdmin, ApiError } from "./api";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { useOnline } from "./hooks/useOnline";
 import Login from "./pages/Login";
@@ -16,11 +16,124 @@ import SetlistPerformMode from "./pages/SetlistPerformMode";
 import Tuner from "./pages/Tuner";
 import Admin from "./pages/Admin";
 
+function ChangePasswordModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setError("");
+      setSuccess(false);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [open, onClose]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (newPassword.length < 8) {
+      setError("New password must be at least 8 characters");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("New passwords don't match");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.changePassword(currentPassword, newPassword);
+      setSuccess(true);
+      setTimeout(onClose, 1500);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to change password");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative mx-4 w-full max-w-sm rounded-lg border border-gray-700 bg-gray-900 px-6 py-5 shadow-xl">
+        <h3 className="text-sm font-semibold text-white">Change Password</h3>
+        {success ? (
+          <p className="mt-3 text-sm text-green-400">Password changed successfully!</p>
+        ) : (
+          <form onSubmit={handleSubmit} className="mt-3 space-y-3">
+            <input
+              ref={inputRef}
+              type="password"
+              placeholder="Current password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+              required
+            />
+            <input
+              type="password"
+              placeholder="New password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+              required
+            />
+            <input
+              type="password"
+              placeholder="Confirm new password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+              required
+            />
+            {error && <p className="text-sm text-red-400">{error}</p>}
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded px-4 py-2 text-sm text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500 disabled:opacity-50"
+              >
+                {submitting ? "Saving..." : "Change Password"}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const online = useOnline();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [pwModalOpen, setPwModalOpen] = useState(false);
   const desktopMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
 
@@ -113,6 +226,12 @@ function Layout({ children }: { children: React.ReactNode }) {
                     </NavLink>
                   )}
                   <button
+                    onClick={() => { setMenuOpen(false); setPwModalOpen(true); }}
+                    className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700"
+                  >
+                    Change password
+                  </button>
+                  <button
                     onClick={logout}
                     className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700"
                   >
@@ -194,6 +313,12 @@ function Layout({ children }: { children: React.ReactNode }) {
                     </NavLink>
                   )}
                   <button
+                    onClick={() => { setMenuOpen(false); setPwModalOpen(true); }}
+                    className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700"
+                  >
+                    Change password
+                  </button>
+                  <button
                     onClick={logout}
                     className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700"
                   >
@@ -205,6 +330,7 @@ function Layout({ children }: { children: React.ReactNode }) {
           )}
         </div>
       </nav>
+      <ChangePasswordModal open={pwModalOpen} onClose={() => setPwModalOpen(false)} />
     </div>
   );
 }

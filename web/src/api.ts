@@ -190,6 +190,13 @@ export const api = {
   logout: () =>
     fetch(`${BASE}/auth/logout`, { method: "POST", credentials: "include" }),
 
+  changePassword: (currentPassword: string, newPassword: string) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/auth/password`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
+
   // Sessions
   listSessions: () => fetchJson<Session[]>(`${BASE}/sessions`),
 

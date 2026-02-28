@@ -135,6 +135,41 @@ def test_logout(auth_client):
     assert resp.status_code == 200
 
 
+def test_change_password(auth_client):
+    client, uid, gid = auth_client
+    resp = client.put(
+        "/api/auth/password",
+        json={"current_password": "password", "new_password": "newpassword123"},
+    )
+    assert resp.status_code == 200
+    # Verify new password works
+    resp = client.post(
+        "/api/auth/login",
+        json={"email": "test@example.com", "password": "newpassword123"},
+    )
+    assert resp.status_code == 200
+
+
+def test_change_password_wrong_current(auth_client):
+    client, uid, gid = auth_client
+    resp = client.put(
+        "/api/auth/password",
+        json={"current_password": "wrongpass", "new_password": "newpassword123"},
+    )
+    assert resp.status_code == 400
+    assert "incorrect" in resp.json()["detail"].lower()
+
+
+def test_change_password_too_short(auth_client):
+    client, uid, gid = auth_client
+    resp = client.put(
+        "/api/auth/password",
+        json={"current_password": "password", "new_password": "short"},
+    )
+    assert resp.status_code == 400
+    assert "8 characters" in resp.json()["detail"]
+
+
 def test_api_key_auth(client, tmp_path):
     db = api._db
     db.create_group("TestBand")
