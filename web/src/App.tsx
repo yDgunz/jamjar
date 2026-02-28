@@ -21,7 +21,8 @@ function Layout({ children }: { children: React.ReactNode }) {
   const online = useOnline();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const desktopMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   // Close menu on navigation
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
@@ -30,7 +31,10 @@ function Layout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!menuOpen) return;
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+      const target = e.target as Node;
+      if (desktopMenuRef.current?.contains(target)) return;
+      if (mobileMenuRef.current?.contains(target)) return;
+      setMenuOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -85,7 +89,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             </NavLink>
           </nav>
           {user && (
-            <div className="relative" ref={menuRef}>
+            <div className="relative" ref={desktopMenuRef}>
               <button
                 onClick={() => setMenuOpen(!menuOpen)}
                 className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-600 text-xs font-semibold text-white hover:bg-accent-500"
@@ -163,7 +167,7 @@ function Layout({ children }: { children: React.ReactNode }) {
           </NavLink>
           {/* Account tab */}
           {user && (
-            <div className="relative flex flex-1 flex-col items-center" ref={menuRef}>
+            <div className="relative flex flex-1 flex-col items-center" ref={mobileMenuRef}>
               <button
                 onClick={() => setMenuOpen(!menuOpen)}
                 className={`flex flex-col items-center gap-0.5 py-2 ${menuOpen ? "text-accent-400" : "text-gray-500"}`}
