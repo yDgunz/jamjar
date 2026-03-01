@@ -1196,6 +1196,7 @@ def list_songs(request: Request):
 class CreateSongRequest(BaseModel):
     name: str
     group_id: int
+    artist: str = ""
 
 
 @app.post("/api/songs", response_model=SongResponse)
@@ -1212,6 +1213,9 @@ def create_song(req: CreateSongRequest, request: Request):
     if existing:
         raise HTTPException(status_code=409, detail="Song already exists in this group")
     song_id = db._get_or_create_song(name, req.group_id)
+    artist = req.artist.strip()
+    if artist:
+        db.update_song_details(song_id, "", "", artist)
     song = db.get_song(song_id)
     return _song_response(song)
 

@@ -305,11 +305,11 @@ export const api = {
   // Songs
   listSongs: () => fetchJson<Song[]>(`${BASE}/songs`),
 
-  createSong: (name: string, groupId: number) =>
+  createSong: (name: string, groupId: number, artist?: string) =>
     fetchJson<Song>(`${BASE}/songs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, group_id: groupId }),
+      body: JSON.stringify({ name, group_id: groupId, ...(artist ? { artist } : {}) }),
     }),
 
   getSong: (songId: number) => fetchJson<Song>(`${BASE}/songs/${songId}`),

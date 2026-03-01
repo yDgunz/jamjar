@@ -20,6 +20,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { api, formatDate, canEdit, canAdmin } from "../api";
 import type { Setlist, SetlistSong, Song } from "../api";
 import EditableField from "../components/EditableField";
+import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
@@ -119,6 +120,10 @@ export default function SetlistDetail() {
   const [addSongId, setAddSongId] = useState<number | "">("");
   const [searchQuery, setSearchQuery] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [showCreateSong, setShowCreateSong] = useState(false);
+  const [newSongName, setNewSongName] = useState("");
+  const [newSongArtist, setNewSongArtist] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -243,6 +248,26 @@ export default function SetlistDetail() {
       setSetlist(sl);
     } catch (err) {
       setErrorMsg(`Failed to add song: ${err instanceof Error ? err.message : err}`);
+    }
+  };
+
+  const handleCreateAndAdd = async () => {
+    const name = newSongName.trim();
+    if (!name || !setlist) return;
+    try {
+      const song = await api.createSong(name, setlist.group_id, newSongArtist.trim() || undefined);
+      setAllSongs((prev) => [...prev, song]);
+      const updated = await api.addSetlistSong(setlistId, song.id);
+      setSongs(updated);
+      setShowCreateSong(false);
+      setNewSongName("");
+      setNewSongArtist("");
+      setCreateError(null);
+      setSearchQuery("");
+      const sl = await api.getSetlist(setlistId);
+      setSetlist(sl);
+    } catch (err) {
+      setCreateError(`${err instanceof Error ? err.message : err}`);
     }
   };
 
@@ -429,7 +454,7 @@ export default function SetlistDetail() {
               placeholder="Add a song..."
               className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
             />
-            {dropdownOpen && !addSongId && availableSongs.length > 0 && (
+            {dropdownOpen && !addSongId && (availableSongs.length > 0 || searchQuery) && (
               <div className="absolute left-0 right-0 z-10 bottom-full mb-1 max-h-48 overflow-y-auto rounded border border-gray-700 bg-gray-800 shadow-lg">
                 {availableSongs.map((s) => (
                   <button
@@ -446,6 +471,19 @@ export default function SetlistDetail() {
                     {s.artist && <span className="ml-2 text-xs text-gray-500">{s.artist}</span>}
                   </button>
                 ))}
+                <button
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setNewSongName(searchQuery);
+                    setNewSongArtist("");
+                    setCreateError(null);
+                    setShowCreateSong(true);
+                    setDropdownOpen(false);
+                  }}
+                  className="w-full border-t border-gray-700 px-3 py-1.5 text-left text-sm text-accent-400 hover:bg-gray-700"
+                >
+                  + Create new song{searchQuery ? ` "${searchQuery}"` : ""}
+                </button>
               </div>
             )}
           </div>
@@ -458,6 +496,30 @@ export default function SetlistDetail() {
           </button>
         </div>
       )}
+
+      <FormModal
+        open={showCreateSong}
+        title="New Song"
+        error={createError}
+        confirmLabel="Create & Add"
+        confirmDisabled={!newSongName.trim()}
+        onConfirm={handleCreateAndAdd}
+        onCancel={() => { setShowCreateSong(false); setCreateError(null); }}
+      >
+        <input
+          autoFocus
+          value={newSongName}
+          onChange={(e) => setNewSongName(e.target.value)}
+          placeholder="Song name"
+          className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+        />
+        <input
+          value={newSongArtist}
+          onChange={(e) => setNewSongArtist(e.target.value)}
+          placeholder="Artist (optional)"
+          className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+        />
+      </FormModal>
 
       <Modal
         open={showDelete}

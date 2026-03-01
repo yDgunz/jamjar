@@ -27,6 +27,7 @@ export default function SongCatalog() {
   });
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newArtist, setNewArtist] = useState("");
   const [newGroupId, setNewGroupId] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -68,7 +69,7 @@ export default function SongCatalog() {
     const groupId = newGroupId ?? defaultGroupId;
     if (!groupId) return;
     try {
-      const song = await api.createSong(name, groupId);
+      const song = await api.createSong(name, groupId, newArtist.trim() || undefined);
       navigate(`/songs/${song.id}`);
     } catch (err) {
       setErrorMsg(`Failed to create song: ${err instanceof Error ? err.message : err}`);
@@ -119,7 +120,7 @@ export default function SongCatalog() {
         {canEdit(user) && (
           <div className="ml-auto shrink-0">
             <button
-              onClick={() => { setCreating(true); setNewName(""); setNewGroupId(groupFilter); setErrorMsg(null); }}
+              onClick={() => { setCreating(true); setNewName(""); setNewArtist(""); setNewGroupId(groupFilter); setErrorMsg(null); }}
               className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500"
               title="New Song"
             >
@@ -145,6 +146,12 @@ export default function SongCatalog() {
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           placeholder="Song name"
+          className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+        />
+        <input
+          value={newArtist}
+          onChange={(e) => setNewArtist(e.target.value)}
+          placeholder="Artist (optional)"
           className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
         />
         {user && user.groups.length > 1 && (
