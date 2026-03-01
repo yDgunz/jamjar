@@ -37,6 +37,7 @@ function SortableRow({
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
@@ -52,13 +53,15 @@ function SortableRow({
     <div
       ref={setNodeRef}
       style={style}
-      {...(readOnly ? {} : { ...attributes, ...listeners })}
-      className={`flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 ${
-        !readOnly ? "cursor-grab touch-none active:cursor-grabbing" : ""
-      }`}
+      className={`flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900 px-4 py-3`}
     >
       {!readOnly && (
-        <div className="text-gray-500">
+        <div
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          className="cursor-grab touch-none text-gray-500 active:cursor-grabbing"
+        >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
             <circle cx="9" cy="6" r="1.5" />
             <circle cx="15" cy="6" r="1.5" />
