@@ -357,6 +357,7 @@ class Database:
     def create_user(
         self, email: str, password_hash: str, name: str = "", role: str = "editor"
     ) -> int:
+        email = email.strip()
         if role not in VALID_ROLES:
             valid = ", ".join(sorted(VALID_ROLES))
             raise ValueError(f"Invalid role '{role}'. Must be one of: {valid}")
@@ -368,6 +369,7 @@ class Database:
         return cur.lastrowid
 
     def get_user_by_email(self, email: str) -> User | None:
+        email = email.strip()
         row = self.conn.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", (email,)).fetchone()
         if not row:
             return None
