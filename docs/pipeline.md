@@ -2,7 +2,7 @@
 
 ## Pipeline Steps
 
-1. **Metadata extraction** — reads `.m4a` and `.wav` files using mutagen. Recording date comes from iPhone `©day` tag, then filename parsing (`M-D-YY`, `M-D-YYYY`, `YYYY-MM-DD`).
+1. **Metadata extraction** — reads `.m4a`, `.wav`, `.mp3`, `.flac`, and `.ogg` files using mutagen. Recording date comes from iPhone `©day` tag, then filename parsing (`M-D-YY`, `M-D-YYYY`, `YYYY-MM-DD`).
 2. **Song detection** — decodes to 8 kHz mono PCM via ffmpeg, computes per-second RMS energy, applies 15-second rolling average, finds sustained high-energy regions (default: 2+ minutes above -20 dB). Can be skipped with single-song mode, which imports the entire file as one track.
 3. **Export** — ffmpeg seek+split extracts each song to AAC (M4A container, 192kbps). No full-file loading.
 4. **Storage** — exported tracks are saved locally and optionally uploaded to Cloudflare R2 (when configured).

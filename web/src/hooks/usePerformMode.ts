@@ -37,6 +37,7 @@ export function usePerformMode() {
   const touchStartRef = useRef<{ y: number; time: number } | null>(null);
   const userTouchingRef = useRef(false);
   const resumeTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const touchLastYRef = useRef<number>(0);
 
   // Persist settings
   useEffect(() => { localStorage.setItem(LS_FONT_KEY, String(fontIdx)); }, [fontIdx]);
@@ -67,32 +68,17 @@ export function usePerformMode() {
     const content = contentRef.current;
     if (!container || !content) return;
 
-    // Enter transform-based scrolling
-    function enterTransformMode() {
-      if (!container || !content) return;
-      offsetRef.current = container.scrollTop;
-      container.scrollTop = 0;
-      container.style.overflow = "hidden";
-      content.style.willChange = "transform";
-      content.style.transform = `translateY(${-offsetRef.current}px)`;
-      lastTimeRef.current = 0;
-    }
-
-    // Exit transform mode back to native scroll
-    function exitTransformMode() {
-      if (!container || !content) return;
-      cancelAnimationFrame(animRef.current);
-      const offset = offsetRef.current;
-      content.style.willChange = "";
-      content.style.transform = "";
-      container.style.overflow = "";
-      container.scrollTop = offset;
+    function clampOffset() {
+      if (!content || !container) return;
+      const scrollable = content.offsetHeight - container.clientHeight;
+      offsetRef.current = Math.max(0, Math.min(scrollable, offsetRef.current));
     }
 
     function step(timestamp: number) {
       if (!container || !content) return;
       if (userTouchingRef.current) {
-        // User is manually scrolling — skip this frame
+        // User is manually scrolling — pause auto-advance but keep looping
+        lastTimeRef.current = 0;
         animRef.current = requestAnimationFrame(step);
         return;
       }
@@ -121,36 +107,65 @@ export function usePerformMode() {
       animRef.current = requestAnimationFrame(step);
     }
 
-    // Touch handlers: pause auto-scroll while user is touching
-    function onTouchStart() {
+    // Touch handlers: adjust transform offset directly while user drags.
+    // We stay in transform mode throughout — iOS determines the scroll
+    // target at touchstart time, so switching overflow mid-touch doesn't
+    // work. Instead we intercept touch events and move the content ourselves.
+    function onTouchStart(e: TouchEvent) {
       userTouchingRef.current = true;
+      touchLastYRef.current = e.touches[0].clientY;
       clearTimeout(resumeTimeoutRef.current);
-      exitTransformMode();
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      if (!content || !container) return;
+      e.preventDefault();
+      const y = e.touches[0].clientY;
+      const dy = touchLastYRef.current - y; // positive = scroll down
+      touchLastYRef.current = y;
+      offsetRef.current += dy;
+      clampOffset();
+      content.style.transform = `translateY(${-offsetRef.current}px)`;
     }
 
     function onTouchEnd() {
       userTouchingRef.current = false;
-      // Brief delay before resuming so the user can see where they landed
-      resumeTimeoutRef.current = setTimeout(() => {
-        if (!scrollRef.current || !contentRef.current) return;
-        enterTransformMode();
-        lastTimeRef.current = 0;
-        animRef.current = requestAnimationFrame(step);
-      }, 600);
+      // Reset lastTimeRef so auto-scroll resumes smoothly from current position
+      lastTimeRef.current = 0;
     }
 
-    enterTransformMode();
+    // Wheel handler: adjust offset directly so trackpad/mouse scroll works
+    // during transform-based auto-scroll.
+    function onWheel(e: WheelEvent) {
+      if (!container || !content) return;
+      e.preventDefault();
+      offsetRef.current += e.deltaY;
+      clampOffset();
+      content.style.transform = `translateY(${-offsetRef.current}px)`;
+    }
+
+    // Enter transform mode
+    offsetRef.current = container.scrollTop;
+    container.scrollTop = 0;
+    container.style.overflow = "hidden";
+    content.style.willChange = "transform";
+    content.style.transform = `translateY(${-offsetRef.current}px)`;
+    lastTimeRef.current = 0;
     animRef.current = requestAnimationFrame(step);
 
     container.addEventListener("touchstart", onTouchStart, { passive: true });
+    container.addEventListener("touchmove", onTouchMove, { passive: false });
     container.addEventListener("touchend", onTouchEnd, { passive: true });
+    container.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
       cancelAnimationFrame(animRef.current);
       clearTimeout(resumeTimeoutRef.current);
       userTouchingRef.current = false;
       container.removeEventListener("touchstart", onTouchStart);
+      container.removeEventListener("touchmove", onTouchMove);
       container.removeEventListener("touchend", onTouchEnd);
+      container.removeEventListener("wheel", onWheel);
       const offset = offsetRef.current;
       content.style.willChange = "";
       content.style.transform = "";

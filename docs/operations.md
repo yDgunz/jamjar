@@ -7,7 +7,7 @@ Full reset of the production server: wipe the database, clear R2 storage, and re
 ### Prerequisites
 
 - SSH access to the server (credentials in GitHub Secrets)
-- R2 credentials in your local `.env` with `JAM_R2_ENABLED=true`
+- R2 credentials in your local `.env` (`JAM_R2_BUCKET`, `JAM_R2_ACCESS_KEY_ID`, `JAM_R2_SECRET_ACCESS_KEY`, `JAM_R2_ACCOUNT_ID`)
 
 ### 1. SSH into the server
 
@@ -94,3 +94,44 @@ jam-session upload "path/to/recording.m4a" -s https://jam-jar.app -g <group-name
 - Supported formats: `.m4a`, `.wav`, `.mp3`, `.flac`, `.ogg`
 - The server processes each file in the background (song detection + track export). On a VPS this can take a few minutes per file.
 - Duplicate filenames within the same group are rejected (409 error).
+
+## Querying the database
+
+Run SQLite queries directly against the production database from inside the Docker container.
+
+### Interactive shell
+
+```bash
+docker compose exec app sqlite3 /data/jam_sessions.db
+```
+
+### One-liner from the host
+
+```bash
+docker compose exec app sqlite3 /data/jam_sessions.db "SELECT count(*) FROM sessions;"
+```
+
+### Useful queries
+
+```sql
+-- List sessions
+SELECT id, name, date, duration_sec FROM sessions ORDER BY date DESC;
+
+-- List songs with track counts
+SELECT s.name, s.artist, COUNT(t.id) as tracks
+FROM songs s LEFT JOIN tracks t ON t.song_id = s.id
+GROUP BY s.id ORDER BY s.name;
+
+-- Check users and groups
+SELECT u.email, u.role, g.name as group_name
+FROM users u
+JOIN user_groups ug ON ug.user_id = u.id
+JOIN groups g ON g.id = ug.group_id;
+
+-- Find untagged tracks
+SELECT t.id, t.track_number, s.name as session_name
+FROM tracks t
+JOIN sessions s ON s.id = t.session_id
+WHERE t.song_id IS NULL
+ORDER BY s.date DESC;
+```

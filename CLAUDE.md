@@ -13,6 +13,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Tool for processing and cataloging band jam session recordings. Splits full iPhone recordings into individual songs, stores them in a catalog database, and provides a web UI for reviewing, tagging, and comparing takes across sessions.
 
+## Quick Reference
+
+| Item | Value |
+|------|-------|
+| Stack | Python 3.12 (FastAPI) + React/TypeScript/Tailwind |
+| Database | SQLite (`jam_sessions.db`) |
+| Audio | FFmpeg, AAC/M4A 192kbps |
+| Auth | JWT cookies + API key header |
+| Storage | Local filesystem or Cloudflare R2 |
+| Dev ports | API `:8000`, Frontend `:5173` |
+| Deploy | Docker Compose via GitHub Actions to VPS |
+
 ## Architecture
 
 ### System Layers
@@ -50,6 +62,7 @@ email (UNIQUE)            name (UNIQUE)              group_id (FK→groups)
 name                      created_at                 PRIMARY KEY (user_id, group_id)
 role
 password_hash
+last_active_at
 created_at
 
 sessions                    tracks                        songs
@@ -57,11 +70,11 @@ sessions                    tracks                        songs
 id (PK)                    id (PK)                        id (PK)
 group_id (FK→groups)       session_id (FK→sessions)       group_id (FK→groups)
 name                       song_id (FK→songs)             name
-date                       track_number                   sheet, notes
-source_file                start_sec, end_sec             created_at
-notes                      duration_sec                   UNIQUE(group_id, name)
-created_at                 audio_path, notes
-                           created_at
+date                       track_number                   artist
+source_file                start_sec, end_sec             sheet, notes
+duration_sec               duration_sec                   created_at
+notes                      audio_path, notes              UNIQUE(group_id, name)
+created_at                 created_at
 
 jobs                           setlists                       setlist_songs
 ──────────────                ──────────────                 ─────────────────
@@ -69,10 +82,20 @@ id (PK, TEXT)                 id (PK)                        id (PK)
 type                          group_id (FK→groups)           setlist_id (FK→setlists)
 group_id (FK→groups)          name                           song_id (FK→songs)
 status (pending→…)            date                           position
-progress                      notes                          UNIQUE(setlist_id, position)
+progress (TEXT)               notes                          UNIQUE(setlist_id, position)
 session_id (nullable)         created_at
 error                         UNIQUE(group_id, name)
 created_at, updated_at
+
+activity_log
+──────────────
+id (PK)
+user_id (FK→users)
+group_id (FK→groups, nullable)
+event_type
+detail
+created_at
+(indexes: user, event_type, created_at)
 ```
 
 - **Multi-tenancy:** groups own sessions, songs, and setlists; users belong to groups via `user_groups`
@@ -83,6 +106,7 @@ created_at, updated_at
 - `jobs → sessions`: many-to-one (nullable), SET NULL on delete
 - `setlists → setlist_songs`: one-to-many, CASCADE delete
 - `setlist_songs → songs`: many-to-one, CASCADE on delete
+- `activity_log → users/groups`: many-to-one, tracks user activity for admin stats
 - Songs are created on first tag and reused across sessions within a group
 - Setlists are group-scoped ordered collections of songs, independent of sessions
 
@@ -90,13 +114,13 @@ created_at, updated_at
 
 All `/api` endpoints require authentication (JWT cookie or API key header). Role requirements noted in parentheses.
 
-**Auth:** `POST /api/auth/login` | `POST /api/auth/logout` | `GET /api/auth/me`
+**Auth:** `POST /api/auth/login` | `POST /api/auth/logout` | `GET /api/auth/me` | `PUT /api/auth/password`
 **Sessions:** `GET /api/sessions` | `GET /api/sessions/{id}` | `GET /api/sessions/{id}/tracks` | `GET /api/sessions/{id}/audio` | `PUT /api/sessions/{id}/name` | `PUT /api/sessions/{id}/notes` | `PUT /api/sessions/{id}/date` | `PUT /api/sessions/{id}/group` (admin) | `DELETE /api/sessions/{id}` (admin) | `POST /api/sessions/{id}/reprocess` (admin) | `POST /api/sessions/upload/init` (admin, returns presigned URL + job) | `POST /api/sessions/upload/complete` (admin, starts processing after R2 upload) | `POST /api/sessions/upload` (admin, direct multipart fallback, returns 202 + job)
 **Jobs:** `GET /api/jobs/{id}` — poll for upload progress (status: pending → processing → completed/failed)
 **Tracks:** `POST /api/tracks/{id}/tag` | `DELETE /api/tracks/{id}/tag` | `PUT /api/tracks/{id}/notes` | `GET /api/tracks/{id}/audio` | `POST /api/tracks/{id}/merge` (admin) | `POST /api/tracks/{id}/split` (admin)
-**Songs:** `GET /api/songs` | `GET /api/songs/{id}` | `GET /api/songs/{id}/tracks` | `PUT /api/songs/{id}/details` | `PUT /api/songs/{id}/name` | `PUT /api/songs/{id}/group` (admin) | `DELETE /api/songs/{id}` (admin)
+**Songs:** `GET /api/songs` | `POST /api/songs` (editor) | `GET /api/songs/{id}` | `GET /api/songs/{id}/tracks` | `PUT /api/songs/{id}/details` | `PUT /api/songs/{id}/name` | `PUT /api/songs/{id}/group` (admin) | `POST /api/songs/{id}/fetch-lyrics` (editor) | `DELETE /api/songs/{id}` (admin)
 **Setlists:** `GET /api/setlists` | `POST /api/setlists` (editor) | `GET /api/setlists/{id}` | `GET /api/setlists/{id}/songs` | `PUT /api/setlists/{id}/name` (editor) | `PUT /api/setlists/{id}/date` (editor) | `PUT /api/setlists/{id}/notes` (editor) | `PUT /api/setlists/{id}/songs` (editor, replace order) | `POST /api/setlists/{id}/songs` (editor, add song) | `DELETE /api/setlists/{id}/songs/{position}` (editor) | `DELETE /api/setlists/{id}` (admin)
-**Admin:** `GET/POST /api/admin/users` | `DELETE /api/admin/users/{id}` | `PUT .../password` | `PUT .../role` | `POST/DELETE .../groups/{id}` | `GET/POST /api/admin/groups` | `DELETE /api/admin/groups/{id}` (all superadmin)
+**Admin:** `GET/POST /api/admin/users` | `DELETE /api/admin/users/{id}` | `PUT .../password` | `PUT .../role` | `PUT .../name` | `POST/DELETE .../groups/{id}` | `GET/POST /api/admin/groups` | `DELETE /api/admin/groups/{id}` | `GET /api/admin/stats` (all superadmin)
 **Health:** `GET /health`
 
 ## Build & Development Commands
@@ -114,6 +138,7 @@ jam-session upload <file> -s URL -g GROUP  # upload to remote server
 jam-session add-user EMAIL                 # create user (prompts for password)
 jam-session add-group NAME                 # create group
 jam-session assign-user EMAIL GROUP        # add user to group
+jam-session remove-user EMAIL GROUP         # remove user from group
 jam-session list-users / list-groups       # list entities
 jam-session reset-password EMAIL           # change password
 jam-session set-role EMAIL ROLE            # change user role
@@ -205,6 +230,7 @@ All configuration is via `JAM_*` environment variables. Defaults match pre-confi
 | `JAM_R2_ACCESS_KEY_ID` | *(empty)* | R2 access key |
 | `JAM_R2_SECRET_ACCESS_KEY` | *(empty)* | R2 secret key |
 | `JAM_R2_BUCKET` | *(empty)* | R2 bucket name (enables remote storage when set) |
+| `JAM_R2_ENABLED` | *(empty)* | Enable R2 storage (`true`/`1`/`yes`). Redundant if `JAM_R2_BUCKET` is set |
 | `JAM_R2_CUSTOM_DOMAIN` | *(empty)* | Custom domain for R2 public URLs (skips presigned URLs) |
 
 Path values stored in the DB are relative to `JAM_DATA_DIR`. The `config.resolve_path()` method resolves them to absolute at runtime. Already-absolute paths (from old DBs) pass through unchanged.
@@ -226,4 +252,5 @@ Path values stored in the DB are relative to `JAM_DATA_DIR`. The `config.resolve
 ## Detailed Documentation
 
 - [`docs/pipeline.md`](docs/pipeline.md) — processing pipeline data flow
+- [`docs/operations.md`](docs/operations.md) — server reset and bulk upload procedures
 - [`docs/roadmap.md`](docs/roadmap.md) — current, next, and future work items
