@@ -101,6 +101,14 @@ CREATE TABLE IF NOT EXISTS activity_log (
 CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_activity_log_event ON activity_log(event_type);
 CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at);
+
+CREATE TABLE IF NOT EXISTS share_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT NOT NULL UNIQUE,
+    track_id INTEGER NOT NULL UNIQUE REFERENCES tracks(id) ON DELETE CASCADE,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -277,6 +285,7 @@ class Database:
             DROP TABLE IF EXISTS setlist_songs;
             DROP TABLE IF EXISTS setlists;
             DROP TABLE IF EXISTS jobs;
+            DROP TABLE IF EXISTS share_links;
             DROP TABLE IF EXISTS tracks;
             DROP TABLE IF EXISTS songs;
             DROP TABLE IF EXISTS sessions;
@@ -717,6 +726,48 @@ class Database:
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         values = list(updates.values()) + [track_id]
         self.conn.execute(f"UPDATE tracks SET {set_clause} WHERE id = ?", values)
+        self.conn.commit()
+
+    # --- Share links ---
+
+    def create_share_link(self, track_id: int, created_by: int | None) -> dict:
+        """Create a share link for a track. Returns existing link if one exists."""
+        existing = self.get_share_link_by_track(track_id)
+        if existing:
+            return existing
+        import secrets
+
+        token = secrets.token_urlsafe(16)
+        try:
+            self.conn.execute(
+                "INSERT INTO share_links (token, track_id, created_by) VALUES (?, ?, ?)",
+                (token, track_id, created_by),
+            )
+            self.conn.commit()
+        except sqlite3.IntegrityError:
+            # Token collision (astronomically unlikely) — retry once
+            token = secrets.token_urlsafe(16)
+            self.conn.execute(
+                "INSERT INTO share_links (token, track_id, created_by) VALUES (?, ?, ?)",
+                (token, track_id, created_by),
+            )
+            self.conn.commit()
+        return self.get_share_link_by_track(track_id)
+
+    def get_share_link_by_token(self, token: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM share_links WHERE token = ?", (token,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_share_link_by_track(self, track_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM share_links WHERE track_id = ?", (track_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def delete_share_link(self, track_id: int):
+        self.conn.execute("DELETE FROM share_links WHERE track_id = ?", (track_id,))
         self.conn.commit()
 
     # --- Songs ---
