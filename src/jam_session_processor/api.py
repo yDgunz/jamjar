@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from jam_session_processor.auth import create_jwt, decode_jwt, hash_password, verify_password
@@ -56,6 +56,10 @@ async def auth_middleware(request: Request, call_next):
 
     # Public endpoints
     if path in _PUBLIC_PATHS:
+        return await call_next(request)
+
+    # Public share endpoints
+    if path.startswith("/share/") or path.startswith("/api/share/"):
         return await call_next(request)
 
     # Non-API paths (SPA static files)
@@ -1262,6 +1266,173 @@ def revoke_share_link(track_id: int, request: Request):
             raise HTTPException(status_code=403, detail="Only the link creator or an admin can revoke")
     db.delete_share_link(track_id)
     return {"ok": True}
+
+
+@app.get("/api/share/{token}/audio")
+def public_share_audio(token: str, download: int = 0):
+    from jam_session_processor.storage import get_storage
+
+    db = get_db()
+    link = db.get_share_link_by_token(token)
+    if not link:
+        raise HTTPException(status_code=404, detail="Share link not found")
+
+    track = db.get_track(link["track_id"])
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    session = db.get_session(track.session_id)
+
+    # Build download filename
+    if download:
+        name_parts = []
+        if track.song_name:
+            name_parts.append(track.song_name)
+        else:
+            name_parts.append(f"Track {track.track_number}")
+        if session and session.name:
+            name_parts.append(session.name)
+        ext = Path(track.audio_path).suffix or ".m4a"
+        filename = " - ".join(name_parts) + ext
+
+    storage = get_storage()
+    redirect_url = storage.url(track.audio_path)
+    if redirect_url:
+        return RedirectResponse(redirect_url, status_code=307)
+
+    cfg = get_config()
+    audio_path = cfg.resolve_path(track.audio_path)
+    if not audio_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    media_types = {".ogg": "audio/ogg", ".m4a": "audio/mp4", ".wav": "audio/wav"}
+    media_type = media_types.get(audio_path.suffix.lower(), "application/octet-stream")
+
+    if download:
+        return FileResponse(
+            audio_path,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    return FileResponse(audio_path, media_type=media_type)
+
+
+@app.get("/share/{token}")
+def share_landing_page(token: str):
+    import html as html_lib
+
+    db = get_db()
+    link = db.get_share_link_by_token(token)
+    if not link:
+        raise HTTPException(status_code=404, detail="Share link not found")
+
+    track = db.get_track(link["track_id"])
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    session = db.get_session(track.session_id)
+    session_name = session.name if session else ""
+    session_date = session.date if session else ""
+
+    # Format date for display
+    date_display = ""
+    if session_date:
+        parts = session_date.split("-")
+        if len(parts) == 3:
+            date_display = f"{int(parts[1])}/{int(parts[2])}/{parts[0][2:]}"
+        else:
+            date_display = session_date
+
+    title = html_lib.escape(track.song_name or f"Track {track.track_number}")
+    session_name = html_lib.escape(session_name)
+    audio_url = f"/api/share/{token}/audio"
+    download_url = f"/api/share/{token}/audio?download=1"
+
+    page = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title} - JamJar</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            background: #030712;
+            color: #d1d5db;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }}
+        .card {{
+            max-width: 480px;
+            width: 100%;
+            background: #111827;
+            border: 1px solid #1f2937;
+            border-radius: 12px;
+            padding: 2rem;
+        }}
+        .brand {{
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: #6b7280;
+            margin-bottom: 1.5rem;
+        }}
+        .title {{
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #f9fafb;
+            margin-bottom: 0.25rem;
+        }}
+        .meta {{
+            font-size: 0.875rem;
+            color: #6b7280;
+            margin-bottom: 1.5rem;
+        }}
+        audio {{
+            width: 100%;
+            margin-bottom: 1rem;
+        }}
+        .download {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: #1f2937;
+            color: #d1d5db;
+            border: none;
+            border-radius: 8px;
+            padding: 0.625rem 1.25rem;
+            font-size: 0.875rem;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.15s;
+        }}
+        .download:hover {{ background: #374151; color: #f9fafb; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <p class="brand">JamJar</p>
+        <h1 class="title">{title}</h1>
+        <p class="meta">{session_name}{(' &middot; ' + date_display) if date_display else ''}</p>
+        <audio controls preload="metadata" src="{audio_url}"></audio>
+        <a class="download" href="{download_url}">
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2
+                         M7 10l5 5 5-5M12 15V3"/>
+            </svg>
+            Download
+        </a>
+    </div>
+</body>
+</html>"""
+    return HTMLResponse(content=page)
 
 
 # --- Song endpoints ---

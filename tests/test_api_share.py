@@ -106,3 +106,70 @@ def test_readonly_can_create_share_link(client, tmp_path):
     tracks = db.get_tracks_for_session(sid)
     resp = client.post(f"/api/tracks/{tracks[0].id}/share")
     assert resp.status_code == 200
+
+
+def test_public_share_audio(auth_client, tmp_path):
+    """Public audio endpoint streams audio without auth."""
+    client, uid, gid = auth_client
+    db = api._db
+    tracks = db.get_tracks_for_session(1)
+    link = db.create_share_link(tracks[0].id, uid)
+    # Need to clear auth cookie to test public access
+    client.cookies.clear()
+    resp = client.get(f"/api/share/{link['token']}/audio")
+    assert resp.status_code == 200
+
+
+def test_public_share_audio_download(auth_client, tmp_path):
+    client, uid, gid = auth_client
+    db = api._db
+    tracks = db.get_tracks_for_session(1)
+    link = db.create_share_link(tracks[0].id, uid)
+    client.cookies.clear()
+    resp = client.get(f"/api/share/{link['token']}/audio?download=1")
+    assert resp.status_code == 200
+    assert "attachment" in resp.headers.get("content-disposition", "")
+
+
+def test_public_share_audio_invalid_token(client):
+    resp = client.get("/api/share/nonexistent/audio")
+    assert resp.status_code == 404
+
+
+def test_share_landing_page(auth_client):
+    client, uid, gid = auth_client
+    db = api._db
+    tracks = db.get_tracks_for_session(1)
+    link = db.create_share_link(tracks[0].id, uid)
+    client.cookies.clear()
+    resp = client.get(f"/share/{link['token']}")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers.get("content-type", "")
+    assert "JamJar" in resp.text
+    assert f"/api/share/{link['token']}/audio" in resp.text
+
+
+def test_share_landing_page_invalid_token(client):
+    resp = client.get("/share/nonexistent")
+    assert resp.status_code == 404
+
+
+def test_share_landing_page_shows_song_name(auth_client):
+    client, uid, gid = auth_client
+    db = api._db
+    tracks = db.get_tracks_for_session(1)
+    db.tag_track(tracks[0].id, "My Song", gid)
+    link = db.create_share_link(tracks[0].id, uid)
+    client.cookies.clear()
+    resp = client.get(f"/share/{link['token']}")
+    assert "My Song" in resp.text
+
+
+def test_share_landing_page_has_download_link(auth_client):
+    client, uid, gid = auth_client
+    db = api._db
+    tracks = db.get_tracks_for_session(1)
+    link = db.create_share_link(tracks[0].id, uid)
+    client.cookies.clear()
+    resp = client.get(f"/share/{link['token']}")
+    assert "download=1" in resp.text
