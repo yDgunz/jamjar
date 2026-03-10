@@ -1197,11 +1197,23 @@ def split_track_endpoint(track_id: int, req: SplitRequest, request: Request):
 
 
 @app.get("/api/tracks/{track_id}/audio")
-def stream_track_audio(track_id: int, request: Request):
+def stream_track_audio(track_id: int, request: Request, download: int = 0):
     from jam_session_processor.storage import get_storage
 
     db = get_db()
-    track, _ = _get_track_with_access(db, track_id, request)
+    track, session = _get_track_with_access(db, track_id, request)
+
+    # Build a download filename from song name or track number
+    if download:
+        name_parts = []
+        if track.song_name:
+            name_parts.append(track.song_name)
+        else:
+            name_parts.append(f"Track {track.track_number}")
+        if session.name:
+            name_parts.append(session.name)
+        ext = Path(track.audio_path).suffix or ".m4a"
+        filename = " - ".join(name_parts) + ext
 
     storage = get_storage()
     redirect_url = storage.url(track.audio_path)
@@ -1214,6 +1226,13 @@ def stream_track_audio(track_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Audio file not found")
     media_types = {".ogg": "audio/ogg", ".m4a": "audio/mp4", ".wav": "audio/wav"}
     media_type = media_types.get(audio_path.suffix.lower(), "application/octet-stream")
+
+    if download:
+        return FileResponse(
+            audio_path,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
     return FileResponse(audio_path, media_type=media_type)
 
 

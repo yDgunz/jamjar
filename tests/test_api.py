@@ -1,4 +1,5 @@
 import time
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -1408,3 +1409,20 @@ def test_setlist_group_scoping(client):
     resp = client.get("/api/setlists")
     assert len(resp.json()) == 1
     assert resp.json()[0]["name"] == "Set A"
+
+
+def test_track_audio_download_content_disposition(seeded_client, tmp_path):
+    """GET /api/tracks/{id}/audio?download=1 sets Content-Disposition: attachment."""
+    client, uid, gid = seeded_client
+    db = api._db
+    tracks = db.get_tracks_for_session(1)
+    track = tracks[0]
+
+    # Create a real audio file at the path
+    audio_path = Path(track.audio_path)
+    audio_path.parent.mkdir(parents=True, exist_ok=True)
+    audio_path.write_bytes(b"RIFF" + b"\x00" * 100)
+
+    resp = client.get(f"/api/tracks/{track.id}/audio?download=1")
+    assert resp.status_code == 200
+    assert "attachment" in resp.headers.get("content-disposition", "")
