@@ -59,6 +59,7 @@ export interface Session {
   tagged_count: number;
   song_names: string;
   active_job_id: string | null;
+  created_at: string;
 }
 
 export interface Track {
@@ -285,7 +286,7 @@ export const api = {
     }),
 
   reprocessSession: (sessionId: number, threshold: number, minDuration: number, single?: boolean) =>
-    fetchJson<Track[]>(`${BASE}/sessions/${sessionId}/reprocess`, {
+    fetchJson<Job>(`${BASE}/sessions/${sessionId}/reprocess`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ threshold, min_duration: minDuration, ...(single ? { single: true } : {}) }),
@@ -303,7 +304,8 @@ export const api = {
   sessionAudioUrl: (sessionId: number) => `${BASE}/sessions/${sessionId}/audio`,
 
   // Songs
-  listSongs: () => fetchJson<Song[]>(`${BASE}/songs`),
+  listSongs: (groupId?: number) =>
+    fetchJson<Song[]>(`${BASE}/songs${groupId != null ? `?group_id=${groupId}` : ""}`),
 
   createSong: (name: string, groupId: number, artist?: string) =>
     fetchJson<Song>(`${BASE}/songs`, {

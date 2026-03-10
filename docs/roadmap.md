@@ -14,6 +14,7 @@
 
 ## Later
 
+- Feature for coordinating show dates
 - Review PWA caching changes — audit commits 2ef72c6, 7adafd6, 5ab86ad for tech debt (switched navigateFallback to NetworkFirst, added skipWaiting/clientsClaim, no-cache headers on sw.js/index.html, controllerchange reload). May want to revert to precache-based navigation now that SW update lifecycle is fixed.
 - Metronome
 - Import chart from external source

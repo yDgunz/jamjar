@@ -172,20 +172,18 @@ export default function AudioPlayer({ src, durationSec, markers, onPlayStateChan
         )}
       </button>
 
-      {/* Skip ahead button (visible while playing) */}
-      {playing && (
-        <button
-          onClick={skipAhead}
-          className="flex h-11 shrink-0 items-center gap-1 rounded-full bg-gray-800 px-3 text-xs font-medium text-gray-400 transition hover:bg-gray-700 hover:text-white"
-          title={`Skip ahead ${SKIP_SECONDS}s`}
-        >
-          <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-            <polygon points="2,3 12,12 2,21" />
-            <polygon points="12,3 22,12 12,21" />
-          </svg>
-          <span>{SKIP_SECONDS}s</span>
-        </button>
-      )}
+      {/* Skip ahead button */}
+      <button
+        onClick={skipAhead}
+        className="flex h-11 shrink-0 items-center gap-1 rounded-full bg-gray-800 px-3 text-xs font-medium text-gray-400 transition hover:bg-gray-700 hover:text-white"
+        title={`Skip ahead ${SKIP_SECONDS}s`}
+      >
+        <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+          <polygon points="2,3 12,12 2,21" />
+          <polygon points="12,3 22,12 12,21" />
+        </svg>
+        <span>{SKIP_SECONDS}s</span>
+      </button>
 
       {/* Time display */}
       <span className="w-20 shrink-0 text-xs tabular-nums text-gray-500">

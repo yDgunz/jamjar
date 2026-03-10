@@ -19,12 +19,27 @@ function formatMonthHeader(yearMonth: string): string {
   return `${months[Number(m) - 1]} ${y}`;
 }
 
-function groupByMonth(sessions: Session[]): [string, Session[]][] {
+type SortBy = "date" | "uploaded";
+
+function groupByMonth(sessions: Session[], sortBy: SortBy): [string, Session[]][] {
   const groups = new Map<string, Session[]>();
   for (const s of sessions) {
-    const key = s.date ? s.date.substring(0, 7) : "unknown";
+    let key: string;
+    if (sortBy === "uploaded") {
+      key = s.created_at ? s.created_at.substring(0, 7) : "unknown";
+    } else {
+      key = s.date ? s.date.substring(0, 7) : "unknown";
+    }
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(s);
+  }
+  // Sort sessions within each group
+  for (const [, group] of groups) {
+    group.sort((a, b) => {
+      const aVal = sortBy === "uploaded" ? a.created_at : a.date;
+      const bVal = sortBy === "uploaded" ? b.created_at : b.date;
+      return (bVal ?? "").localeCompare(aVal ?? "");
+    });
   }
   return Array.from(groups.entries());
 }
@@ -41,6 +56,10 @@ export default function SessionList() {
     if (stored) { const n = Number(stored); if (!isNaN(n)) return n; }
     return null;
   });
+  const [sortBy, setSortBy] = useState<SortBy>(() => {
+    const stored = localStorage.getItem("session-sort");
+    return stored === "uploaded" ? "uploaded" : "date";
+  });
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState("Uploading...");
@@ -48,7 +67,7 @@ export default function SessionList() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadGroupId, setUploadGroupId] = useState<number | null>(null);
-  const [uploadThreshold, setUploadThreshold] = useState(20);
+  const [uploadThreshold, setUploadThreshold] = useState<number | string>(20);
   const [singleSong, setSingleSong] = useState(false);
   const [duplicateDetected, setDuplicateDetected] = useState(false);
   const navigate = useNavigate();
@@ -58,6 +77,10 @@ export default function SessionList() {
     if (groupFilter !== null) localStorage.setItem("group-filter", String(groupFilter));
     else localStorage.removeItem("group-filter");
   }, [groupFilter]);
+
+  useEffect(() => {
+    localStorage.setItem("session-sort", sortBy);
+  }, [sortBy]);
 
   useEffect(() => {
     api.listSessions().then((data) => {
@@ -101,7 +124,8 @@ export default function SessionList() {
     setUploadError(null);
     setDuplicateDetected(false);
     try {
-      const threshold = uploadThreshold !== 20 ? -uploadThreshold : undefined;
+      const thresholdNum = uploadThreshold === "" ? 20 : Number(uploadThreshold);
+      const threshold = thresholdNum !== 20 ? -thresholdNum : undefined;
 
       // Try presigned upload flow first
       const initResp = await api.initUpload(
@@ -169,7 +193,7 @@ export default function SessionList() {
 
   if (loading) return <ListSkeleton rightSide="two-lines" />;
 
-  const monthGroups = groupByMonth(filtered);
+  const monthGroups = groupByMonth(filtered, sortBy);
 
   return (
     <div>
@@ -224,6 +248,14 @@ export default function SessionList() {
           onChange={setGroupFilter}
           allLabel="All groups"
         />
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as SortBy)}
+          className="rounded border border-transparent bg-transparent py-1 pr-6 text-sm text-gray-400 hover:border-gray-700 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
+        >
+          <option value="date">By date</option>
+          <option value="uploaded">By upload</option>
+        </select>
         {canAdmin(user) && (
           <div className="ml-auto shrink-0">
             <button
@@ -355,7 +387,7 @@ export default function SessionList() {
             <input
               type="number"
               value={uploadThreshold}
-              onChange={(e) => setUploadThreshold(Number(e.target.value))}
+              onChange={(e) => setUploadThreshold(e.target.value === "" ? "" : Number(e.target.value))}
               min={0}
               step={1}
               className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
@@ -363,7 +395,7 @@ export default function SessionList() {
             <span className="text-sm text-gray-500">dB</span>
           </div>
           <p className="mt-1 text-xs text-gray-500">
-            Higher = more tracks, lower = fewer tracks
+            Try 15 for loud rooms, 30 for quieter/acoustic.
           </p>
         </div>
         )}

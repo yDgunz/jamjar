@@ -84,8 +84,7 @@ export default function SessionDetail() {
   const [notesInput, setNotesInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [threshold, setThreshold] = useState(20);
-  const [reprocessing, setReprocessing] = useState(false);
+  const [threshold, setThreshold] = useState<number | string>(20);
   const [reprocessOpen, setReprocessOpen] = useState(false);
   const [singleSong, setSingleSong] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -101,15 +100,14 @@ export default function SessionDetail() {
     Promise.all([
       api.getSession(sessionId),
       api.getSessionTracks(sessionId),
-      api.listSongs(),
-    ]).then(([s, t, allSongs]) => {
+    ]).then(([s, t]) => {
       setSession(s);
       setTracks(t);
-      setSongs(allSongs);
       setNameInput(s?.name ?? "");
       setDateInput(s?.date ?? "");
       setNotesInput(s?.notes ?? "");
       setLoading(false);
+      api.listSongs(s?.group_id).then(setSongs);
     });
   }, [sessionId]);
 
@@ -170,7 +168,7 @@ export default function SessionDetail() {
       setDateInput(s?.date ?? "");
       setNotesInput(s?.notes ?? "");
     });
-    api.listSongs().then(setSongs);
+    api.listSongs(session?.group_id).then(setSongs);
   };
 
   const handleTracksChanged = (newTracks: Track[]) => {
@@ -181,7 +179,7 @@ export default function SessionDetail() {
       setDateInput(s?.date ?? "");
       setNotesInput(s?.notes ?? "");
     });
-    api.listSongs().then(setSongs);
+    api.listSongs(session?.group_id).then(setSongs);
   };
 
   const handleSaveName = async () => {
@@ -204,15 +202,15 @@ export default function SessionDetail() {
 
   const handleReprocess = async () => {
     setReprocessOpen(false);
-    setReprocessing(true);
     try {
-      const newTracks = await api.reprocessSession(sessionId, -threshold, 120, singleSong || undefined);
-      handleTracksChanged(newTracks);
-      setSuccessMsg(`Reprocessed: ${newTracks.length} track${newTracks.length !== 1 ? "s" : ""} found`);
+      const thresholdNum = threshold === "" ? 20 : Number(threshold);
+      const job = await api.reprocessSession(sessionId, -thresholdNum, 120, singleSong || undefined);
+      // Update session with active job to trigger polling
+      if (session) {
+        setSession({ ...session, active_job_id: job.id });
+      }
     } catch (err) {
       showError(`Reprocess failed: ${err instanceof Error ? err.message : err}`);
-    } finally {
-      setReprocessing(false);
     }
   };
 
@@ -231,14 +229,6 @@ export default function SessionDetail() {
 
   return (
     <div>
-      {reprocessing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="flex flex-col items-center gap-4">
-            <Spinner size="lg" className="text-accent-400" />
-            <p className="text-lg text-gray-200">Reprocessing...</p>
-          </div>
-        </div>
-      )}
       <div>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
@@ -268,7 +258,7 @@ export default function SessionDetail() {
                       try {
                         const updated = await api.updateSessionGroup(sessionId, Number(e.target.value));
                         setSession(updated);
-                        api.listSongs().then(setSongs);
+                        api.listSongs(updated.group_id).then(setSongs);
                       } catch (err) {
                         showError(`Move failed: ${err instanceof Error ? err.message : err}`);
                       }
@@ -396,6 +386,21 @@ export default function SessionDetail() {
           <Spinner className="text-accent-400" />
           <p className="text-sm text-gray-400">{processingProgress}</p>
         </div>
+      ) : tracks.length === 0 && !loading ? (
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-gray-800 bg-gray-900 px-6 py-12 text-center">
+          <p className="text-sm text-gray-300">No tracks were found in this recording.</p>
+          <p className="text-xs text-gray-500 max-w-sm">
+            The threshold may be too high for this recording. Try reprocessing with a lower threshold (e.g. 25 or 30), or use "Single song" mode if the recording is one continuous piece.
+          </p>
+          {canAdmin(user) && (
+            <button
+              onClick={() => setReprocessOpen(true)}
+              className="mt-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500"
+            >
+              Reprocess
+            </button>
+          )}
+        </div>
       ) : (
       <div className={tracks.length > 1 ? "space-y-0" : "mt-2 space-y-0"}>
         {tracks.map((t, i) => (
@@ -449,7 +454,7 @@ export default function SessionDetail() {
             <input
               type="number"
               value={threshold}
-              onChange={(e) => setThreshold(Number(e.target.value))}
+              onChange={(e) => setThreshold(e.target.value === "" ? "" : Number(e.target.value))}
               min={0}
               step={1}
               className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"

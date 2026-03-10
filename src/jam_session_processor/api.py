@@ -237,6 +237,7 @@ class SessionResponse(BaseModel):
     tagged_count: int
     song_names: str = ""
     active_job_id: str | None = None
+    created_at: str = ""
 
 
 class TrackResponse(BaseModel):
@@ -526,12 +527,14 @@ def get_session_tracks(session_id: int, request: Request):
     return [_track_response(t) for t in db.get_tracks_for_session(session_id)]
 
 
-@app.post(
-    "/api/sessions/{session_id}/reprocess",
-    response_model=list[TrackResponse],
-)
-def reprocess_session(session_id: int, req: ReprocessRequest, request: Request):
-    """Re-run song detection on a session with new parameters."""
+def _process_reprocess(
+    job_id: str,
+    session_id: int,
+    threshold: float,
+    min_duration: int,
+    single: bool,
+):
+    """Run reprocessing in a background thread."""
     from jam_session_processor.metadata import extract_metadata
     from jam_session_processor.output import export_segments
     from jam_session_processor.splitter import detect_songs
@@ -540,78 +543,118 @@ def reprocess_session(session_id: int, req: ReprocessRequest, request: Request):
     db = get_db()
     cfg = get_config()
     storage = get_storage()
+
+    try:
+        session = db.get_session(session_id)
+        if not session:
+            db.fail_job(job_id, "Session not found")
+            return
+
+        source = cfg.resolve_path(session.source_file)
+
+        # Ensure source file is local if using remote storage
+        if storage.is_remote:
+            db.update_job_progress(job_id, "Downloading from storage...")
+            source = storage.get(session.source_file, source)
+
+        if not source.exists():
+            db.fail_job(job_id, "Source audio file not found on disk")
+            return
+
+        # Determine output dir from existing tracks or default
+        existing_tracks = db.get_tracks_for_session(session_id)
+        if existing_tracks:
+            output_dir = cfg.resolve_path(existing_tracks[0].audio_path).parent
+        else:
+            output_dir = cfg.output_dir_for_session(session_id)
+
+        # Delete old tracks and their audio files
+        db.update_job_progress(job_id, "Removing old tracks...")
+        for track in existing_tracks:
+            storage.delete(track.audio_path)
+            db.delete_track(track.id)
+
+        # Re-detect songs (or use full duration for single-song mode)
+        meta = extract_metadata(source)
+        if single:
+            segments = [(0.0, meta.duration_seconds)]
+        else:
+            db.update_job_progress(job_id, "Detecting songs...")
+            result = detect_songs(
+                source,
+                energy_threshold_db=threshold,
+                min_song_duration_sec=min_duration,
+            )
+            segments = result.segments if result.segments else []
+
+        if segments:
+            db.update_job_progress(job_id, "Exporting tracks...")
+            exported = export_segments(source, segments, output_dir)
+
+            for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
+                db.update_job_progress(job_id, f"Saving track {i} of {len(segments)}...")
+                rel_path = cfg.make_relative(audio_path.resolve())
+                db.create_track(
+                    session_id,
+                    track_number=i,
+                    start_sec=start,
+                    end_sec=end,
+                    audio_path=rel_path,
+                )
+                if storage.is_remote:
+                    storage.put(rel_path, audio_path.resolve())
+
+            if storage.is_remote:
+                for audio_path in exported:
+                    audio_path.resolve().unlink(missing_ok=True)
+                source.unlink(missing_ok=True)
+
+        db.complete_job(job_id, session_id)
+    except Exception as e:
+        logger.exception("Reprocess failed")
+        db.fail_job(job_id, str(e))
+
+
+@app.post(
+    "/api/sessions/{session_id}/reprocess",
+    response_model=JobResponse,
+    status_code=202,
+)
+async def reprocess_session(session_id: int, req: ReprocessRequest, request: Request):
+    """Re-run song detection on a session with new parameters. Returns a job to poll."""
+    db = get_db()
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _require_group_access(request, session.group_id)
     _require_role(request, "admin")
 
-    source = cfg.resolve_path(session.source_file)
+    job_id = uuid4().hex[:16]
+    job = db.create_job(job_id, session.group_id, job_type="reprocess", session_id=session_id)
 
-    # Ensure source file is local if using remote storage
-    if storage.is_remote:
-        source = storage.get(session.source_file, source)
+    if request.state.user:
+        db.log_activity(request.state.user.id, session.group_id, "reprocess", session.source_file)
 
-    if not source.exists():
-        raise HTTPException(status_code=404, detail="Source audio file not found on disk")
-
-    # Determine output dir from existing tracks or default
-    existing_tracks = db.get_tracks_for_session(session_id)
-    if existing_tracks:
-        output_dir = cfg.resolve_path(existing_tracks[0].audio_path).parent
-    else:
-        output_dir = cfg.output_dir_for_session(session_id)
-
-    # Delete old tracks and their audio files
-    for track in existing_tracks:
-        storage.delete(track.audio_path)
-        db.delete_track(track.id)
-
-    # Re-detect songs (or use full duration for single-song mode)
-    meta = extract_metadata(source)
-    if req.single:
-        segments = [(0.0, meta.duration_seconds)]
-    else:
-        try:
-            result = detect_songs(
-                source,
-                energy_threshold_db=req.threshold,
-                min_song_duration_sec=req.min_duration,
-            )
-        except Exception as e:
-            logger.exception("Reprocess detection failed")
-            raise HTTPException(status_code=500, detail=f"Detection failed: {e}")
-
-        if not result.segments:
-            return []
-        segments = result.segments
-
-    # Re-export and save new tracks
-    exported = export_segments(
-        source,
-        segments,
-        output_dir,
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(
+        None,
+        _process_reprocess,
+        job.id,
+        session_id,
+        req.threshold,
+        req.min_duration,
+        req.single,
     )
 
-    for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
-        rel_path = cfg.make_relative(audio_path.resolve())
-        db.create_track(
-            session_id,
-            track_number=i,
-            start_sec=start,
-            end_sec=end,
-            audio_path=rel_path,
-        )
-        if storage.is_remote:
-            storage.put(rel_path, audio_path.resolve())
-
-    # Clean up local files after successful R2 upload
-    if storage.is_remote:
-        for audio_path in exported:
-            audio_path.resolve().unlink(missing_ok=True)
-        source.unlink(missing_ok=True)
-
-    return [_track_response(t) for t in db.get_tracks_for_session(session_id)]
+    return JobResponse(
+        id=job.id,
+        type=job.type,
+        group_id=job.group_id,
+        status=job.status,
+        progress=job.progress,
+        session_id=job.session_id,
+        error=job.error,
+    )
 
 
 ALLOWED_EXTENSIONS = {".m4a", ".wav", ".mp3", ".flac", ".ogg"}
@@ -1187,9 +1230,13 @@ def _get_song_with_access(db: Database, song_id: int, request: Request):
 
 
 @app.get("/api/songs", response_model=list[SongResponse])
-def list_songs(request: Request):
+def list_songs(request: Request, group_id: int | None = None):
     db = get_db()
     group_ids = _get_group_ids(request)
+    if group_id is not None:
+        if group_id not in group_ids:
+            raise HTTPException(status_code=403, detail="No access to this group")
+        group_ids = [group_id]
     return [_song_response(s) for s in db.list_songs(group_ids)]
 
 

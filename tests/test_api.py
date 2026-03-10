@@ -419,6 +419,8 @@ def test_reprocess_session(auth_client, tmp_path):
     mock_meta = MagicMock()
     mock_meta.recording_date = None
 
+    import time
+
     with (
         patch("jam_session_processor.splitter.detect_songs", return_value=mock_result),
         patch("jam_session_processor.output.export_segments", side_effect=mock_export),
@@ -429,15 +431,30 @@ def test_reprocess_session(auth_client, tmp_path):
             json={"threshold": -25.0, "min_duration": 60},
         )
 
-    assert resp.status_code == 200
-    tracks = resp.json()
+    assert resp.status_code == 202
+    job = resp.json()
+    assert job["status"] in ("pending", "processing")
+    assert job["session_id"] == sid
+
+    # Wait for background processing to complete
+    for _ in range(50):
+        poll = client.get(f"/api/jobs/{job['id']}")
+        if poll.json()["status"] == "completed":
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError(f"Job did not complete: {poll.json()}")
+
+    tracks = db.get_tracks_for_session(sid)
     assert len(tracks) == 3
-    assert tracks[0]["start_sec"] == 0.0
-    assert tracks[0]["end_sec"] == 200.0
-    assert tracks[2]["start_sec"] == 420.0
+    assert tracks[0].start_sec == 0.0
+    assert tracks[0].end_sec == 200.0
+    assert tracks[2].start_sec == 420.0
 
 
 def test_reprocess_source_not_found(auth_client, tmp_path):
+    import time
+
     client, uid, gid = auth_client
     db = api._db
     sid = db.create_session("/nonexistent/file.m4a", gid, date="2026-02-03")
@@ -446,8 +463,19 @@ def test_reprocess_source_not_found(auth_client, tmp_path):
         f"/api/sessions/{sid}/reprocess",
         json={"threshold": -30.0, "min_duration": 120},
     )
-    assert resp.status_code == 404
-    assert "not found" in resp.json()["detail"].lower()
+    assert resp.status_code == 202
+    job = resp.json()
+
+    # Wait for background job to fail
+    for _ in range(50):
+        poll = client.get(f"/api/jobs/{job['id']}")
+        if poll.json()["status"] == "failed":
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError(f"Job did not fail: {poll.json()}")
+
+    assert "not found" in poll.json()["error"].lower()
 
 
 def test_delete_session_endpoint(seeded_client):

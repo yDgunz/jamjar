@@ -65,14 +65,16 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
     }
   };
 
-  // Filter songs for autocomplete
+  // Filter songs for autocomplete — only show when typing, max 3
   const suggestions = tagInput.trim()
-    ? songs.filter(
-        (s) =>
-          s.name.toLowerCase().includes(tagInput.toLowerCase()) &&
-          s.name.toLowerCase() !== tagInput.toLowerCase()
-      )
-    : songs;
+    ? songs
+        .filter(
+          (s) =>
+            s.name.toLowerCase().includes(tagInput.toLowerCase()) &&
+            s.name.toLowerCase() !== tagInput.toLowerCase()
+        )
+        .slice(0, 3)
+    : [];
 
   const canSplit = !playerPlaying && playerTime > 1 && playerTime < track.duration_sec - 1;
 
