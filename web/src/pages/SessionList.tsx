@@ -251,7 +251,7 @@ export default function SessionList() {
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortBy)}
-          className="rounded border border-transparent bg-transparent py-1 pr-6 text-sm text-gray-400 hover:border-gray-700 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
+          className="min-w-0 truncate rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
         >
           <option value="date">By date</option>
           <option value="uploaded">By upload</option>
@@ -314,6 +314,9 @@ export default function SessionList() {
                 >
                   <div className="mt-1 text-sm text-gray-400">
                     {formatDate(s.date)}
+                    {s.created_at && (
+                      <span className="text-gray-600"> · uploaded {formatDate(s.created_at.substring(0, 10))}</span>
+                    )}
                   </div>
                   {(s.song_names || s.track_count - s.tagged_count > 0) && (
                     <div className="mt-0.5 text-sm text-gray-500">
