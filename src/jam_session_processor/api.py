@@ -1981,9 +1981,15 @@ if _static_dir:
         # Files that must not be cached so the browser always picks up new versions
         _no_cache_files = {"sw.js", "index.html"}
 
+        # Paths handled by dedicated server-side routes (not the SPA)
+        _server_prefixes = ("/share/", "/api/")
+
         # Serve index.html for the root and any non-file paths (React Router)
         @app.get("/{full_path:path}")
         def spa_catch_all(full_path: str):
+            prefixed = f"/{full_path}"
+            if any(prefixed.startswith(p) for p in _server_prefixes):
+                raise HTTPException(status_code=404)
             file = _static_path / full_path
             if full_path and file.is_file():
                 resp = FileResponse(file)
