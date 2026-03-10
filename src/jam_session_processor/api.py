@@ -1218,6 +1218,7 @@ def stream_track_audio(track_id: int, request: Request, download: int = 0):
             name_parts.append(session.name)
         ext = Path(track.audio_path).suffix or ".m4a"
         filename = " - ".join(name_parts) + ext
+        filename = filename.replace('"', "")
 
     storage = get_storage()
     redirect_url = storage.url(track.audio_path)
@@ -1263,7 +1264,10 @@ def revoke_share_link(track_id: int, request: Request):
     user = request.state.user
     if user and link["created_by"] != user.id:
         if user.role not in ("admin", "superadmin"):
-            raise HTTPException(status_code=403, detail="Only the link creator or an admin can revoke")
+            raise HTTPException(
+                status_code=403,
+                detail="Only the link creator or an admin can revoke",
+            )
     db.delete_share_link(track_id)
     return {"ok": True}
 
@@ -1294,6 +1298,7 @@ def public_share_audio(token: str, download: int = 0):
             name_parts.append(session.name)
         ext = Path(track.audio_path).suffix or ".m4a"
         filename = " - ".join(name_parts) + ext
+        filename = filename.replace('"', "")
 
     storage = get_storage()
     redirect_url = storage.url(track.audio_path)

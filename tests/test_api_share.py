@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -40,7 +38,8 @@ def auth_client(client, tmp_path):
     audio = tmp_path / "track1.m4a"
     audio.write_bytes(b"\x00" * 100)
     db.create_track(sid, track_number=1, start_sec=0, end_sec=300, audio_path=str(audio))
-    resp = client.post("/api/auth/login", json={"email": "test@example.com", "password": "password"})
+    login = {"email": "test@example.com", "password": "password"}
+    resp = client.post("/api/auth/login", json=login)
     assert resp.status_code == 200
     return client, uid, gid
 
