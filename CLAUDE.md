@@ -96,6 +96,14 @@ event_type
 detail
 created_at
 (indexes: user, event_type, created_at)
+
+share_links
+──────────────
+id (PK)
+token (UNIQUE)
+track_id (FK→tracks, UNIQUE)
+created_by (FK→users, nullable)
+created_at
 ```
 
 - **Multi-tenancy:** groups own sessions, songs, and setlists; users belong to groups via `user_groups`
@@ -107,6 +115,8 @@ created_at
 - `setlists → setlist_songs`: one-to-many, CASCADE delete
 - `setlist_songs → songs`: many-to-one, CASCADE on delete
 - `activity_log → users/groups`: many-to-one, tracks user activity for admin stats
+- `share_links → tracks`: one-to-one, CASCADE delete
+- `share_links → users`: many-to-one (nullable), SET NULL on delete
 - Songs are created on first tag and reused across sessions within a group
 - Setlists are group-scoped ordered collections of songs, independent of sessions
 
@@ -117,7 +127,8 @@ All `/api` endpoints require authentication (JWT cookie or API key header). Role
 **Auth:** `POST /api/auth/login` | `POST /api/auth/logout` | `GET /api/auth/me` | `PUT /api/auth/password`
 **Sessions:** `GET /api/sessions` | `GET /api/sessions/{id}` | `GET /api/sessions/{id}/tracks` | `GET /api/sessions/{id}/audio` | `PUT /api/sessions/{id}/name` | `PUT /api/sessions/{id}/notes` | `PUT /api/sessions/{id}/date` | `PUT /api/sessions/{id}/group` (admin) | `DELETE /api/sessions/{id}` (admin) | `POST /api/sessions/{id}/reprocess` (admin) | `POST /api/sessions/upload/init` (admin, returns presigned URL + job) | `POST /api/sessions/upload/complete` (admin, starts processing after R2 upload) | `POST /api/sessions/upload` (admin, direct multipart fallback, returns 202 + job)
 **Jobs:** `GET /api/jobs/{id}` — poll for upload progress (status: pending → processing → completed/failed)
-**Tracks:** `POST /api/tracks/{id}/tag` | `DELETE /api/tracks/{id}/tag` | `PUT /api/tracks/{id}/notes` | `GET /api/tracks/{id}/audio` | `POST /api/tracks/{id}/merge` (admin) | `POST /api/tracks/{id}/split` (admin)
+**Tracks:** `POST /api/tracks/{id}/tag` | `DELETE /api/tracks/{id}/tag` | `PUT /api/tracks/{id}/notes` | `GET /api/tracks/{id}/audio` | `POST /api/tracks/{id}/merge` (admin) | `POST /api/tracks/{id}/split` (admin) | `POST /api/tracks/{id}/share` | `DELETE /api/tracks/{id}/share`
+**Share (public):** `GET /share/{token}` | `GET /api/share/{token}/audio`
 **Songs:** `GET /api/songs` | `POST /api/songs` (editor) | `GET /api/songs/{id}` | `GET /api/songs/{id}/tracks` | `PUT /api/songs/{id}/details` | `PUT /api/songs/{id}/name` | `PUT /api/songs/{id}/group` (admin) | `POST /api/songs/{id}/fetch-lyrics` (editor) | `DELETE /api/songs/{id}` (admin)
 **Setlists:** `GET /api/setlists` | `POST /api/setlists` (editor) | `GET /api/setlists/{id}` | `GET /api/setlists/{id}/songs` | `PUT /api/setlists/{id}/name` (editor) | `PUT /api/setlists/{id}/date` (editor) | `PUT /api/setlists/{id}/notes` (editor) | `PUT /api/setlists/{id}/songs` (editor, replace order) | `POST /api/setlists/{id}/songs` (editor, add song) | `DELETE /api/setlists/{id}/songs/{position}` (editor) | `DELETE /api/setlists/{id}` (admin)
 **Admin:** `GET/POST /api/admin/users` | `DELETE /api/admin/users/{id}` | `PUT .../password` | `PUT .../role` | `PUT .../name` | `POST/DELETE .../groups/{id}` | `GET/POST /api/admin/groups` | `DELETE /api/admin/groups/{id}` | `GET /api/admin/stats` (all superadmin)
