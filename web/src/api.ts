@@ -539,6 +539,17 @@ export const api = {
   deleteSetlist: (id: number) =>
     fetchJson<{ ok: boolean }>(`${BASE}/setlists/${id}`, { method: "DELETE" }),
 
+  // Share links
+  createShareLink: (trackId: number) =>
+    fetchJson<{ token: string; url: string }>(`${BASE}/tracks/${trackId}/share`, {
+      method: "POST",
+    }),
+
+  deleteShareLink: (trackId: number) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/tracks/${trackId}/share`, {
+      method: "DELETE",
+    }),
+
   // Admin
   adminListUsers: () => fetchJson<AdminUser[]>(`${BASE}/admin/users`),
 
