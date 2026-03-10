@@ -1236,6 +1236,34 @@ def stream_track_audio(track_id: int, request: Request, download: int = 0):
     return FileResponse(audio_path, media_type=media_type)
 
 
+# --- Share link endpoints ---
+
+
+@app.post("/api/tracks/{track_id}/share")
+def create_share_link(track_id: int, request: Request):
+    db = get_db()
+    track, session = _get_track_with_access(db, track_id, request)
+    user = request.state.user
+    link = db.create_share_link(track_id, user.id if user else None)
+    return {"token": link["token"], "url": f"/share/{link['token']}"}
+
+
+@app.delete("/api/tracks/{track_id}/share")
+def revoke_share_link(track_id: int, request: Request):
+    db = get_db()
+    track, session = _get_track_with_access(db, track_id, request)
+    link = db.get_share_link_by_track(track_id)
+    if not link:
+        raise HTTPException(status_code=404, detail="No share link exists for this track")
+    # Allow the link creator or any admin/superadmin
+    user = request.state.user
+    if user and link["created_by"] != user.id:
+        if user.role not in ("admin", "superadmin"):
+            raise HTTPException(status_code=403, detail="Only the link creator or an admin can revoke")
+    db.delete_share_link(track_id)
+    return {"ok": True}
+
+
 # --- Song endpoints ---
 
 
