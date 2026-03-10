@@ -32,6 +32,8 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
   const [playerTime, setPlayerTime] = useState(0);
   const [operationLoading, setOperationLoading] = useState(false);
   const [confirmingSplit, setConfirmingSplit] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shared, setShared] = useState(false);
 
   const handleTag = async () => {
     if (!tagInput.trim()) return;
@@ -62,6 +64,21 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
       onError(`Split failed: ${err instanceof Error ? err.message : err}`);
     } finally {
       setOperationLoading(false);
+    }
+  };
+
+  const handleShare = async () => {
+    setShareLoading(true);
+    try {
+      const result = await api.createShareLink(track.id);
+      const fullUrl = `${window.location.origin}${result.url}`;
+      await navigator.clipboard.writeText(fullUrl);
+      setShared(true);
+      setTimeout(() => setShared(false), 2000);
+    } catch (err) {
+      onError(`Share failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setShareLoading(false);
     }
   };
 
@@ -188,12 +205,38 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
             </span>
           </>
         )}
+
+        {!tagging && (
+          <button
+            onClick={handleShare}
+            disabled={shareLoading}
+            className="ml-auto flex items-center gap-1 rounded px-2 py-1.5 text-xs text-gray-600 transition hover:text-gray-300 disabled:opacity-50"
+            title={shared ? "Link copied!" : "Copy share link"}
+          >
+            {shared ? (
+              <>
+                <svg className="h-3.5 w-3.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-green-400">Copied!</span>
+              </>
+            ) : (
+              <>
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                </svg>
+                Share
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Audio player */}
       <AudioPlayer
         src={api.trackAudioUrl(track.id)}
         durationSec={track.duration_sec}
+        downloadUrl={`${api.trackAudioUrl(track.id)}?download=1`}
         onPlayStateChange={(playing, time) => { setPlayerPlaying(playing); setPlayerTime(time); }}
         onTimeUpdate={(time) => setPlayerTime(time)}
       />
