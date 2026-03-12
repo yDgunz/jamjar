@@ -90,8 +90,8 @@ export default function Admin() {
   const [addUserOpen, setAddUserOpen] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newName, setNewName] = useState("");
-  const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<Role>("editor");
+  const [newGroupIds, setNewGroupIds] = useState<number[]>([]);
   const [addingUser, setAddingUser] = useState(false);
 
   // Edit user modal
@@ -135,16 +135,16 @@ export default function Admin() {
   const openAddUser = () => {
     setNewEmail("");
     setNewName("");
-    setNewPassword("");
     setNewRole("editor");
+    setNewGroupIds([]);
     setAddUserOpen(true);
   };
 
   const handleAddUser = async () => {
-    if (!newEmail || !newPassword) return;
+    if (!newEmail) return;
     setAddingUser(true);
     try {
-      await api.adminCreateUser(newEmail, newPassword, newName, newRole);
+      await api.adminCreateUser(newEmail, newName, newRole, newGroupIds);
       setAddUserOpen(false);
       await refresh();
       setToast({ message: "User created", variant: "success" });
@@ -346,6 +346,22 @@ export default function Admin() {
                           Edit
                         </button>
                         <button
+                          onClick={async () => {
+                            try {
+                              const result = await api.adminResendInvite(user.id);
+                              setToast({
+                                message: result.email_sent ? "Invite sent" : "Invite created (SMTP not configured)",
+                                variant: "success",
+                              });
+                            } catch (err: any) {
+                              setToast({ message: err.message, variant: "error" });
+                            }
+                          }}
+                          className="rounded px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
+                        >
+                          Invite
+                        </button>
+                        <button
                           onClick={() => { setResetPwUser(user); setResetPwValue(""); }}
                           className="rounded px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
                         >
@@ -499,14 +515,6 @@ export default function Admin() {
           onChange={(e) => setNewName(e.target.value)}
           className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
         />
-        <input
-          type="password"
-          placeholder="Password"
-          value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
-          required
-          className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
-        />
         <div>
           <label className="block text-xs font-medium text-gray-400 mb-1">Role</label>
           <select
@@ -518,6 +526,45 @@ export default function Admin() {
               <option key={r} value={r}>{r}</option>
             ))}
           </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-400 mb-1">Groups</label>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {newGroupIds.map((gid) => {
+              const g = groups.find((g) => g.id === gid);
+              return g ? (
+                <span
+                  key={g.id}
+                  className="inline-flex items-center gap-1 rounded-full bg-gray-800 px-2.5 py-0.5 text-xs text-gray-300"
+                >
+                  {g.name}
+                  <button
+                    type="button"
+                    onClick={() => setNewGroupIds((prev) => prev.filter((id) => id !== gid))}
+                    className="ml-0.5 text-gray-500 hover:text-red-400"
+                  >
+                    &times;
+                  </button>
+                </span>
+              ) : null;
+            })}
+            {groups.filter((g) => !newGroupIds.includes(g.id)).length > 0 && (
+              <select
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) setNewGroupIds((prev) => [...prev, Number(e.target.value)]);
+                }}
+                className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-xs text-gray-400 focus:border-accent-500 focus:outline-none"
+              >
+                <option value="">+ Group</option>
+                {groups
+                  .filter((g) => !newGroupIds.includes(g.id))
+                  .map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+              </select>
+            )}
+          </div>
         </div>
       </FormModal>
 

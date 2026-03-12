@@ -62,6 +62,10 @@ async def auth_middleware(request: Request, call_next):
     if path.startswith("/share/") or path.startswith("/api/share/"):
         return await call_next(request)
 
+    # Public invite endpoints
+    if path.startswith("/api/invite/"):
+        return await call_next(request)
+
     # Non-API paths (SPA static files)
     if not path.startswith("/api"):
         return await call_next(request)
@@ -158,7 +162,7 @@ class AuthUserResponse(BaseModel):
 def login(req: LoginRequest):
     db = get_db()
     user = db.get_user_by_email(req.email)
-    if not user or not verify_password(req.password, user.password_hash):
+    if not user or not user.password_hash or not verify_password(req.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid username or password")
     token = create_jwt(user.id, user.email)
     groups = db.get_user_groups(user.id)
@@ -1851,6 +1855,74 @@ def delete_setlist(setlist_id: int, request: Request):
     return {"ok": True}
 
 
+# --- Invite endpoints (public) ---
+
+
+class InviteValidateRequest(BaseModel):
+    token: str
+
+
+class InviteAcceptRequest(BaseModel):
+    token: str
+    password: str
+
+
+def _validate_invite_token(db, token: str):
+    """Validate an invite token. Returns (token_row, user) or raises HTTPException."""
+    from datetime import datetime, timezone
+
+    row = db.get_invite_token(token)
+    if not row:
+        raise HTTPException(status_code=404, detail="Invalid invite link")
+    if row["used_at"] is not None:
+        raise HTTPException(status_code=410, detail="This invite has already been used")
+    expires_at = datetime.strptime(row["expires_at"], "%Y-%m-%d %H:%M:%S").replace(
+        tzinfo=timezone.utc
+    )
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=410, detail="This invite has expired")
+    user = db.get_user(row["user_id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User no longer exists")
+    return row, user
+
+
+@app.post("/api/invite/validate")
+def invite_validate(req: InviteValidateRequest):
+    db = get_db()
+    _row, user = _validate_invite_token(db, req.token)
+    return {"email": user.email, "name": user.name}
+
+
+@app.post("/api/invite/accept")
+def invite_accept(req: InviteAcceptRequest):
+    if not req.password or len(req.password) < 4:
+        raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
+    db = get_db()
+    _row, user = _validate_invite_token(db, req.token)
+    pw_hash = hash_password(req.password)
+    db.update_user_password(user.id, pw_hash)
+    db.consume_invite_token(req.token)
+    token = create_jwt(user.id, user.email)
+    groups = db.get_user_groups(user.id)
+    response = JSONResponse({
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "role": user.role,
+        "groups": [{"id": g.id, "name": g.name} for g in groups],
+    })
+    response.set_cookie(
+        key="jam_session",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=7 * 24 * 3600,
+        path="/",
+    )
+    return response
+
+
 # --- Admin endpoints ---
 
 
@@ -1875,9 +1947,10 @@ class AdminGroupResponse(BaseModel):
 
 class CreateUserRequest(BaseModel):
     email: str
-    password: str
+    password: str = ""
     name: str = ""
     role: str = "editor"
+    group_ids: list[int] = []
 
 
 class PasswordRequest(BaseModel):
@@ -1924,10 +1997,40 @@ def admin_create_user(req: CreateUserRequest, request: Request):
     if req.role not in VALID_ROLES:
         valid = ", ".join(sorted(VALID_ROLES))
         raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {valid}")
-    pw_hash = hash_password(req.password)
+    if req.password:
+        pw_hash = hash_password(req.password)
+    else:
+        pw_hash = ""
     user_id = db.create_user(req.email, pw_hash, req.name, role=req.role)
+
+    for gid in req.group_ids:
+        if db.get_group(gid):
+            db.assign_user_to_group(user_id, gid)
+
     user = db.get_user(user_id)
+
+    if not req.password:
+        token = db.create_invite_token(user_id)
+        from jam_session_processor.email import send_invite_email
+
+        send_invite_email(req.email, token, req.name)
+
     return _admin_user_response(db, user)
+
+
+@app.post("/api/admin/users/{user_id}/resend-invite")
+def admin_resend_invite(user_id: int, request: Request):
+    _require_role(request, "superadmin")
+    db = get_db()
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete_invite_tokens_for_user(user_id)
+    token = db.create_invite_token(user_id)
+    from jam_session_processor.email import send_invite_email
+
+    sent = send_invite_email(user.email, token, user.name)
+    return {"ok": True, "email_sent": sent}
 
 
 @app.delete("/api/admin/users/{user_id}")

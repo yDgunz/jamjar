@@ -271,14 +271,15 @@ def upload(file: Path, server: str, group: str, api_key: str):
     default="editor",
     help="User role (default: editor).",
 )
-def add_user(email: str, name: str, role: str):
-    """Create a new user. Prompts for password."""
+@click.option(
+    "--password", "set_password", is_flag=True, help="Set password directly instead of invite."
+)
+@click.option(
+    "-g", "--group", "group_names", multiple=True, help="Group(s) to add the user to."
+)
+def add_user(email: str, name: str, role: str, set_password: bool, group_names: tuple[str, ...]):
+    """Create a new user. Sends an invite email by default, or --password to set directly."""
     from jam_session_processor.auth import hash_password
-
-    password = click.prompt("Password", hide_input=True, confirmation_prompt=True)
-    if not password:
-        click.echo("Error: Password cannot be empty")
-        raise SystemExit(1)
 
     db = _get_db()
     existing = db.get_user_by_email(email)
@@ -287,9 +288,52 @@ def add_user(email: str, name: str, role: str):
         db.close()
         raise SystemExit(1)
 
-    user_id = db.create_user(email, hash_password(password), name=name, role=role)
+    # Resolve groups before creating the user
+    groups = []
+    for gn in group_names:
+        group = db.get_group_by_name(gn)
+        if not group:
+            click.echo(f"Error: Group '{gn}' not found")
+            db.close()
+            raise SystemExit(1)
+        groups.append(group)
+
+    if set_password:
+        pw = click.prompt("Password", hide_input=True, confirmation_prompt=True)
+        if not pw:
+            click.echo("Error: Password cannot be empty")
+            db.close()
+            raise SystemExit(1)
+        pw_hash = hash_password(pw)
+    else:
+        pw_hash = ""
+
+    user_id = db.create_user(email, pw_hash, name=name, role=role)
+
+    for group in groups:
+        db.assign_user_to_group(user_id, group.id)
+
+    group_msg = f" — groups: {', '.join(g.name for g in groups)}" if groups else ""
+
+    if not set_password:
+        token = db.create_invite_token(user_id)
+        from jam_session_processor.email import send_invite_email
+
+        sent = send_invite_email(email, token, name)
+        if sent:
+            click.echo(
+                f"Created user '{email}' (id={user_id}, role={role}){group_msg}"
+                f" — invite email sent"
+            )
+        else:
+            invite_url = f"{get_config().app_url.rstrip('/')}/invite/{token}"
+            click.echo(f"Created user '{email}' (id={user_id}, role={role}){group_msg}")
+            click.echo("SMTP not configured — share this invite link manually:")
+            click.echo(f"  {invite_url}")
+    else:
+        click.echo(f"Created user '{email}' (id={user_id}, role={role}){group_msg}")
+
     db.close()
-    click.echo(f"Created user '{email}' (id={user_id}, role={role})")
 
 
 @cli.command("add-group")

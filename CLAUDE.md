@@ -98,13 +98,14 @@ detail
 created_at
 (indexes: user, event_type, created_at)
 
-share_links
-──────────────
-id (PK)
-token (UNIQUE)
-track_id (FK→tracks, UNIQUE)
-created_by (FK→users, nullable)
-created_at
+share_links                    invite_tokens
+──────────────                ──────────────
+id (PK)                       id (PK)
+token (UNIQUE)                token (UNIQUE)
+track_id (FK→tracks, UNIQUE)  user_id (FK→users)
+created_by (FK→users, nullable) expires_at
+created_at                    used_at (nullable)
+                              created_at
 ```
 
 - **Multi-tenancy:** groups own sessions, songs, and setlists; users belong to groups via `user_groups`
@@ -118,6 +119,7 @@ created_at
 - `activity_log → users/groups`: many-to-one, tracks user activity for admin stats
 - `share_links → tracks`: one-to-one, CASCADE delete
 - `share_links → users`: many-to-one (nullable), SET NULL on delete
+- `invite_tokens → users`: many-to-one, CASCADE delete
 - Songs are created on first tag and reused across sessions within a group
 - Setlists are group-scoped ordered collections of songs, independent of sessions
 
@@ -130,9 +132,10 @@ All `/api` endpoints require authentication (JWT cookie or API key header). Role
 **Jobs:** `GET /api/jobs/{id}` — poll for upload progress (status: pending → processing → completed/failed)
 **Tracks:** `POST /api/tracks/{id}/tag` | `DELETE /api/tracks/{id}/tag` | `PUT /api/tracks/{id}/notes` | `GET /api/tracks/{id}/audio` | `POST /api/tracks/{id}/merge` (admin) | `POST /api/tracks/{id}/split` (admin) | `POST /api/tracks/{id}/share` | `DELETE /api/tracks/{id}/share`
 **Share (public):** `GET /share/{token}` | `GET /api/share/{token}/audio`
+**Invite (public):** `POST /api/invite/validate` | `POST /api/invite/accept`
 **Songs:** `GET /api/songs` | `POST /api/songs` (editor) | `GET /api/songs/{id}` | `GET /api/songs/{id}/tracks` | `PUT /api/songs/{id}/details` | `PUT /api/songs/{id}/name` | `PUT /api/songs/{id}/group` (admin) | `POST /api/songs/{id}/fetch-lyrics` (editor) | `DELETE /api/songs/{id}` (admin)
 **Setlists:** `GET /api/setlists` | `POST /api/setlists` (editor) | `GET /api/setlists/{id}` | `GET /api/setlists/{id}/songs` | `PUT /api/setlists/{id}/name` (editor) | `PUT /api/setlists/{id}/date` (editor) | `PUT /api/setlists/{id}/notes` (editor) | `PUT /api/setlists/{id}/songs` (editor, replace order) | `POST /api/setlists/{id}/songs` (editor, add song) | `DELETE /api/setlists/{id}/songs/{position}` (editor) | `DELETE /api/setlists/{id}` (admin)
-**Admin:** `GET/POST /api/admin/users` | `DELETE /api/admin/users/{id}` | `PUT .../password` | `PUT .../role` | `PUT .../name` | `POST/DELETE .../groups/{id}` | `GET/POST /api/admin/groups` | `DELETE /api/admin/groups/{id}` | `GET /api/admin/stats` (all superadmin)
+**Admin:** `GET/POST /api/admin/users` | `DELETE /api/admin/users/{id}` | `POST .../resend-invite` | `PUT .../password` | `PUT .../role` | `PUT .../name` | `POST/DELETE .../groups/{id}` | `GET/POST /api/admin/groups` | `DELETE /api/admin/groups/{id}` | `GET /api/admin/stats` (all superadmin)
 **Health:** `GET /health`
 
 ## Build & Development Commands
@@ -147,7 +150,7 @@ pip install -e ".[dev]"
 # Run the CLI
 jam-session serve                          # start API server
 jam-session upload <file> -s URL -g GROUP  # upload to remote server
-jam-session add-user EMAIL                 # create user (prompts for password)
+jam-session add-user EMAIL                 # create user + send invite (or --password to set directly)
 jam-session add-group NAME                 # create group
 jam-session assign-user EMAIL GROUP        # add user to group
 jam-session remove-user EMAIL GROUP         # remove user from group
@@ -244,6 +247,12 @@ All configuration is via `JAM_*` environment variables. Defaults match pre-confi
 | `JAM_R2_BUCKET` | *(empty)* | R2 bucket name (enables remote storage when set) |
 | `JAM_R2_ENABLED` | *(empty)* | Enable R2 storage (`true`/`1`/`yes`). Redundant if `JAM_R2_BUCKET` is set |
 | `JAM_R2_CUSTOM_DOMAIN` | *(empty)* | Custom domain for R2 public URLs (skips presigned URLs) |
+| `JAM_SMTP_HOST` | *(empty)* | SMTP server hostname (enables invite emails) |
+| `JAM_SMTP_PORT` | `587` | SMTP server port |
+| `JAM_SMTP_USER` | *(empty)* | SMTP username |
+| `JAM_SMTP_PASSWORD` | *(empty)* | SMTP password |
+| `JAM_SMTP_FROM` | *(empty)* | From address for emails (falls back to SMTP_USER) |
+| `JAM_APP_URL` | `http://localhost:5173` | Public URL of the app (used in invite links) |
 
 Path values stored in the DB are relative to `JAM_DATA_DIR`. The `config.resolve_path()` method resolves them to absolute at runtime. Already-absolute paths (from old DBs) pass through unchanged.
 

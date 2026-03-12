@@ -16,6 +16,12 @@ services:
       - JAM_R2_SECRET_ACCESS_KEY=${JAM_R2_SECRET_ACCESS_KEY:-}
       - JAM_R2_BUCKET=${JAM_R2_BUCKET:-}
       - JAM_R2_CUSTOM_DOMAIN=${JAM_R2_CUSTOM_DOMAIN:-}
+      - JAM_SMTP_HOST=${JAM_SMTP_HOST:-}
+      - JAM_SMTP_PORT=${JAM_SMTP_PORT:-587}
+      - JAM_SMTP_USER=${JAM_SMTP_USER:-}
+      - JAM_SMTP_PASSWORD=${JAM_SMTP_PASSWORD:-}
+      - JAM_SMTP_FROM=${JAM_SMTP_FROM:-}
+      - JAM_APP_URL=${JAM_APP_URL:-}
     restart: unless-stopped
 
 volumes:

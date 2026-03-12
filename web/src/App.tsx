@@ -16,6 +16,7 @@ import SetlistPerformMode from "./pages/SetlistPerformMode";
 import Tuner from "./pages/Tuner";
 import Metronome from "./pages/Metronome";
 import Admin from "./pages/Admin";
+import AcceptInvite from "./pages/AcceptInvite";
 
 function ChangePasswordModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -424,6 +425,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/invite/:token" element={<AcceptInvite />} />
           <Route path="*" element={<AuthenticatedApp />} />
         </Routes>
       </BrowserRouter>

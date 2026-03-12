@@ -553,11 +553,11 @@ export const api = {
   // Admin
   adminListUsers: () => fetchJson<AdminUser[]>(`${BASE}/admin/users`),
 
-  adminCreateUser: (email: string, password: string, name: string, role = "editor") =>
+  adminCreateUser: (email: string, name: string, role = "editor", groupIds: number[] = []) =>
     fetchJson<AdminUser>(`${BASE}/admin/users`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, name, role }),
+      body: JSON.stringify({ email, name, role, group_ids: groupIds }),
     }),
 
   adminDeleteUser: (userId: number) =>
@@ -612,5 +612,26 @@ export const api = {
       method: "DELETE",
     }),
 
+  adminResendInvite: (userId: number) =>
+    fetchJson<{ ok: boolean; email_sent: boolean }>(
+      `${BASE}/admin/users/${userId}/resend-invite`,
+      { method: "POST" }
+    ),
+
   adminGetUsageStats: () => fetchJson<UsageStats>(`${BASE}/admin/stats`),
+
+  // Invite (public)
+  validateInvite: (token: string) =>
+    fetchJson<{ email: string; name: string }>(`${BASE}/invite/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    }),
+
+  acceptInvite: (token: string, password: string) =>
+    fetchJson<AuthUser>(`${BASE}/invite/accept`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, password }),
+    }),
 };

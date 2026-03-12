@@ -29,6 +29,12 @@ class Config:
     r2_secret_access_key: str
     r2_bucket: str
     r2_custom_domain: str
+    smtp_host: str
+    smtp_port: int
+    smtp_user: str
+    smtp_password: str
+    smtp_from: str
+    app_url: str
 
     def resolve_path(self, stored: str) -> Path:
         """Resolve a stored path to absolute.
@@ -90,6 +96,12 @@ def _build_config() -> Config:
         r2_secret_access_key=os.environ.get("JAM_R2_SECRET_ACCESS_KEY", ""),
         r2_bucket=os.environ.get("JAM_R2_BUCKET", ""),
         r2_custom_domain=os.environ.get("JAM_R2_CUSTOM_DOMAIN", ""),
+        smtp_host=os.environ.get("JAM_SMTP_HOST", ""),
+        smtp_port=int(os.environ.get("JAM_SMTP_PORT", "587")),
+        smtp_user=os.environ.get("JAM_SMTP_USER", ""),
+        smtp_password=os.environ.get("JAM_SMTP_PASSWORD", ""),
+        smtp_from=os.environ.get("JAM_SMTP_FROM", ""),
+        app_url=os.environ.get("JAM_APP_URL", "http://localhost:5173"),
     )
 
 

@@ -109,6 +109,15 @@ CREATE TABLE IF NOT EXISTS share_links (
     created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS invite_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT NOT NULL UNIQUE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -281,6 +290,7 @@ class Database:
     def reset(self):
         """Drop all tables and recreate the schema."""
         self.conn.executescript("""
+            DROP TABLE IF EXISTS invite_tokens;
             DROP TABLE IF EXISTS activity_log;
             DROP TABLE IF EXISTS setlist_songs;
             DROP TABLE IF EXISTS setlists;
@@ -768,6 +778,44 @@ class Database:
 
     def delete_share_link(self, track_id: int):
         self.conn.execute("DELETE FROM share_links WHERE track_id = ?", (track_id,))
+        self.conn.commit()
+
+    # --- Invite tokens ---
+
+    def create_invite_token(self, user_id: int, expires_hours: int = 168) -> str:
+        """Create an invite token for a user. Returns the token string."""
+        import secrets
+        from datetime import datetime, timedelta, timezone
+
+        token = secrets.token_urlsafe(32)
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=expires_hours)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        self.conn.execute(
+            "INSERT INTO invite_tokens (token, user_id, expires_at) VALUES (?, ?, ?)",
+            (token, user_id, expires_at),
+        )
+        self.conn.commit()
+        return token
+
+    def get_invite_token(self, token: str) -> dict | None:
+        """Get an invite token record. Returns None if not found."""
+        row = self.conn.execute(
+            "SELECT * FROM invite_tokens WHERE token = ?", (token,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def consume_invite_token(self, token: str):
+        """Mark a token as used."""
+        self.conn.execute(
+            "UPDATE invite_tokens SET used_at = datetime('now') WHERE token = ?",
+            (token,),
+        )
+        self.conn.commit()
+
+    def delete_invite_tokens_for_user(self, user_id: int):
+        """Delete all invite tokens for a user (used when resending invites)."""
+        self.conn.execute("DELETE FROM invite_tokens WHERE user_id = ?", (user_id,))
         self.conn.commit()
 
     # --- Songs ---

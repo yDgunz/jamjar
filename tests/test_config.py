@@ -92,6 +92,12 @@ def _make_config(tmp_path):
         r2_secret_access_key="",
         r2_bucket="",
         r2_custom_domain="",
+        smtp_host="",
+        smtp_port=587,
+        smtp_user="",
+        smtp_password="",
+        smtp_from="",
+        app_url="http://localhost:5173",
     )
 
 
@@ -129,6 +135,12 @@ def test_make_relative_outside_data_dir(tmp_path):
         r2_secret_access_key="",
         r2_bucket="",
         r2_custom_domain="",
+        smtp_host="",
+        smtp_port=587,
+        smtp_user="",
+        smtp_password="",
+        smtp_from="",
+        app_url="http://localhost:5173",
     )
     outside = tmp_path / "elsewhere" / "file.ogg"
     assert cfg.make_relative(outside) == str(outside)
