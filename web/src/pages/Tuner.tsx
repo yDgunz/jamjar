@@ -62,7 +62,19 @@ export default function Tuner() {
           >
             &larr;
           </Link>
-          <h1 className="flex-1 text-center text-base font-bold">Tuner</h1>
+          <div className="flex flex-1 justify-center">
+            <div className="inline-flex rounded-lg bg-gray-900 p-0.5 text-sm">
+              <span className="rounded-md bg-gray-700 px-4 py-1.5 font-medium text-white">
+                Tuner
+              </span>
+              <Link
+                to="/metronome"
+                className="rounded-md px-4 py-1.5 text-gray-400 transition hover:text-gray-200"
+              >
+                Metronome
+              </Link>
+            </div>
+          </div>
           <div className="w-10 shrink-0" />
         </div>
       </header>

@@ -14,6 +14,7 @@ import SetlistList from "./pages/SetlistList";
 import SetlistDetail from "./pages/SetlistDetail";
 import SetlistPerformMode from "./pages/SetlistPerformMode";
 import Tuner from "./pages/Tuner";
+import Metronome from "./pages/Metronome";
 import Admin from "./pages/Admin";
 
 function ChangePasswordModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -133,25 +134,35 @@ function Layout({ children }: { children: React.ReactNode }) {
   const online = useOnline();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [pwModalOpen, setPwModalOpen] = useState(false);
   const desktopMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const desktopToolsRef = useRef<HTMLDivElement>(null);
+  const mobileToolsRef = useRef<HTMLDivElement>(null);
 
-  // Close menu on navigation
-  useEffect(() => { setMenuOpen(false); }, [location.pathname]);
+  // Close menus on navigation
+  useEffect(() => { setMenuOpen(false); setToolsOpen(false); }, [location.pathname]);
 
-  // Close menu on outside click
+  // Close menus on outside click
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen && !toolsOpen) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (desktopMenuRef.current?.contains(target)) return;
-      if (mobileMenuRef.current?.contains(target)) return;
-      setMenuOpen(false);
+      if (menuOpen) {
+        if (!desktopMenuRef.current?.contains(target) && !mobileMenuRef.current?.contains(target)) {
+          setMenuOpen(false);
+        }
+      }
+      if (toolsOpen) {
+        if (!desktopToolsRef.current?.contains(target) && !mobileToolsRef.current?.contains(target)) {
+          setToolsOpen(false);
+        }
+      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [menuOpen]);
+  }, [menuOpen, toolsOpen]);
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
@@ -163,7 +174,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       <header className={`hidden border-b border-gray-800 px-4 py-3 sm:block ${online ? "pt-[max(0.75rem,env(safe-area-inset-top))]" : ""}`}>
         <div className="mx-auto flex max-w-5xl items-center gap-x-8">
           <NavLink to="/" className="flex items-center gap-1.5 text-xl font-bold text-white hover:text-accent-300 transition">
-            <span className="text-2xl" role="img" aria-label="jar">🫙</span>
+            <img src="/logo.png" alt="JamJar" className="h-7 w-7" />
             <span>JamJar</span>
           </NavLink>
           <nav className="flex flex-1 gap-4 text-sm">
@@ -192,14 +203,34 @@ function Layout({ children }: { children: React.ReactNode }) {
             >
               Setlists
             </NavLink>
-            <NavLink
-              to="/tuner"
-              className={({ isActive }) =>
-                `py-2 px-3 ${isActive ? "text-accent-400" : "text-gray-400 hover:text-gray-200"}`
-              }
-            >
-              Tuner
-            </NavLink>
+            <div className="relative" ref={desktopToolsRef}>
+              <button
+                onClick={() => { setToolsOpen(!toolsOpen); setMenuOpen(false); }}
+                className={`py-2 px-3 ${location.pathname === "/tuner" || location.pathname === "/metronome" ? "text-accent-400" : "text-gray-400 hover:text-gray-200"}`}
+              >
+                Tools
+              </button>
+              {toolsOpen && (
+                <div className="absolute left-0 z-20 mt-1 w-40 rounded-lg border border-gray-700 bg-gray-800 py-1 shadow-lg">
+                  <NavLink
+                    to="/tuner"
+                    className={({ isActive }) =>
+                      `block px-3 py-2 text-sm ${isActive ? "text-accent-400" : "text-gray-300 hover:bg-gray-700"}`
+                    }
+                  >
+                    Tuner
+                  </NavLink>
+                  <NavLink
+                    to="/metronome"
+                    className={({ isActive }) =>
+                      `block px-3 py-2 text-sm ${isActive ? "text-accent-400" : "text-gray-300 hover:bg-gray-700"}`
+                    }
+                  >
+                    Metronome
+                  </NavLink>
+                </div>
+              )}
+            </div>
           </nav>
           {user && (
             <div className="relative" ref={desktopMenuRef}>
@@ -276,14 +307,37 @@ function Layout({ children }: { children: React.ReactNode }) {
             </svg>
             <span className="text-[10px] font-medium">Setlists</span>
           </NavLink>
-          <NavLink to="/tuner" className={({ isActive }) =>
-            `flex flex-1 flex-col items-center gap-0.5 py-2 ${isActive ? "text-accent-400" : "text-gray-500"}`
-          }>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-              <path d="M15.5 2A1.5 1.5 0 0014 3.5v13a1.5 1.5 0 003 0v-13A1.5 1.5 0 0015.5 2zM10 6a1.5 1.5 0 00-1.5 1.5v5a1.5 1.5 0 003 0v-5A1.5 1.5 0 0010 6zM4.5 9A1.5 1.5 0 003 10.5v2a1.5 1.5 0 003 0v-2A1.5 1.5 0 004.5 9z" />
-            </svg>
-            <span className="text-[10px] font-medium">Tuner</span>
-          </NavLink>
+          <div className="relative flex flex-1 flex-col items-center" ref={mobileToolsRef}>
+            <button
+              onClick={() => { setToolsOpen(!toolsOpen); setMenuOpen(false); }}
+              className={`flex flex-col items-center gap-0.5 py-2 ${location.pathname === "/tuner" || location.pathname === "/metronome" ? "text-accent-400" : "text-gray-500"}`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                <path d="M15.5 2A1.5 1.5 0 0014 3.5v13a1.5 1.5 0 003 0v-13A1.5 1.5 0 0015.5 2zM10 6a1.5 1.5 0 00-1.5 1.5v5a1.5 1.5 0 003 0v-5A1.5 1.5 0 0010 6zM4.5 9A1.5 1.5 0 003 10.5v2a1.5 1.5 0 003 0v-2A1.5 1.5 0 004.5 9z" />
+              </svg>
+              <span className="text-[10px] font-medium">Tools</span>
+            </button>
+            {toolsOpen && (
+              <div className="absolute bottom-full left-1/2 z-40 mb-2 w-40 -translate-x-1/2 rounded-lg border border-gray-700 bg-gray-800 py-1 shadow-lg">
+                <NavLink
+                  to="/tuner"
+                  className={({ isActive }) =>
+                    `block px-3 py-2 text-sm ${isActive ? "text-accent-400" : "text-gray-300 hover:bg-gray-700"}`
+                  }
+                >
+                  Tuner
+                </NavLink>
+                <NavLink
+                  to="/metronome"
+                  className={({ isActive }) =>
+                    `block px-3 py-2 text-sm ${isActive ? "text-accent-400" : "text-gray-300 hover:bg-gray-700"}`
+                  }
+                >
+                  Metronome
+                </NavLink>
+              </div>
+            )}
+          </div>
           {/* Account tab */}
           {user && (
             <div className="relative flex flex-1 flex-col items-center" ref={mobileMenuRef}>
@@ -343,6 +397,7 @@ function AuthenticatedApp() {
         <Route path="/songs/:id/perform" element={<PerformMode />} />
         <Route path="/setlists/:id/perform" element={<SetlistPerformMode />} />
         <Route path="/tuner" element={<Tuner />} />
+        <Route path="/metronome" element={<Metronome />} />
 
         {/* Normal layout routes */}
         <Route path="*" element={

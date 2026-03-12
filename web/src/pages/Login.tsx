@@ -25,7 +25,7 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center bg-gray-950 px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-2">
-          <span className="text-6xl" role="img" aria-label="jar">🫙</span>
+          <img src="/logo.png" alt="JamJar" className="h-20 w-20" />
           <h1 className="text-3xl font-bold text-white">JamJar</h1>
           <p className="text-sm text-gray-500">Band session recordings</p>
         </div>
