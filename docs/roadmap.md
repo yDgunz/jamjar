@@ -10,7 +10,8 @@ Prioritized backlog, roughly ordered by importance.
 6. Deploy rollback strategy — tag or keep the previous Docker image before rebuilding so a bad deploy can be reverted without manual SSH fixes
 7. Schema migrations — replace hand-rolled `_migrate()` in `db.py` with Alembic for versioned, reversible migrations
 8. Observability (structured logging, Sentry, usage metrics)
-9. Data export (CSV/JSON catalog, zip downloads)
-10. Show date coordination
-11. Metronome
-12. Import chart from external source
+9. Separate audio processing worker — extract `_process_upload()` into a standalone worker process that polls the jobs table, decoupling CPU-heavy FFmpeg work from the API server so processing doesn't degrade request handling for other users
+10. Data export (CSV/JSON catalog, zip downloads)
+11. Show date coordination
+12. Metronome
+13. Import chart from external source

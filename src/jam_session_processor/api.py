@@ -1380,12 +1380,20 @@ def share_landing_page(token: str):
             padding: 2rem;
         }}
         .brand {{
-            font-size: 0.75rem;
-            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1rem;
+            font-weight: 700;
             letter-spacing: 0.05em;
             text-transform: uppercase;
-            color: #6b7280;
+            color: #9ca3af;
             margin-bottom: 1.5rem;
+        }}
+        .brand img {{
+            width: 2rem;
+            height: 2rem;
+            border-radius: 6px;
         }}
         .title {{
             font-size: 1.25rem;
@@ -1402,7 +1410,11 @@ def share_landing_page(token: str):
             width: 100%;
             margin-bottom: 1rem;
         }}
-        .download {{
+        .actions {{
+            display: flex;
+            gap: 0.5rem;
+        }}
+        .btn {{
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
@@ -1416,24 +1428,91 @@ def share_landing_page(token: str):
             text-decoration: none;
             transition: background 0.15s;
         }}
-        .download:hover {{ background: #374151; color: #f9fafb; }}
+        .btn:hover {{ background: #374151; color: #f9fafb; }}
+        .btn.copied {{ background: #065f46; color: #6ee7b7; }}
     </style>
 </head>
 <body>
     <div class="card">
-        <p class="brand">JamJar</p>
+        <p class="brand"><img src="/logo.png" alt="">JamJar</p>
         <h1 class="title">{title}</h1>
         <p class="meta">{session_name}{(' &middot; ' + date_display) if date_display else ''}</p>
         <audio controls preload="metadata" src="{audio_url}"></audio>
-        <a class="download" href="{download_url}">
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24"
-                 stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round"
-                      d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2
-                         M7 10l5 5 5-5M12 15V3"/>
-            </svg>
-            Download
-        </a>
+        <div class="actions">
+            <a class="btn" href="{download_url}">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24"
+                     stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2
+                             M7 10l5 5 5-5M12 15V3"/>
+                </svg>
+                Download
+            </a>
+            <button class="btn" id="share-btn" onclick="shareTrack()">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24"
+                     stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M8.684 13.342C8.886 12.938
+                             9 12.482 9 12c0-.482-.114
+                             -.938-.316-1.342m0 2.684a3
+                             3 0 110-2.684m0 2.684l6.632
+                             3.316m-6.632-6l6.632-3.316
+                             m0 0a3 3 0 105.367-2.684
+                             3 3 0 00-5.367 2.684zm0
+                             9.316a3 3 0 105.368 2.684
+                             3 3 0 00-5.368-2.684z"/>
+                </svg>
+                <span id="share-label">Share</span>
+            </button>
+        </div>
+        <svg id="check-icon" style="display:none"
+             width="16" height="16" fill="none"
+             viewBox="0 0 24 24" stroke="currentColor"
+             stroke-width="2">
+            <path stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M5 13l4 4L19 7"/>
+        </svg>
+        <svg id="share-icon" style="display:none"
+             width="16" height="16" fill="none"
+             viewBox="0 0 24 24" stroke="currentColor"
+             stroke-width="2">
+            <path stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M8.684 13.342C8.886 12.938 9
+                     12.482 9 12c0-.482-.114-.938
+                     -.316-1.342m0 2.684a3 3 0
+                     110-2.684m0 2.684l6.632 3.316
+                     m-6.632-6l6.632-3.316m0 0a3 3
+                     0 105.367-2.684 3 3 0
+                     00-5.367 2.684zm0 9.316a3 3 0
+                     105.368 2.684 3 3 0
+                     00-5.368-2.684z"/>
+        </svg>
+        <script>
+        function shareTrack() {{
+            var btn = document.getElementById('share-btn');
+            var label = document.getElementById('share-label');
+            var iconSlot = btn.querySelector('svg');
+            if (navigator.share) {{
+                navigator.share({{ title: '{title}', url: window.location.href }});
+            }} else {{
+                navigator.clipboard.writeText(window.location.href).then(function() {{
+                    btn.classList.add('copied');
+                    label.textContent = 'Copied!';
+                    iconSlot.replaceWith(document.getElementById('check-icon').cloneNode(true));
+                    btn.querySelector('svg').style.display = '';
+                    setTimeout(function() {{
+                        btn.classList.remove('copied');
+                        label.textContent = 'Share';
+                        btn.querySelector('svg').replaceWith(document.getElementById('share-icon').cloneNode(true));
+                        btn.querySelector('svg').style.display = '';
+                    }}, 2000);
+                }});
+            }}
+        }}
+        </script>
     </div>
 </body>
 </html>"""
