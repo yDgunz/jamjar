@@ -322,20 +322,14 @@ export default function Admin() {
                     <td className="px-3 py-2 text-white">{user.email}</td>
                     <td className="px-3 py-2 text-gray-300">{user.name || <span className="text-gray-600">—</span>}</td>
                     <td className="px-3 py-2 text-gray-300">{user.role}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-1">
-                        {user.groups.map((g) => (
-                          <span
-                            key={g.id}
-                            className="rounded-full bg-gray-800 px-2 py-0.5 text-xs text-gray-300"
-                          >
-                            {g.name}
-                          </span>
-                        ))}
-                        {user.groups.length === 0 && (
-                          <span className="text-xs text-gray-600">None</span>
-                        )}
-                      </div>
+                    <td className="px-3 py-2 text-xs text-gray-300">
+                      {user.groups.length === 0 && <span className="text-gray-600">None</span>}
+                      {user.groups.length >= 1 && (
+                        <span className="rounded-full bg-gray-800 px-2 py-0.5">{user.groups[0].name}</span>
+                      )}
+                      {user.groups.length > 1 && (
+                        <span className="ml-1 text-gray-500">+{user.groups.length - 1} more</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-2">
