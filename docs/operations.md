@@ -95,6 +95,45 @@ jam-session upload "path/to/recording.m4a" -s https://jam-jar.app -g <group-name
 - The server processes each file in the background (song detection + track export). On a VPS this can take a few minutes per file.
 - Duplicate filenames within the same group are rejected (409 error).
 
+## Viewing logs
+
+### Live logs (follow)
+
+```bash
+ssh <user>@<host>
+cd /opt/jamjar
+docker compose logs -f
+```
+
+### Recent logs (last 100 lines)
+
+```bash
+docker compose logs --tail 100
+```
+
+### Filter by time
+
+```bash
+# Last hour
+docker compose logs --since 1h
+
+# Since a specific time
+docker compose logs --since "2026-03-12T10:00:00"
+```
+
+### Search logs for errors
+
+```bash
+docker compose logs 2>&1 | grep -i error
+```
+
+### App-level logging
+
+The FastAPI app logs to stdout inside the container. Key log events:
+- Upload processing progress and errors
+- Invite email send/fail
+- Auth failures
+
 ## Querying the database
 
 Run SQLite queries directly against the production database from inside the Docker container.
