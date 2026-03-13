@@ -124,7 +124,7 @@ Add "Schedule" to the main nav between Setlists and Tools, in both desktop nav a
   - Response summary (e.g., "3 yes, 1 no, 1 pending")
   - Your current RSVP status
   - Quick RSVP buttons (yes / no / maybe) directly on the card
-- "New Event" button visible for editor+ roles
+- "New Event" button visible for editor+ roles, opens a modal form (matching the setlist creation pattern)
 - Filter by type (all / rehearsal / gig)
 - Past events hidden by default, "Show past" toggle to reveal
 - Empty state: "No upcoming events. Create one to get started."
