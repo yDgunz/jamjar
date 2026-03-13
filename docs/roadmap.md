@@ -15,3 +15,4 @@ Prioritized backlog, roughly ordered by importance.
 11. Show date coordination
 12. Metronome
 13. Import chart from external source
+14. Refactor granular PUT endpoints — consolidate per-field PUT endpoints (e.g., `/sessions/{id}/name`, `/sessions/{id}/notes`) into single partial-update PUT endpoints per resource
