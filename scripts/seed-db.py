@@ -26,12 +26,12 @@ from jam_session_processor.db import Database
 GROUPS = ["Porch Dogs", "The Slow Burners"]
 
 USERS = [
-    ("eric@example.com", "Eric", "Porch Dogs", "superadmin"),
+    ("test", "Eric", "Porch Dogs", "superadmin"),
     ("dave@example.com", "Dave", "Porch Dogs", "admin"),
     ("mike@example.com", "Mike", "The Slow Burners", "editor"),
 ]
 
-DEFAULT_PASSWORD = "testpass123"
+DEFAULT_PASSWORD = "test"
 
 SONGS = {
     "Porch Dogs": [
@@ -702,9 +702,9 @@ def seed(db: Database):
         print(f"  User: {email} [{role}] -> {group_name}")
 
     # Eric is in both groups
-    eric = db.get_user_by_email("eric@example.com")
+    eric = db.get_user_by_email("test")
     db.assign_user_to_group(eric.id, group_ids["The Slow Burners"])
-    print(f"  User: eric@example.com -> The Slow Burners (additional)")
+    print(f"  User: test -> The Slow Burners (additional)")
 
     # Songs (pre-create so we can tag tracks)
     song_ids: dict[tuple[str, str], int] = {}  # (group_name, song_name) -> id
