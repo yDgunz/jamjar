@@ -246,6 +246,9 @@ class SessionResponse(BaseModel):
     song_names: str = ""
     active_job_id: str | None = None
     created_at: str = ""
+    created_by_name: str | None = None
+    updated_by_name: str | None = None
+    updated_at: str | None = None
 
 
 class TrackResponse(BaseModel):
@@ -271,6 +274,9 @@ class SongResponse(BaseModel):
     take_count: int
     first_date: str | None
     last_date: str | None
+    created_by_name: str | None = None
+    updated_by_name: str | None = None
+    updated_at: str | None = None
 
 
 class SongTrackResponse(BaseModel):
@@ -374,6 +380,8 @@ def _session_response(session) -> SessionResponse:
     d = session.__dict__.copy()
     d["source_file"] = _strip_to_basename(d.get("source_file", ""))
     d["group_name"] = group_name
+    d["created_by_name"] = db.get_user_name(d.pop("created_by", None))
+    d["updated_by_name"] = db.get_user_name(d.pop("updated_by", None))
     return SessionResponse(**d)
 
 
@@ -388,6 +396,8 @@ def _song_response(song) -> SongResponse:
     group = db.get_group(song.group_id)
     d = song.__dict__.copy()
     d["group_name"] = group.name if group else ""
+    d["created_by_name"] = db.get_user_name(d.pop("created_by", None))
+    d["updated_by_name"] = db.get_user_name(d.pop("updated_by", None))
     return SongResponse(**d)
 
 
@@ -426,7 +436,8 @@ def update_session_name(session_id: int, req: NameRequest, request: Request):
         raise HTTPException(status_code=404, detail="Session not found")
     _require_group_access(request, session.group_id)
     _require_role(request, "editor")
-    db.update_session_name(session_id, req.name)
+    user_id = request.state.user.id if request.state.user else None
+    db.update_session_name(session_id, req.name, updated_by=user_id)
     session = db.get_session(session_id)
     return _session_response(session)
 
@@ -439,7 +450,8 @@ def update_session_notes(session_id: int, req: NotesRequest, request: Request):
         raise HTTPException(status_code=404, detail="Session not found")
     _require_group_access(request, session.group_id)
     _require_role(request, "editor")
-    db.update_session_notes(session_id, req.notes)
+    user_id = request.state.user.id if request.state.user else None
+    db.update_session_notes(session_id, req.notes, updated_by=user_id)
     session = db.get_session(session_id)
     return _session_response(session)
 
@@ -452,7 +464,8 @@ def update_session_date(session_id: int, req: DateRequest, request: Request):
         raise HTTPException(status_code=404, detail="Session not found")
     _require_group_access(request, session.group_id)
     _require_role(request, "editor")
-    db.update_session_date(session_id, req.date)
+    user_id = request.state.user.id if request.state.user else None
+    db.update_session_date(session_id, req.date, updated_by=user_id)
     session = db.get_session(session_id)
     return _session_response(session)
 
@@ -743,9 +756,7 @@ def _process_upload(
         # Update session date from audio metadata if not already set from filename
         session_obj = db.get_session(session_id)
         if session_obj and not session_obj.date and meta.recording_date:
-            db.update_session_date(
-                session_id, meta.recording_date.strftime("%Y-%m-%d")
-            )
+            db.update_session_date(session_id, meta.recording_date.strftime("%Y-%m-%d"))
 
         # Upload full recording to R2 early so session audio is streamable immediately
         source_ext = source.suffix
@@ -850,7 +861,10 @@ def upload_init(req: UploadInitRequest, request: Request):
     # Create session record using original filename for name derivation
     filename_date = parse_date_from_filename(Path(req.filename).stem)
     date_str = filename_date.strftime("%Y-%m-%d") if filename_date else None
-    session_id = db.create_session(req.filename, group_id=group_id, date=date_str)
+    user_id = request.state.user.id if request.state.user else None
+    session_id = db.create_session(
+        req.filename, group_id=group_id, date=date_str, created_by=user_id
+    )
 
     # Update source_file to canonical path using session_id
     source_rel = f"recordings/{session_id}{ext}"
@@ -858,9 +872,7 @@ def upload_init(req: UploadInitRequest, request: Request):
 
     # Check for filename-based duplicates
     source_name = Path(req.filename).name
-    existing = db.find_session_by_source(
-        cfg.make_relative(cfg.input_dir / source_name), group_id
-    )
+    existing = db.find_session_by_source(cfg.make_relative(cfg.input_dir / source_name), group_id)
     if existing:
         db.delete_session(session_id)
         raise HTTPException(
@@ -889,9 +901,7 @@ def upload_init(req: UploadInitRequest, request: Request):
 
     db.update_job_progress(job_id, "Waiting for upload...")
     # Set status back to pending (update_job_progress sets it to processing)
-    db.conn.execute(
-        "UPDATE jobs SET status = 'pending' WHERE id = ?", (job_id,)
-    )
+    db.conn.execute("UPDATE jobs SET status = 'pending' WHERE id = ?", (job_id,))
     db.conn.commit()
 
     job = db.get_job(job_id)
@@ -1101,7 +1111,10 @@ async def upload_session(request: Request, file: UploadFile):
 
     filename_date = parse_date_from_filename(source.stem)
     date_str = filename_date.strftime("%Y-%m-%d") if filename_date else None
-    session_id = db.create_session(source_rel, group_id=group_id, date=date_str)
+    upload_user_id = request.state.user.id if request.state.user else None
+    session_id = db.create_session(
+        source_rel, group_id=group_id, date=date_str, created_by=upload_user_id
+    )
 
     job_id = uuid4().hex[:16]
     job = db.create_job(job_id, group_id, session_id=session_id)
@@ -1145,7 +1158,8 @@ def tag_track(track_id: int, req: TagRequest, request: Request):
     db = get_db()
     track, session = _get_track_with_access(db, track_id, request)
     _require_role(request, "editor")
-    db.tag_track(track_id, req.song_name, session.group_id)
+    user_id = request.state.user.id if request.state.user else None
+    db.tag_track(track_id, req.song_name, session.group_id, user_id=user_id)
     if request.state.user:
         db.log_activity(request.state.user.id, session.group_id, "tag", req.song_name)
     track = db.get_track(track_id)
@@ -1440,7 +1454,7 @@ def share_landing_page(token: str):
     <div class="card">
         <p class="brand"><img src="/logo.png" alt="">JamJar</p>
         <h1 class="title">{title}</h1>
-        <p class="meta">{session_name}{(' &middot; ' + date_display) if date_display else ''}</p>
+        <p class="meta">{session_name}{(" &middot; " + date_display) if date_display else ""}</p>
         <audio controls preload="metadata" src="{audio_url}"></audio>
         <div class="actions">
             <a class="btn" href="{download_url}">
@@ -1565,10 +1579,11 @@ def create_song(req: CreateSongRequest, request: Request):
     ).fetchone()
     if existing:
         raise HTTPException(status_code=409, detail="Song already exists in this group")
-    song_id = db._get_or_create_song(name, req.group_id)
+    user_id = request.state.user.id if request.state.user else None
+    song_id = db._get_or_create_song(name, req.group_id, created_by=user_id)
     artist = req.artist.strip()
     if artist:
-        db.update_song_details(song_id, "", "", artist)
+        db.update_song_details(song_id, "", "", artist, updated_by=user_id)
     song = db.get_song(song_id)
     return _song_response(song)
 
@@ -1585,7 +1600,8 @@ def update_song_details(song_id: int, req: SongDetailsRequest, request: Request)
     db = get_db()
     song = _get_song_with_access(db, song_id, request)
     _require_role(request, "editor")
-    db.update_song_details(song_id, req.sheet, req.notes, req.artist)
+    user_id = request.state.user.id if request.state.user else None
+    db.update_song_details(song_id, req.sheet, req.notes, req.artist, updated_by=user_id)
     if request.state.user:
         db.log_activity(request.state.user.id, song.group_id, "song_edit", song.name)
     song = db.get_song(song_id)
@@ -1626,7 +1642,8 @@ def fetch_lyrics(song_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Lyrics not found")
     # Append to existing sheet content
     new_sheet = f"{song.sheet}\n\n{lyrics}".strip() if song.sheet else lyrics
-    db.update_song_details(song.id, new_sheet, song.notes, song.artist)
+    lyrics_user_id = request.state.user.id if request.state.user else None
+    db.update_song_details(song.id, new_sheet, song.notes, song.artist, updated_by=lyrics_user_id)
     updated = db.get_song(song.id)
     return {"lyrics": lyrics, "song": _song_response(updated).model_dump()}
 
@@ -1645,8 +1662,9 @@ def rename_song(song_id: int, req: NameRequest, request: Request):
     db = get_db()
     song = _get_song_with_access(db, song_id, request)
     _require_role(request, "editor")
+    user_id = request.state.user.id if request.state.user else None
     try:
-        db.rename_song(song_id, req.name.strip())
+        db.rename_song(song_id, req.name.strip(), updated_by=user_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if request.state.user:
@@ -1692,6 +1710,9 @@ class SetlistResponse(BaseModel):
     date: str | None
     notes: str
     song_count: int
+    created_by_name: str | None = None
+    updated_by_name: str | None = None
+    updated_at: str | None = None
 
 
 class SetlistSongResponse(BaseModel):
@@ -1700,6 +1721,7 @@ class SetlistSongResponse(BaseModel):
     song_name: str
     artist: str
     sheet: str
+    added_by_name: str | None = None
 
 
 class CreateSetlistRequest(BaseModel):
@@ -1723,7 +1745,20 @@ def _setlist_response(setlist) -> SetlistResponse:
     group = db.get_group(setlist.group_id)
     d = setlist.__dict__.copy()
     d["group_name"] = group.name if group else ""
+    d["created_by_name"] = db.get_user_name(d.pop("created_by", None))
+    d["updated_by_name"] = db.get_user_name(d.pop("updated_by", None))
     return SetlistResponse(**d)
+
+
+def _setlist_songs_response(setlist_id: int) -> list[SetlistSongResponse]:
+    db = get_db()
+    songs = db.get_setlist_songs(setlist_id)
+    result = []
+    for s in songs:
+        d = s.__dict__.copy()
+        d["added_by_name"] = db.get_user_name(d.pop("added_by", None))
+        result.append(SetlistSongResponse(**d))
+    return result
 
 
 def _get_setlist_with_access(db, setlist_id: int, request):
@@ -1755,7 +1790,10 @@ def create_setlist(req: CreateSetlistRequest, request: Request):
     ).fetchone()
     if existing:
         raise HTTPException(status_code=409, detail="Setlist already exists in this group")
-    sl_id = db.create_setlist(name, req.group_id, date=req.date, notes=req.notes)
+    user_id = request.state.user.id if request.state.user else None
+    sl_id = db.create_setlist(
+        name, req.group_id, date=req.date, notes=req.notes, created_by=user_id
+    )
     if request.state.user:
         db.log_activity(request.state.user.id, req.group_id, "setlist_create", name)
     setlist = db.get_setlist(sl_id)
@@ -1773,7 +1811,7 @@ def get_setlist(setlist_id: int, request: Request):
 def get_setlist_songs(setlist_id: int, request: Request):
     db = get_db()
     _get_setlist_with_access(db, setlist_id, request)
-    return db.get_setlist_songs(setlist_id)
+    return _setlist_songs_response(setlist_id)
 
 
 @app.put("/api/setlists/{setlist_id}/name", response_model=SetlistResponse)
@@ -1781,8 +1819,9 @@ def update_setlist_name(setlist_id: int, req: NameRequest, request: Request):
     db = get_db()
     setlist = _get_setlist_with_access(db, setlist_id, request)
     _require_role(request, "editor")
+    user_id = request.state.user.id if request.state.user else None
     try:
-        db.update_setlist_name(setlist_id, req.name.strip())
+        db.update_setlist_name(setlist_id, req.name.strip(), updated_by=user_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if request.state.user:
@@ -1796,7 +1835,8 @@ def update_setlist_date(setlist_id: int, req: DateRequest, request: Request):
     db = get_db()
     setlist = _get_setlist_with_access(db, setlist_id, request)
     _require_role(request, "editor")
-    db.update_setlist_date(setlist_id, req.date)
+    user_id = request.state.user.id if request.state.user else None
+    db.update_setlist_date(setlist_id, req.date, updated_by=user_id)
     if request.state.user:
         db.log_activity(request.state.user.id, setlist.group_id, "setlist_edit", setlist.name)
     setlist = db.get_setlist(setlist_id)
@@ -1808,7 +1848,8 @@ def update_setlist_notes(setlist_id: int, req: NotesRequest, request: Request):
     db = get_db()
     setlist = _get_setlist_with_access(db, setlist_id, request)
     _require_role(request, "editor")
-    db.update_setlist_notes(setlist_id, req.notes)
+    user_id = request.state.user.id if request.state.user else None
+    db.update_setlist_notes(setlist_id, req.notes, updated_by=user_id)
     if request.state.user:
         db.log_activity(request.state.user.id, setlist.group_id, "setlist_edit", setlist.name)
     setlist = db.get_setlist(setlist_id)
@@ -1820,10 +1861,11 @@ def set_setlist_songs(setlist_id: int, req: SetlistSongsRequest, request: Reques
     db = get_db()
     setlist = _get_setlist_with_access(db, setlist_id, request)
     _require_role(request, "editor")
-    db.set_setlist_songs(setlist_id, req.song_ids)
+    user_id = request.state.user.id if request.state.user else None
+    db.set_setlist_songs(setlist_id, req.song_ids, updated_by=user_id)
     if request.state.user:
         db.log_activity(request.state.user.id, setlist.group_id, "setlist_edit", setlist.name)
-    return db.get_setlist_songs(setlist_id)
+    return _setlist_songs_response(setlist_id)
 
 
 @app.post("/api/setlists/{setlist_id}/songs", response_model=list[SetlistSongResponse])
@@ -1831,10 +1873,11 @@ def add_setlist_song(setlist_id: int, req: AddSetlistSongRequest, request: Reque
     db = get_db()
     setlist = _get_setlist_with_access(db, setlist_id, request)
     _require_role(request, "editor")
-    db.add_song_to_setlist(setlist_id, req.song_id, req.position)
+    user_id = request.state.user.id if request.state.user else None
+    db.add_song_to_setlist(setlist_id, req.song_id, req.position, added_by=user_id)
     if request.state.user:
         db.log_activity(request.state.user.id, setlist.group_id, "setlist_edit", setlist.name)
-    return db.get_setlist_songs(setlist_id)
+    return _setlist_songs_response(setlist_id)
 
 
 @app.delete("/api/setlists/{setlist_id}/songs/{position}")
@@ -1905,13 +1948,15 @@ def invite_accept(req: InviteAcceptRequest):
     db.consume_invite_token(req.token)
     token = create_jwt(user.id, user.email)
     groups = db.get_user_groups(user.id)
-    response = JSONResponse({
-        "id": user.id,
-        "email": user.email,
-        "name": user.name,
-        "role": user.role,
-        "groups": [{"id": g.id, "name": g.name} for g in groups],
-    })
+    response = JSONResponse(
+        {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+            "groups": [{"id": g.id, "name": g.name} for g in groups],
+        }
+    )
     response.set_cookie(
         key="jam_session",
         value=token,

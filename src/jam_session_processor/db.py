@@ -156,6 +156,9 @@ class Session:
     tagged_count: int = 0
     song_names: str = ""
     active_job_id: str | None = None
+    created_by: int | None = None
+    updated_by: int | None = None
+    updated_at: str | None = None
 
 
 @dataclass
@@ -184,6 +187,9 @@ class Song:
     take_count: int = 0
     first_date: str | None = None
     last_date: str | None = None
+    created_by: int | None = None
+    updated_by: int | None = None
+    updated_at: str | None = None
 
 
 @dataclass
@@ -208,6 +214,9 @@ class Setlist:
     notes: str
     created_at: str
     song_count: int = 0
+    created_by: int | None = None
+    updated_by: int | None = None
+    updated_at: str | None = None
 
 
 @dataclass
@@ -217,6 +226,7 @@ class SetlistSong:
     song_name: str
     artist: str
     sheet: str
+    added_by: int | None = None
 
 
 def clean_session_name(source_file: str) -> str:
@@ -282,6 +292,37 @@ class Database:
 
         if "last_active_at" not in cols:
             self.conn.execute("ALTER TABLE users ADD COLUMN last_active_at TEXT")
+            self.conn.commit()
+
+        # Add creator/updater tracking columns
+        fk_clause = "INTEGER REFERENCES users(id) ON DELETE SET NULL"
+        for table in ("sessions", "songs", "setlists"):
+            table_cols = {
+                row["name"]
+                for row in self.conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            if "created_by" not in table_cols:
+                self.conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN created_by {fk_clause}"
+                )
+                self.conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN updated_by {fk_clause}"
+                )
+                self.conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN updated_at TEXT"
+                )
+                self.conn.commit()
+
+        setlist_song_cols = {
+            row["name"]
+            for row in self.conn.execute(
+                "PRAGMA table_info(setlist_songs)"
+            ).fetchall()
+        }
+        if "added_by" not in setlist_song_cols:
+            self.conn.execute(
+                f"ALTER TABLE setlist_songs ADD COLUMN added_by {fk_clause}"
+            )
             self.conn.commit()
 
     def close(self):
@@ -387,9 +428,20 @@ class Database:
         self.conn.commit()
         return cur.lastrowid
 
+    def get_user_name(self, user_id: int | None) -> str | None:
+        """Return the display name for a user, or None if user_id is None/not found."""
+        if user_id is None:
+            return None
+        row = self.conn.execute("SELECT name, email FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row:
+            return None
+        return row["name"] or row["email"]
+
     def get_user_by_email(self, email: str) -> User | None:
         email = email.strip()
-        row = self.conn.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", (email,)).fetchone()
+        row = self.conn.execute(
+            "SELECT * FROM users WHERE LOWER(email) = LOWER(?)", (email,)
+        ).fetchone()
         if not row:
             return None
         return User(**row)
@@ -489,19 +541,28 @@ class Database:
     # --- Sessions ---
 
     def create_session(
-        self, source_file: str, group_id: int, date: str | None = None, notes: str = ""
+        self,
+        source_file: str,
+        group_id: int,
+        date: str | None = None,
+        notes: str = "",
+        created_by: int | None = None,
     ) -> int:
         name = clean_session_name(source_file)
         cur = self.conn.execute(
-            "INSERT INTO sessions (group_id, name, source_file, date, notes)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (group_id, name, source_file, date, notes),
+            "INSERT INTO sessions (group_id, name, source_file, date, notes, created_by)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (group_id, name, source_file, date, notes, created_by),
         )
         self.conn.commit()
         return cur.lastrowid
 
-    def update_session_name(self, session_id: int, name: str):
-        self.conn.execute("UPDATE sessions SET name = ? WHERE id = ?", (name, session_id))
+    def update_session_name(self, session_id: int, name: str, updated_by: int | None = None):
+        self.conn.execute(
+            "UPDATE sessions SET name = ?, updated_by = ?,"
+            " updated_at = datetime('now') WHERE id = ?",
+            (name, updated_by, session_id),
+        )
         self.conn.commit()
 
     def get_session(self, session_id: int) -> Session | None:
@@ -584,12 +645,20 @@ class Database:
         self.conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
         self.conn.commit()
 
-    def update_session_date(self, session_id: int, date: str | None):
-        self.conn.execute("UPDATE sessions SET date = ? WHERE id = ?", (date, session_id))
+    def update_session_date(self, session_id: int, date: str | None, updated_by: int | None = None):
+        self.conn.execute(
+            "UPDATE sessions SET date = ?, updated_by = ?,"
+            " updated_at = datetime('now') WHERE id = ?",
+            (date, updated_by, session_id),
+        )
         self.conn.commit()
 
-    def update_session_notes(self, session_id: int, notes: str):
-        self.conn.execute("UPDATE sessions SET notes = ? WHERE id = ?", (notes, session_id))
+    def update_session_notes(self, session_id: int, notes: str, updated_by: int | None = None):
+        self.conn.execute(
+            "UPDATE sessions SET notes = ?, updated_by = ?,"
+            " updated_at = datetime('now') WHERE id = ?",
+            (notes, updated_by, session_id),
+        )
         self.conn.commit()
 
     def update_session_group(self, session_id: int, new_group_id: int):
@@ -598,9 +667,7 @@ class Database:
         for t in tracks:
             if t.song_id and t.song_name:
                 new_song_id = self._get_or_create_song(t.song_name, new_group_id)
-                self.conn.execute(
-                    "UPDATE tracks SET song_id = ? WHERE id = ?", (new_song_id, t.id)
-                )
+                self.conn.execute("UPDATE tracks SET song_id = ? WHERE id = ?", (new_song_id, t.id))
         self.conn.execute(
             "UPDATE sessions SET group_id = ? WHERE id = ?", (new_group_id, session_id)
         )
@@ -681,9 +748,11 @@ class Database:
         ).fetchall()
         return [Track(**row) for row in rows]
 
-    def tag_track(self, track_id: int, song_name: str, group_id: int) -> int:
+    def tag_track(
+        self, track_id: int, song_name: str, group_id: int, user_id: int | None = None
+    ) -> int:
         """Tag a track with a song name. Creates the song if it doesn't exist. Returns song_id."""
-        song_id = self._get_or_create_song(song_name, group_id)
+        song_id = self._get_or_create_song(song_name, group_id, created_by=user_id)
         self.conn.execute(
             "UPDATE tracks SET song_id = ? WHERE id = ?",
             (song_id, track_id),
@@ -765,9 +834,7 @@ class Database:
         return self.get_share_link_by_track(track_id)
 
     def get_share_link_by_token(self, token: str) -> dict | None:
-        row = self.conn.execute(
-            "SELECT * FROM share_links WHERE token = ?", (token,)
-        ).fetchone()
+        row = self.conn.execute("SELECT * FROM share_links WHERE token = ?", (token,)).fetchone()
         return dict(row) if row else None
 
     def get_share_link_by_track(self, track_id: int) -> dict | None:
@@ -800,9 +867,7 @@ class Database:
 
     def get_invite_token(self, token: str) -> dict | None:
         """Get an invite token record. Returns None if not found."""
-        row = self.conn.execute(
-            "SELECT * FROM invite_tokens WHERE token = ?", (token,)
-        ).fetchone()
+        row = self.conn.execute("SELECT * FROM invite_tokens WHERE token = ?", (token,)).fetchone()
         return dict(row) if row else None
 
     def consume_invite_token(self, token: str):
@@ -820,14 +885,15 @@ class Database:
 
     # --- Songs ---
 
-    def _get_or_create_song(self, name: str, group_id: int) -> int:
+    def _get_or_create_song(self, name: str, group_id: int, created_by: int | None = None) -> int:
         row = self.conn.execute(
             "SELECT id FROM songs WHERE name = ? AND group_id = ?", (name, group_id)
         ).fetchone()
         if row:
             return row["id"]
         cur = self.conn.execute(
-            "INSERT INTO songs (name, group_id) VALUES (?, ?)", (name, group_id)
+            "INSERT INTO songs (name, group_id, created_by) VALUES (?, ?, ?)",
+            (name, group_id, created_by),
         )
         self.conn.commit()
         return cur.lastrowid
@@ -837,7 +903,8 @@ class Database:
             return []
         base = """SELECT s.id, s.group_id, s.name, s.artist, s.sheet, s.notes,
                       COUNT(t.id) as take_count,
-                      MIN(ses.date) as first_date, MAX(ses.date) as last_date
+                      MIN(ses.date) as first_date, MAX(ses.date) as last_date,
+                      s.created_by, s.updated_by, s.updated_at
                FROM songs s
                LEFT JOIN tracks t ON t.song_id = s.id
                LEFT JOIN sessions ses ON t.session_id = ses.id"""
@@ -855,7 +922,8 @@ class Database:
         row = self.conn.execute(
             """SELECT s.id, s.group_id, s.name, s.artist, s.sheet, s.notes,
                       COUNT(t.id) as take_count,
-                      MIN(ses.date) as first_date, MAX(ses.date) as last_date
+                      MIN(ses.date) as first_date, MAX(ses.date) as last_date,
+                      s.created_by, s.updated_by, s.updated_at
                FROM songs s
                LEFT JOIN tracks t ON t.song_id = s.id
                LEFT JOIN sessions ses ON t.session_id = ses.id
@@ -868,11 +936,18 @@ class Database:
         return Song(**row)
 
     def update_song_details(
-        self, song_id: int, sheet: str, notes: str, artist: str = ""
+        self,
+        song_id: int,
+        sheet: str,
+        notes: str,
+        artist: str = "",
+        updated_by: int | None = None,
     ):
         self.conn.execute(
-            "UPDATE songs SET artist = ?, sheet = ?, notes = ? WHERE id = ?",
-            (artist, sheet, notes, song_id),
+            "UPDATE songs SET artist = ?, sheet = ?, notes = ?,"
+            " updated_by = ?, updated_at = datetime('now')"
+            " WHERE id = ?",
+            (artist, sheet, notes, updated_by, song_id),
         )
         self.conn.commit()
 
@@ -892,9 +967,7 @@ class Database:
         ).fetchone()
         if existing:
             raise ValueError(f"A song named '{song['name']}' already exists in that group")
-        self.conn.execute(
-            "UPDATE songs SET group_id = ? WHERE id = ?", (new_group_id, song_id)
-        )
+        self.conn.execute("UPDATE songs SET group_id = ? WHERE id = ?", (new_group_id, song_id))
         self.conn.commit()
 
     def get_tracks_for_song(self, song_id: int) -> list[dict]:
@@ -918,7 +991,7 @@ class Database:
         self.conn.execute("DELETE FROM songs WHERE id = ?", (song_id,))
         self.conn.commit()
 
-    def rename_song(self, song_id: int, new_name: str):
+    def rename_song(self, song_id: int, new_name: str, updated_by: int | None = None):
         """Rename a song. Raises ValueError if new_name already exists in the same group."""
         # Get the song's group_id for scoped uniqueness check
         song = self.conn.execute("SELECT group_id FROM songs WHERE id = ?", (song_id,)).fetchone()
@@ -930,7 +1003,10 @@ class Database:
         ).fetchone()
         if existing:
             raise ValueError(f"Song '{new_name}' already exists")
-        self.conn.execute("UPDATE songs SET name = ? WHERE id = ?", (new_name, song_id))
+        self.conn.execute(
+            "UPDATE songs SET name = ?, updated_by = ?, updated_at = datetime('now') WHERE id = ?",
+            (new_name, updated_by, song_id),
+        )
         self.conn.commit()
 
     # --- Jobs ---
@@ -978,11 +1054,16 @@ class Database:
     # --- Setlists ---
 
     def create_setlist(
-        self, name: str, group_id: int, date: str | None = None, notes: str = ""
+        self,
+        name: str,
+        group_id: int,
+        date: str | None = None,
+        notes: str = "",
+        created_by: int | None = None,
     ) -> int:
         cur = self.conn.execute(
-            "INSERT INTO setlists (name, group_id, date, notes) VALUES (?, ?, ?, ?)",
-            (name, group_id, date, notes),
+            "INSERT INTO setlists (name, group_id, date, notes, created_by) VALUES (?, ?, ?, ?, ?)",
+            (name, group_id, date, notes, created_by),
         )
         self.conn.commit()
         return cur.lastrowid
@@ -1018,7 +1099,7 @@ class Database:
             rows = self.conn.execute(base).fetchall()
         return [Setlist(**row) for row in rows]
 
-    def update_setlist_name(self, setlist_id: int, name: str):
+    def update_setlist_name(self, setlist_id: int, name: str, updated_by: int | None = None):
         """Rename a setlist. Raises ValueError if name already exists in the same group."""
         sl = self.conn.execute(
             "SELECT group_id FROM setlists WHERE id = ?", (setlist_id,)
@@ -1031,15 +1112,27 @@ class Database:
         ).fetchone()
         if existing:
             raise ValueError(f"Setlist '{name}' already exists")
-        self.conn.execute("UPDATE setlists SET name = ? WHERE id = ?", (name, setlist_id))
+        self.conn.execute(
+            "UPDATE setlists SET name = ?, updated_by = ?,"
+            " updated_at = datetime('now') WHERE id = ?",
+            (name, updated_by, setlist_id),
+        )
         self.conn.commit()
 
-    def update_setlist_date(self, setlist_id: int, date: str | None):
-        self.conn.execute("UPDATE setlists SET date = ? WHERE id = ?", (date, setlist_id))
+    def update_setlist_date(self, setlist_id: int, date: str | None, updated_by: int | None = None):
+        self.conn.execute(
+            "UPDATE setlists SET date = ?, updated_by = ?,"
+            " updated_at = datetime('now') WHERE id = ?",
+            (date, updated_by, setlist_id),
+        )
         self.conn.commit()
 
-    def update_setlist_notes(self, setlist_id: int, notes: str):
-        self.conn.execute("UPDATE setlists SET notes = ? WHERE id = ?", (notes, setlist_id))
+    def update_setlist_notes(self, setlist_id: int, notes: str, updated_by: int | None = None):
+        self.conn.execute(
+            "UPDATE setlists SET notes = ?, updated_by = ?,"
+            " updated_at = datetime('now') WHERE id = ?",
+            (notes, updated_by, setlist_id),
+        )
         self.conn.commit()
 
     def delete_setlist(self, setlist_id: int):
@@ -1050,7 +1143,7 @@ class Database:
     def get_setlist_songs(self, setlist_id: int) -> list[SetlistSong]:
         rows = self.conn.execute(
             """SELECT ss.position, ss.song_id, s.name as song_name,
-                      s.artist, s.sheet
+                      s.artist, s.sheet, ss.added_by
                FROM setlist_songs ss
                JOIN songs s ON ss.song_id = s.id
                WHERE ss.setlist_id = ?
@@ -1059,18 +1152,37 @@ class Database:
         ).fetchall()
         return [SetlistSong(**row) for row in rows]
 
-    def set_setlist_songs(self, setlist_id: int, song_ids: list[int]):
-        """Replace the full song list with sequential positions (idempotent)."""
+    def set_setlist_songs(
+        self, setlist_id: int, song_ids: list[int], updated_by: int | None = None
+    ):
+        """Replace the full song list with sequential positions (idempotent).
+
+        Preserves added_by for songs that remain in the list.
+        """
+        # Capture existing added_by values
+        existing = {
+            row["song_id"]: row["added_by"]
+            for row in self.conn.execute(
+                "SELECT song_id, added_by FROM setlist_songs WHERE setlist_id = ?",
+                (setlist_id,),
+            ).fetchall()
+        }
         self.conn.execute("DELETE FROM setlist_songs WHERE setlist_id = ?", (setlist_id,))
         for i, song_id in enumerate(song_ids, start=1):
+            added_by = existing.get(song_id, updated_by)
             self.conn.execute(
-                "INSERT INTO setlist_songs (setlist_id, song_id, position) VALUES (?, ?, ?)",
-                (setlist_id, song_id, i),
+                "INSERT INTO setlist_songs (setlist_id, song_id, position, added_by)"
+                " VALUES (?, ?, ?, ?)",
+                (setlist_id, song_id, i, added_by),
             )
         self.conn.commit()
 
     def add_song_to_setlist(
-        self, setlist_id: int, song_id: int, position: int | None = None
+        self,
+        setlist_id: int,
+        song_id: int,
+        position: int | None = None,
+        added_by: int | None = None,
     ):
         """Add a song at a given position (or append to the end)."""
         if position is None:
@@ -1088,8 +1200,10 @@ class Database:
                 (setlist_id, position),
             )
         self.conn.execute(
-            "INSERT INTO setlist_songs (setlist_id, song_id, position) VALUES (?, ?, ?)",
-            (setlist_id, song_id, position),
+            "INSERT INTO setlist_songs"
+            " (setlist_id, song_id, position, added_by)"
+            " VALUES (?, ?, ?, ?)",
+            (setlist_id, song_id, position, added_by),
         )
         self.conn.commit()
 

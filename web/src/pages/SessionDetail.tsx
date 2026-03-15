@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router";
-import { api, formatDate, canEdit, canAdmin } from "../api";
+import { api, formatDate, formatDateTime, canEdit, canAdmin } from "../api";
 import type { Session, Track, Song } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
 import type { Marker } from "../components/AudioPlayer";
@@ -303,6 +303,14 @@ export default function SessionDetail() {
               {" "}&middot; {session.track_count} track{session.track_count !== 1 ? "s" : ""} &middot;{" "}
               {session.tagged_count} tagged
             </p>
+            {(session.created_by_name || session.updated_by_name) && (
+              <p className="mt-1.5 text-xs text-gray-500">
+                {session.created_by_name && <>Added by {session.created_by_name}</>}
+                {session.updated_by_name && (
+                  <>{session.created_by_name ? " · " : ""}Last edited by {session.updated_by_name}{session.updated_at ? ` ${formatDateTime(session.updated_at)}` : ""}</>
+                )}
+              </p>
+            )}
           </div>
           {canAdmin(user) && (
             <div className="flex items-center gap-3">

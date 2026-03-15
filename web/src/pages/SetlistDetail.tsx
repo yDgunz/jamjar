@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { api, formatDate, canEdit, canAdmin } from "../api";
+import { api, formatDate, formatDateTime, canEdit, canAdmin } from "../api";
 import type { Setlist, SetlistSong, Song } from "../api";
 import EditableField from "../components/EditableField";
 import FormModal from "../components/FormModal";
@@ -85,6 +85,9 @@ function SortableRow({
         </Link>
         {item.artist && (
           <span className="ml-2 text-xs text-gray-500">{item.artist}</span>
+        )}
+        {item.added_by_name && (
+          <span className="ml-2 text-xs text-gray-600">added by {item.added_by_name}</span>
         )}
       </div>
       {!readOnly && (
@@ -324,37 +327,50 @@ export default function SetlistDetail() {
                   )}
                 </h1>
               )}
-              {editingDate && canEdit(user) ? (
-                <input
-                  autoFocus
-                  type="date"
-                  value={dateInput}
-                  onChange={(e) => setDateInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSaveDate();
-                    if (e.key === "Escape") { setEditingDate(false); setDateInput(setlist?.date ?? ""); }
-                  }}
-                  onBlur={handleSaveDate}
-                  className="mt-0.5 rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-gray-300 focus:border-accent-500 focus:outline-none"
-                />
-              ) : setlist?.date ? (
-                <p
-                  onClick={() => canEdit(user) && setEditingDate(true)}
-                  className={`mt-0.5 text-sm text-gray-400 ${canEdit(user) ? "cursor-pointer hover:text-gray-300" : ""}`}
-                >
-                  {formatDate(setlist.date)}
-                </p>
-              ) : canEdit(user) ? (
-                <button
-                  onClick={() => setEditingDate(true)}
-                  className="mt-0.5 text-sm text-gray-600 hover:text-gray-400"
-                >
-                  + add date
-                </button>
-              ) : null}
               <p className="mt-0.5 text-sm text-gray-400">
-                {songs.length} song{songs.length !== 1 ? "s" : ""}
+                {editingDate && canEdit(user) ? (
+                  <input
+                    autoFocus
+                    type="date"
+                    value={dateInput}
+                    onChange={(e) => setDateInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSaveDate();
+                      if (e.key === "Escape") { setEditingDate(false); setDateInput(setlist?.date ?? ""); }
+                    }}
+                    onBlur={handleSaveDate}
+                    className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
+                  />
+                ) : setlist?.date ? (
+                  canEdit(user) ? (
+                    <button
+                      onClick={() => setEditingDate(true)}
+                      className="hover:text-accent-400"
+                      title="Click to change date"
+                    >
+                      {formatDate(setlist.date)}
+                    </button>
+                  ) : (
+                    <span>{formatDate(setlist.date)}</span>
+                  )
+                ) : canEdit(user) ? (
+                  <button
+                    onClick={() => setEditingDate(true)}
+                    className="text-gray-600 hover:text-gray-400"
+                  >
+                    + add date
+                  </button>
+                ) : null}
+                {" "}&middot; {songs.length} song{songs.length !== 1 ? "s" : ""}
               </p>
+              {(setlist?.created_by_name || setlist?.updated_by_name) && (
+                <p className="mt-1.5 text-xs text-gray-500">
+                  {setlist?.created_by_name && <>Added by {setlist.created_by_name}</>}
+                  {setlist?.updated_by_name && (
+                    <>{setlist?.created_by_name ? " · " : ""}Last edited by {setlist.updated_by_name}{setlist?.updated_at ? ` ${formatDateTime(setlist.updated_at)}` : ""}</>
+                  )}
+                </p>
+              )}
             </div>
             <div className="hidden items-center gap-1 sm:flex">
               {hasSheets && songs.length > 0 && (

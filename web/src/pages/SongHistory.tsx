@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router";
-import { api, formatDate, canEdit, canAdmin } from "../api";
+import { api, formatDate, formatDateTime, canEdit, canAdmin } from "../api";
 import type { Song, SongTrack } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
 import EditableField from "../components/EditableField";
@@ -323,6 +323,14 @@ export default function SongHistory() {
                 </span>
               )}
             </p>
+            {(song?.created_by_name || song?.updated_by_name) && (
+              <p className="mt-1.5 text-xs text-gray-500">
+                {song?.created_by_name && <>Added by {song.created_by_name}</>}
+                {song?.updated_by_name && (
+                  <>{song?.created_by_name ? " · " : ""}Last edited by {song.updated_by_name}{song?.updated_at ? ` ${formatDateTime(song.updated_at)}` : ""}</>
+                )}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-1">
             {song?.sheet && (
@@ -347,7 +355,7 @@ export default function SongHistory() {
       </div>
 
       {/* Song metadata */}
-      <div className="mb-4 space-y-4 rounded-lg border border-gray-800 bg-gray-900 p-4">
+      <div className="mt-4 mb-4 space-y-4 rounded-lg border border-gray-800 bg-gray-900 p-4">
         <div>
           <div className="flex items-center gap-3 mb-1">
             <label className="mr-1 text-xs font-medium text-gray-500 uppercase tracking-wide">Sheet</label>

@@ -1,6 +1,18 @@
 const BASE = "/api";
 
 /** Format a YYYY-MM-DD date string as "Thu 2/13/26". Returns the input if unparseable. */
+export function formatDateTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + "Z");
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "Unknown date";
   const parts = dateStr.split("-");
@@ -60,6 +72,9 @@ export interface Session {
   song_names: string;
   active_job_id: string | null;
   created_at: string;
+  created_by_name: string | null;
+  updated_by_name: string | null;
+  updated_at: string | null;
 }
 
 export interface Track {
@@ -85,6 +100,9 @@ export interface Song {
   take_count: number;
   first_date: string | null;
   last_date: string | null;
+  created_by_name: string | null;
+  updated_by_name: string | null;
+  updated_at: string | null;
 }
 
 export interface SongTrack {
@@ -125,6 +143,9 @@ export interface Setlist {
   date: string | null;
   notes: string;
   song_count: number;
+  created_by_name: string | null;
+  updated_by_name: string | null;
+  updated_at: string | null;
 }
 
 export interface SetlistSong {
@@ -133,6 +154,7 @@ export interface SetlistSong {
   song_name: string;
   artist: string;
   sheet: string;
+  added_by_name: string | null;
 }
 
 export interface AdminUser {

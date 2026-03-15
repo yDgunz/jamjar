@@ -9,7 +9,6 @@ Creates: 2 groups, 3 users, 15 sessions, 8 songs, ~55 tracks.
 Audio files are NOT created — paths are placeholders for UI/API testing.
 """
 
-import random
 import sys
 from pathlib import Path
 
@@ -704,32 +703,56 @@ def seed(db: Database):
     # Eric is in both groups
     eric = db.get_user_by_email("test")
     db.assign_user_to_group(eric.id, group_ids["The Slow Burners"])
-    print(f"  User: test -> The Slow Burners (additional)")
+    print("  User: test -> The Slow Burners (additional)")
+
+    # Build user lookup: group_name -> list of user IDs in that group
+    user_ids: dict[str, list[int]] = {}
+    for email, _name, group_name, _role in USERS:
+        u = db.get_user_by_email(email)
+        user_ids.setdefault(group_name, []).append(u.id)
+    # Eric is in both groups
+    for gn in GROUPS:
+        if eric.id not in user_ids.get(gn, []):
+            user_ids.setdefault(gn, []).append(eric.id)
+
+    def pick_user(group_name: str, idx: int = 0) -> int:
+        """Pick a user from the group in round-robin fashion."""
+        users = user_ids[group_name]
+        return users[idx % len(users)]
 
     # Songs (pre-create so we can tag tracks)
     song_ids: dict[tuple[str, str], int] = {}  # (group_name, song_name) -> id
     for group_name, songs in SONGS.items():
         gid = group_ids[group_name]
-        for song_name in songs:
-            sid = db._get_or_create_song(song_name, gid)
+        for i, song_name in enumerate(songs):
+            creator = pick_user(group_name, i)
+            sid = db._get_or_create_song(song_name, gid, created_by=creator)
             song_ids[(group_name, song_name)] = sid
     print(f"  Songs: {sum(len(s) for s in SONGS.values())} created")
 
-    # Song details (sheets and notes)
+    # Song details (sheets and notes) — edited by a different user than the creator
     details_count = 0
     for (group_name, song_name), sid in song_ids.items():
         if song_name in SONG_DETAILS:
             sheet, notes = SONG_DETAILS[song_name]
-            db.update_song_details(sid, sheet, notes)
+            editor = pick_user(group_name, details_count + 1)
+            db.update_song_details(sid, sheet, notes, updated_by=editor)
             details_count += 1
     print(f"  Song details: {details_count} with sheets/notes")
 
     # Sessions and tracks
     total_tracks = 0
     tagged_tracks = 0
-    for group_name, source_file, date, notes, tracks in SESSIONS:
+    for sess_idx, (group_name, source_file, date, notes, tracks) in enumerate(SESSIONS):
         gid = group_ids[group_name]
-        session_id = db.create_session(source_file, gid, date=date, notes=notes)
+        uploader = pick_user(group_name, sess_idx)
+        session_id = db.create_session(
+            source_file, gid, date=date, notes=notes, created_by=uploader,
+        )
+        # Some sessions have notes edited by someone else
+        if notes and sess_idx % 3 == 0:
+            editor = pick_user(group_name, sess_idx + 1)
+            db.update_session_notes(session_id, notes, updated_by=editor)
         source_stem = Path(source_file).stem
 
         for i, (start, end, song_name, track_notes) in enumerate(tracks, 1):
@@ -744,12 +767,16 @@ def seed(db: Database):
             if track_notes:
                 db.update_track_notes(track_id, track_notes)
             if song_name:
-                db.tag_track(track_id, song_name, gid)
+                tagger = pick_user(group_name, sess_idx + i)
+                db.tag_track(track_id, song_name, gid, user_id=tagger)
                 tagged_tracks += 1
             total_tracks += 1
 
     print(f"  Sessions: {len(SESSIONS)}")
-    print(f"  Tracks: {total_tracks} ({tagged_tracks} tagged, {total_tracks - tagged_tracks} untagged)")
+    print(
+        f"  Tracks: {total_tracks} ({tagged_tracks} tagged,"
+        f" {total_tracks - tagged_tracks} untagged)"
+    )
 
     # Setlists
     setlist_data = [
@@ -775,11 +802,24 @@ def seed(db: Database):
             ["Low Tide", "Copper Wire"],
         ),
     ]
-    for group_name, setlist_name, date, notes, setlist_songs in setlist_data:
+    for sl_idx, (group_name, setlist_name, date, notes, setlist_songs) in enumerate(setlist_data):
         gid = group_ids[group_name]
-        sl_id = db.create_setlist(setlist_name, gid, date=date, notes=notes)
-        sl_song_ids = [song_ids[(group_name, sn)] for sn in setlist_songs]
-        db.set_setlist_songs(sl_id, sl_song_ids)
+        creator = pick_user(group_name, sl_idx)
+        sl_id = db.create_setlist(
+            setlist_name, gid, date=date, notes=notes, created_by=creator,
+        )
+        # Add songs individually so each gets an added_by
+        for song_idx, sn in enumerate(setlist_songs):
+            adder = pick_user(group_name, sl_idx + song_idx)
+            db.add_song_to_setlist(
+                sl_id, song_ids[(group_name, sn)], added_by=adder,
+            )
+        # Mark one setlist as edited by a different user
+        if sl_idx == 0:
+            editor = pick_user(group_name, sl_idx + 1)
+            db.update_setlist_notes(
+                sl_id, notes, updated_by=editor,
+            )
     print(f"  Setlists: {len(setlist_data)}")
 
     print(f"\nAll users have password: {DEFAULT_PASSWORD}")
