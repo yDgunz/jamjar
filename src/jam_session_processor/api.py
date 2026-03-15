@@ -229,6 +229,7 @@ def login(req: LoginRequest, request: Request):
         key="jam_session",
         value=token,
         httponly=True,
+        secure=get_config().app_url.startswith("https"),
         samesite="lax",
         max_age=7 * 24 * 3600,
         path="/",
@@ -362,6 +363,7 @@ def reset_password(req: ResetPasswordRequest):
         key="jam_session",
         value=token,
         httponly=True,
+        secure=get_config().app_url.startswith("https"),
         samesite="lax",
         max_age=7 * 24 * 3600,
         path="/",
@@ -2068,8 +2070,8 @@ def invite_validate(req: InviteValidateRequest):
 
 @app.post("/api/invite/accept")
 def invite_accept(req: InviteAcceptRequest):
-    if not req.password or len(req.password) < 4:
-        raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
+    if not req.password or len(req.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     db = get_db()
     _row, user = _validate_invite_token(db, req.token)
     pw_hash = hash_password(req.password)
@@ -2090,6 +2092,7 @@ def invite_accept(req: InviteAcceptRequest):
         key="jam_session",
         value=token,
         httponly=True,
+        secure=get_config().app_url.startswith("https"),
         samesite="lax",
         max_age=7 * 24 * 3600,
         path="/",
@@ -2345,7 +2348,11 @@ if _static_dir:
             if any(prefixed.startswith(p) for p in _server_prefixes):
                 raise HTTPException(status_code=404)
             file = _static_path / full_path
-            if full_path and file.is_file():
+            if (
+                full_path
+                and file.is_file()
+                and file.resolve().is_relative_to(_static_path.resolve())
+            ):
                 resp = FileResponse(file)
                 if file.name in _no_cache_files:
                     resp.headers["Cache-Control"] = "no-cache"
