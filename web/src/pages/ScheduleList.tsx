@@ -5,7 +5,7 @@ import type { Event } from "../api";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
-import { Toast } from "../components/Modal";
+
 import { useAuth } from "../context/AuthContext";
 
 type TypeFilter = "all" | "rehearsal" | "gig";

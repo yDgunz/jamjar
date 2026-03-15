@@ -504,26 +504,13 @@ export default function ScheduleDetail() {
 
       <Modal
         open={showDelete}
-        onClose={() => setShowDelete(false)}
-      >
-        <p className="text-sm text-gray-300">
-          Delete &ldquo;{event.name}&rdquo;? This cannot be undone.
-        </p>
-        <div className="mt-4 flex justify-end gap-2">
-          <button
-            onClick={() => setShowDelete(false)}
-            className="rounded px-4 py-2 text-sm text-gray-400 hover:bg-gray-800"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleDelete}
-            className="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500"
-          >
-            Delete
-          </button>
-        </div>
-      </Modal>
+        title="Delete event"
+        message={`Delete "${event.name}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDelete(false)}
+      />
     </div>
   );
 }
