@@ -1804,3 +1804,79 @@ def test_get_event_responses(auth_client):
     assert len(responded) == 1
     assert responded[0]["status"] == "yes"
     assert responded[0]["comment"] == "I'm in"
+
+
+# --- Access Request ---
+
+
+def test_access_request_sends_email(client, monkeypatch):
+    """POST /api/access-request sends an email and returns 200."""
+    sent_emails = []
+
+    def mock_send(to_email, requester_email, band_name, message):
+        sent_emails.append({"to": to_email, "band_name": band_name, "requester": requester_email})
+        return True
+
+    monkeypatch.setattr("jam_session_processor.api._send_access_request_email", mock_send)
+    monkeypatch.setenv("JAM_ACCESS_REQUEST_EMAIL", "admin@example.com")
+    reset_config()
+
+    resp = client.post("/api/access-request", json={
+        "email": "newband@example.com",
+        "band_name": "The Testers",
+        "message": "We jam every Tuesday",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+    assert len(sent_emails) == 1
+    assert sent_emails[0]["to"] == "admin@example.com"
+    assert sent_emails[0]["band_name"] == "The Testers"
+
+
+def test_access_request_missing_fields(client):
+    """POST /api/access-request with missing fields returns 422."""
+    resp = client.post("/api/access-request", json={"email": "a@b.com"})
+    assert resp.status_code == 422
+
+
+def test_access_request_invalid_email(client):
+    resp = client.post("/api/access-request", json={
+        "email": "not-an-email",
+        "band_name": "Band",
+        "message": "Hi",
+    })
+    assert resp.status_code == 422
+
+
+def test_access_request_rate_limited(client, monkeypatch):
+    """Fourth access request from same IP within an hour is rate-limited."""
+    monkeypatch.setattr("jam_session_processor.api._send_access_request_email", lambda *a: True)
+    monkeypatch.setenv("JAM_ACCESS_REQUEST_EMAIL", "admin@example.com")
+    reset_config()
+    api._access_request_limiter._attempts.clear()
+
+    for _ in range(3):
+        resp = client.post("/api/access-request", json={
+            "email": "test@example.com",
+            "band_name": "Band",
+            "message": "Hi",
+        })
+        assert resp.status_code == 200
+
+    resp = client.post("/api/access-request", json={
+        "email": "test@example.com",
+        "band_name": "Band",
+        "message": "Hi",
+    })
+    assert resp.status_code == 429
+
+
+def test_access_request_smtp_not_configured(client):
+    """Access request without SMTP still returns 200 (no error revealed)."""
+    api._access_request_limiter._attempts.clear()
+    resp = client.post("/api/access-request", json={
+        "email": "test@example.com",
+        "band_name": "Band",
+        "message": "Hi",
+    })
+    assert resp.status_code == 200

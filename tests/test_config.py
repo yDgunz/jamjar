@@ -98,6 +98,7 @@ def _make_config(tmp_path):
         smtp_password="",
         smtp_from="",
         app_url="http://localhost:5173",
+        access_request_email="",
     )
 
 
@@ -141,6 +142,7 @@ def test_make_relative_outside_data_dir(tmp_path):
         smtp_password="",
         smtp_from="",
         app_url="http://localhost:5173",
+        access_request_email="",
     )
     outside = tmp_path / "elsewhere" / "file.ogg"
     assert cfg.make_relative(outside) == str(outside)

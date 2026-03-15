@@ -35,6 +35,7 @@ class Config:
     smtp_password: str
     smtp_from: str
     app_url: str
+    access_request_email: str
 
     def resolve_path(self, stored: str) -> Path:
         """Resolve a stored path to absolute.
@@ -102,6 +103,7 @@ def _build_config() -> Config:
         smtp_password=os.environ.get("JAM_SMTP_PASSWORD", ""),
         smtp_from=os.environ.get("JAM_SMTP_FROM", ""),
         app_url=os.environ.get("JAM_APP_URL", "http://localhost:5173"),
+        access_request_email=os.environ.get("JAM_ACCESS_REQUEST_EMAIL", ""),
     )
 
 

@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from jam_session_processor.auth import create_jwt, decode_jwt, hash_password, verify_password
 from jam_session_processor.config import get_config
 from jam_session_processor.db import Database
+from jam_session_processor.email import send_access_request_email as _send_access_request_email
 
 logger = logging.getLogger(__name__)
 
@@ -83,11 +84,19 @@ class RateLimiter:
 
 
 _login_limiter = RateLimiter(max_attempts=5, window_seconds=60)
+_access_request_limiter = RateLimiter(max_attempts=3, window_seconds=3600)
 
 
 # --- Auth middleware ---
 
-_PUBLIC_PATHS = {"/health", "/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/auth/reset-password/validate"}
+_PUBLIC_PATHS = {
+    "/health",
+    "/api/auth/login",
+    "/api/auth/forgot-password",
+    "/api/auth/reset-password",
+    "/api/auth/reset-password/validate",
+    "/api/access-request",
+}
 _last_active_cache: dict[int, float] = {}
 
 
@@ -377,6 +386,47 @@ def reset_password(req: ResetPasswordRequest):
         path="/",
     )
     return response
+
+
+# --- Access Request (public) ---
+
+
+class AccessRequest(BaseModel):
+    email: str
+    band_name: str
+    message: str
+
+
+@app.post("/api/access-request")
+async def request_access(body: AccessRequest, request: Request):
+    import re
+
+    email = body.email.strip()
+    band_name = body.band_name.strip()
+    message = body.message.strip()
+
+    if not email or not band_name or not message:
+        raise HTTPException(422, "All fields are required")
+    if not re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(422, "Invalid email address")
+
+    ip = request.client.host if request.client else "unknown"
+    if _access_request_limiter.is_blocked(ip):
+        raise HTTPException(429, "Too many requests. Please try again later.")
+    _access_request_limiter.record(ip)
+
+    cfg = get_config()
+    recipient = cfg.access_request_email or cfg.smtp_from
+    if recipient:
+        _send_access_request_email(recipient, email, band_name, message)
+    else:
+        logger.warning(
+            "No access request email configured — request from %s (%s) logged only",
+            email,
+            band_name,
+        )
+
+    return {"ok": True, "message": "Thanks! We'll be in touch."}
 
 
 # --- Response models ---

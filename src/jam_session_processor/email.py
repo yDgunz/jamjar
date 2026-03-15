@@ -77,3 +77,16 @@ def send_password_reset_email(to_email: str, token: str, name: str = "") -> bool
     )
 
     return _send_email(to_email, "Reset your JamJar password", body)
+
+
+def send_access_request_email(
+    to_email: str, requester_email: str, band_name: str, message: str
+) -> bool:
+    """Send an access request notification to the site admin."""
+    body = (
+        f"New JamJar access request:\n\n"
+        f"Email: {requester_email}\n"
+        f"Band: {band_name}\n\n"
+        f"Message:\n{message}\n"
+    )
+    return _send_email(to_email, f"JamJar Access Request: {band_name}", body)
