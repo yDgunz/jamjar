@@ -206,6 +206,7 @@ cd web && npm run dev
 
 - **Always run `pytest` after every code change** to catch regressions early
 - **Always run `ruff check src/ tests/`** before committing to catch lint errors
+- **Always run `cd web && npx tsc --noEmit`** before pushing to catch TypeScript errors across the entire frontend, not just in files you changed
 - Test fixtures generate synthetic audio (sine tones + silence) so tests run fast with no real audio files needed
 - Commit each phase/feature independently
 - **Keep docs up to date** — when changing behavior (new/modified endpoints, CLI commands, env vars, schema changes, defaults), update `CLAUDE.md` and `docs/pipeline.md` in the same commit
