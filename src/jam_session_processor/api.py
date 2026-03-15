@@ -1681,6 +1681,9 @@ def share_landing_page(token: str):
                 <span id="share-label">Share</span>
             </button>
         </div>
+        <p style="margin-top: 1.5rem; font-size: 0.8125rem; color: #6b7280;">
+            <a href="/" style="color: #34d399; text-decoration: none;">Check out JamJar →</a>
+        </p>
         <svg id="check-icon" style="display:none"
              width="16" height="16" fill="none"
              viewBox="0 0 24 24" stroke="currentColor"
