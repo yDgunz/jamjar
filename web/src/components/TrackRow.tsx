@@ -72,10 +72,16 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
     try {
       const result = await api.createShareLink(track.id);
       const fullUrl = `${window.location.origin}${result.url}`;
-      await navigator.clipboard.writeText(fullUrl);
+      if (navigator.share) {
+        await navigator.share({ url: fullUrl });
+      } else {
+        await navigator.clipboard.writeText(fullUrl);
+      }
       setShared(true);
       setTimeout(() => setShared(false), 2000);
     } catch (err) {
+      // User cancelling the share sheet is not an error
+      if (err instanceof DOMException && err.name === "AbortError") return;
       onError(`Share failed: ${err instanceof Error ? err.message : err}`);
     } finally {
       setShareLoading(false);

@@ -16,14 +16,36 @@ function formatTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function TakeRow({ take, onUpdate, readOnly }: { take: SongTrack; onUpdate: () => void; readOnly?: boolean }) {
+function TakeRow({ take, onUpdate, readOnly, onError }: { take: SongTrack; onUpdate: () => void; readOnly?: boolean; onError?: (msg: string) => void }) {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesInput, setNotesInput] = useState(take.notes ?? "");
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shared, setShared] = useState(false);
 
   const handleSaveNotes = async () => {
     await api.updateTrackNotes(take.id, notesInput.trim());
     setEditingNotes(false);
     onUpdate();
+  };
+
+  const handleShare = async () => {
+    setShareLoading(true);
+    try {
+      const result = await api.createShareLink(take.id);
+      const fullUrl = `${window.location.origin}${result.url}`;
+      if (navigator.share) {
+        await navigator.share({ url: fullUrl });
+      } else {
+        await navigator.clipboard.writeText(fullUrl);
+      }
+      setShared(true);
+      setTimeout(() => setShared(false), 2000);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      onError?.(`Share failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setShareLoading(false);
+    }
   };
 
   return (
@@ -40,7 +62,13 @@ function TakeRow({ take, onUpdate, readOnly }: { take: SongTrack; onUpdate: () =
         </span>
       </div>
 
-      <AudioPlayer src={api.trackAudioUrl(take.id)} durationSec={take.duration_sec} />
+      <AudioPlayer
+        src={api.trackAudioUrl(take.id)}
+        durationSec={take.duration_sec}
+        downloadUrl={`${api.trackAudioUrl(take.id)}?download=1`}
+        onShare={handleShare}
+        shareState={shareLoading ? "loading" : shared ? "copied" : "idle"}
+      />
 
       {/* Notes */}
       <div className="mt-2">
@@ -451,7 +479,7 @@ export default function SongHistory() {
       ) : (
         <div className="space-y-2">
           {takes.map((take) => (
-            <TakeRow key={take.id} take={take} onUpdate={refresh} readOnly={!canEdit(user)} />
+            <TakeRow key={take.id} take={take} onUpdate={refresh} readOnly={!canEdit(user)} onError={setErrorMsg} />
           ))}
         </div>
       )}
