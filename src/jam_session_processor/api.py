@@ -43,6 +43,45 @@ def get_db() -> Database:
     return _db
 
 
+# --- Rate limiting ---
+
+
+def _get_client_ip(request: Request) -> str:
+    """Extract client IP, preferring Cloudflare/proxy headers."""
+    return (
+        request.headers.get("cf-connecting-ip")
+        or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        or (request.client.host if request.client else "unknown")
+    )
+
+
+class RateLimiter:
+    """In-memory per-IP rate limiter with sliding window."""
+
+    def __init__(self, max_attempts: int, window_seconds: int):
+        self.max_attempts = max_attempts
+        self.window = window_seconds
+        self._attempts: dict[str, list[float]] = {}
+
+    def is_blocked(self, key: str) -> bool:
+        now = time.monotonic()
+        attempts = self._attempts.get(key, [])
+        # Prune old attempts
+        attempts = [t for t in attempts if now - t < self.window]
+        self._attempts[key] = attempts
+        return len(attempts) >= self.max_attempts
+
+    def record(self, key: str):
+        now = time.monotonic()
+        self._attempts.setdefault(key, []).append(now)
+
+    def reset(self, key: str):
+        self._attempts.pop(key, None)
+
+
+_login_limiter = RateLimiter(max_attempts=5, window_seconds=60)
+
+
 # --- Auth middleware ---
 
 _PUBLIC_PATHS = {"/health", "/api/auth/login"}
@@ -159,11 +198,19 @@ class AuthUserResponse(BaseModel):
 
 
 @app.post("/api/auth/login")
-def login(req: LoginRequest):
+def login(req: LoginRequest, request: Request):
+    ip = _get_client_ip(request)
+    if _login_limiter.is_blocked(ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many login attempts. Try again in a minute.",
+        )
     db = get_db()
     user = db.get_user_by_email(req.email)
     if not user or not user.password_hash or not verify_password(req.password, user.password_hash):
+        _login_limiter.record(ip)
         raise HTTPException(status_code=401, detail="Invalid username or password")
+    _login_limiter.reset(ip)
     token = create_jwt(user.id, user.email)
     groups = db.get_user_groups(user.id)
     db.log_activity(user.id, None, "login")
