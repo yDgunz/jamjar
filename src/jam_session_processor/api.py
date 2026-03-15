@@ -1992,6 +1992,11 @@ def set_setlist_songs(setlist_id: int, req: SetlistSongsRequest, request: Reques
     db = get_db()
     setlist = _get_setlist_with_access(db, setlist_id, request)
     _require_role(request, "editor")
+    # Validate all songs belong to the same group as the setlist
+    for sid in req.song_ids:
+        song = db.get_song(sid)
+        if not song or song.group_id != setlist.group_id:
+            raise HTTPException(status_code=400, detail=f"Song {sid} not found in this group")
     user_id = request.state.user.id if request.state.user else None
     db.set_setlist_songs(setlist_id, req.song_ids, updated_by=user_id)
     if request.state.user:
@@ -2004,6 +2009,10 @@ def add_setlist_song(setlist_id: int, req: AddSetlistSongRequest, request: Reque
     db = get_db()
     setlist = _get_setlist_with_access(db, setlist_id, request)
     _require_role(request, "editor")
+    # Validate the song belongs to the same group as the setlist
+    song = db.get_song(req.song_id)
+    if not song or song.group_id != setlist.group_id:
+        raise HTTPException(status_code=400, detail="Song not found in this group")
     user_id = request.state.user.id if request.state.user else None
     db.add_song_to_setlist(setlist_id, req.song_id, req.position, added_by=user_id)
     if request.state.user:
