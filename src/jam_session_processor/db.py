@@ -127,6 +127,35 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     used_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    type TEXT NOT NULL CHECK(type IN ('rehearsal', 'gig')),
+    name TEXT NOT NULL,
+    date TEXT NOT NULL,
+    time TEXT,
+    location TEXT,
+    status TEXT NOT NULL DEFAULT 'tentative'
+        CHECK(status IN ('tentative', 'confirmed', 'cancelled')),
+    notes TEXT NOT NULL DEFAULT '',
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    updated_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_group_date ON events(group_id, date);
+
+CREATE TABLE IF NOT EXISTS event_responses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK(status IN ('yes', 'no', 'maybe')),
+    comment TEXT,
+    responded_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(event_id, user_id)
+);
 """
 
 
@@ -149,6 +178,7 @@ class Group:
     id: int
     name: str
     created_at: str
+    features: str = ""
 
 
 @dataclass
@@ -236,6 +266,33 @@ class SetlistSong:
     artist: str
     sheet: str
     added_by: int | None = None
+
+
+@dataclass
+class Event:
+    id: int
+    group_id: int
+    type: str
+    name: str
+    date: str
+    time: str | None
+    location: str | None
+    status: str
+    notes: str
+    created_by: int | None
+    created_at: str
+    updated_by: int | None = None
+    updated_at: str | None = None
+
+
+@dataclass
+class EventRSVP:
+    user_id: int
+    user_name: str
+    user_email: str
+    status: str
+    comment: str | None
+    responded_at: str | None
 
 
 @dataclass
@@ -363,12 +420,24 @@ class Database:
             )
             self.conn.commit()
 
+        group_cols = {
+            row["name"]
+            for row in self.conn.execute("PRAGMA table_info(groups)").fetchall()
+        }
+        if "features" not in group_cols:
+            self.conn.execute(
+                "ALTER TABLE groups ADD COLUMN features TEXT NOT NULL DEFAULT ''"
+            )
+            self.conn.commit()
+
     def close(self):
         self.conn.close()
 
     def reset(self):
         """Drop all tables and recreate the schema."""
         self.conn.executescript("""
+            DROP TABLE IF EXISTS event_responses;
+            DROP TABLE IF EXISTS events;
             DROP TABLE IF EXISTS invite_tokens;
             DROP TABLE IF EXISTS activity_log;
             DROP TABLE IF EXISTS setlist_songs;
@@ -544,6 +613,20 @@ class Database:
         self.conn.execute("DELETE FROM groups WHERE id = ?", (group_id,))
         self.conn.commit()
 
+    def update_group_features(self, group_id: int, features: str):
+        self.conn.execute(
+            "UPDATE groups SET features = ? WHERE id = ?", (features, group_id)
+        )
+        self.conn.commit()
+
+    def group_has_feature(self, group_id: int, feature: str) -> bool:
+        row = self.conn.execute(
+            "SELECT features FROM groups WHERE id = ?", (group_id,)
+        ).fetchone()
+        if not row or not row["features"]:
+            return False
+        return feature in row["features"].split(",")
+
     # --- Membership ---
 
     def assign_user_to_group(self, user_id: int, group_id: int):
@@ -575,6 +658,16 @@ class Database:
             "SELECT group_id FROM user_groups WHERE user_id = ?", (user_id,)
         ).fetchall()
         return [row["group_id"] for row in rows]
+
+    def get_users_for_group(self, group_id: int) -> list[User]:
+        rows = self.conn.execute(
+            """SELECT u.* FROM users u
+               JOIN user_groups ug ON ug.user_id = u.id
+               WHERE ug.group_id = ?
+               ORDER BY u.name""",
+            (group_id,),
+        ).fetchall()
+        return [User(**row) for row in rows]
 
     def get_group_member_count(self, group_id: int) -> int:
         row = self.conn.execute(
@@ -1321,3 +1414,139 @@ class Database:
             (setlist_id, position),
         )
         self.conn.commit()
+
+    # ── Events ──────────────────────────────────────────────────────────
+
+    def create_event(
+        self,
+        group_id: int,
+        type: str,
+        name: str,
+        date: str,
+        time: str | None = None,
+        location: str | None = None,
+        status: str = "tentative",
+        notes: str = "",
+        created_by: int | None = None,
+    ) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO events (group_id, type, name, date, time,"
+            " location, status, notes, created_by, updated_by)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (group_id, type, name, date, time, location, status,
+             notes, created_by, created_by),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_event(self, event_id: int) -> Event | None:
+        row = self.conn.execute(
+            "SELECT * FROM events WHERE id = ?", (event_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return Event(**row)
+
+    def list_events(
+        self,
+        group_ids: list[int] | None = None,
+        event_type: str | None = None,
+        upcoming_only: bool = False,
+        today: str | None = None,
+    ) -> list[Event]:
+        if group_ids is not None and not group_ids:
+            return []
+        clauses: list[str] = []
+        params: list = []
+        if group_ids is not None:
+            placeholders = ",".join("?" for _ in group_ids)
+            clauses.append(f"group_id IN ({placeholders})")
+            params.extend(group_ids)
+        if event_type:
+            clauses.append("type = ?")
+            params.append(event_type)
+        if upcoming_only:
+            from datetime import date as date_cls
+            d = today or date_cls.today().isoformat()
+            clauses.append("date >= ?")
+            params.append(d)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = self.conn.execute(
+            f"SELECT * FROM events{where} ORDER BY date ASC, time ASC",
+            params,
+        ).fetchall()
+        return [Event(**row) for row in rows]
+
+    def update_event(self, event_id: int, updated_by: int | None = None, **fields):
+        """Update event fields. Only keys present in fields are changed."""
+        allowed = {"name", "type", "date", "time", "location", "status", "notes"}
+        to_update = {k: v for k, v in fields.items() if k in allowed}
+        if not to_update:
+            return
+        sets = []
+        params = []
+        for k, v in to_update.items():
+            sets.append(f"{k} = ?")
+            params.append(v)
+        sets.append("updated_by = ?")
+        params.append(updated_by)
+        sets.append("updated_at = datetime('now')")
+        params.append(event_id)
+        self.conn.execute(
+            f"UPDATE events SET {', '.join(sets)} WHERE id = ?", params,
+        )
+        self.conn.commit()
+
+    def delete_event(self, event_id: int):
+        self.conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+        self.conn.commit()
+
+    # ── Event Responses ─────────────────────────────────────────────────
+
+    def set_event_response(
+        self, event_id: int, user_id: int, status: str, comment: str | None = None,
+    ):
+        self.conn.execute(
+            "INSERT INTO event_responses (event_id, user_id, status, comment)"
+            " VALUES (?, ?, ?, ?)"
+            " ON CONFLICT(event_id, user_id)"
+            " DO UPDATE SET status = excluded.status,"
+            " comment = excluded.comment, responded_at = datetime('now')",
+            (event_id, user_id, status, comment),
+        )
+        self.conn.commit()
+
+    def delete_event_response(self, event_id: int, user_id: int):
+        self.conn.execute(
+            "DELETE FROM event_responses WHERE event_id = ? AND user_id = ?",
+            (event_id, user_id),
+        )
+        self.conn.commit()
+
+    def get_event_responses(self, event_id: int) -> list[EventRSVP]:
+        rows = self.conn.execute(
+            """SELECT er.user_id, u.name as user_name, u.email as user_email,
+                      er.status, er.comment, er.responded_at
+               FROM event_responses er
+               JOIN users u ON u.id = er.user_id
+               WHERE er.event_id = ?
+               ORDER BY er.responded_at""",
+            (event_id,),
+        ).fetchall()
+        return [EventRSVP(**row) for row in rows]
+
+    def get_event_response_summary(self, event_id: int, group_id: int) -> dict:
+        member_count = self.get_group_member_count(group_id)
+        row = self.conn.execute(
+            """SELECT
+                  SUM(CASE WHEN status = 'yes' THEN 1 ELSE 0 END) as yes_count,
+                  SUM(CASE WHEN status = 'no' THEN 1 ELSE 0 END) as no_count,
+                  SUM(CASE WHEN status = 'maybe' THEN 1 ELSE 0 END) as maybe_count
+               FROM event_responses WHERE event_id = ?""",
+            (event_id,),
+        ).fetchone()
+        yes = row["yes_count"] or 0
+        no = row["no_count"] or 0
+        maybe = row["maybe_count"] or 0
+        pending = member_count - yes - no - maybe
+        return {"yes": yes, "no": no, "maybe": maybe, "pending": pending}

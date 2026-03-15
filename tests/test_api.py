@@ -48,6 +48,7 @@ def _create_user_and_group(db, email="test@example.com", group_name="TestBand", 
     """Create a user with a group and return (user_id, group_id)."""
     uid = db.create_user(email, hash_password("password"), name="Test User", role=role)
     gid = db.create_group(group_name)
+    db.update_group_features(gid, "scheduling")
     db.assign_user_to_group(uid, gid)
     return uid, gid
 
@@ -941,6 +942,7 @@ def _login_as(client, db, email, role="editor", group_name="TestBand", group_id=
         group = db.get_group_by_name(group_name)
         if not group:
             group_id = db.create_group(group_name)
+            db.update_group_features(group_id, "scheduling")
         else:
             group_id = group.id
     db.assign_user_to_group(uid, group_id)
@@ -1426,3 +1428,379 @@ def test_track_audio_download_content_disposition(seeded_client, tmp_path):
     resp = client.get(f"/api/tracks/{track.id}/audio?download=1")
     assert resp.status_code == 200
     assert "attachment" in resp.headers.get("content-disposition", "")
+
+
+# --- Event tests ---
+
+
+def test_get_users_for_group(client):
+    db = api._db
+    uid1 = db.create_user("a@test.com", hash_password("pw"), name="Alice", role="editor")
+    uid2 = db.create_user("b@test.com", hash_password("pw"), name="Bob", role="editor")
+    gid = db.create_group("TestBand")
+    db.assign_user_to_group(uid1, gid)
+    db.assign_user_to_group(uid2, gid)
+
+    users = db.get_users_for_group(gid)
+    assert len(users) == 2
+    names = {u.name for u in users}
+    assert names == {"Alice", "Bob"}
+
+
+def test_db_create_and_get_event(client):
+    db = api._db
+    uid, gid = _create_user_and_group(db)
+    eid = db.create_event(
+        group_id=gid,
+        type="rehearsal",
+        name="Tuesday Practice",
+        date="2026-03-21",
+        time="19:00",
+        location="Dave's garage",
+        created_by=uid,
+    )
+    event = db.get_event(eid)
+    assert event is not None
+    assert event.name == "Tuesday Practice"
+    assert event.type == "rehearsal"
+    assert event.date == "2026-03-21"
+    assert event.time == "19:00"
+    assert event.location == "Dave's garage"
+    assert event.status == "tentative"
+    assert event.created_by == uid
+
+
+def test_db_list_events(client):
+    db = api._db
+    uid, gid = _create_user_and_group(db)
+    db.create_event(
+        group_id=gid, type="rehearsal", name="Event A", date="2026-03-20", created_by=uid
+    )
+    db.create_event(group_id=gid, type="gig", name="Event B", date="2026-03-25", created_by=uid)
+
+    events = db.list_events([gid])
+    assert len(events) == 2
+    assert events[0].name == "Event A"
+    assert events[1].name == "Event B"
+
+    events = db.list_events([gid], event_type="gig")
+    assert len(events) == 1
+    assert events[0].name == "Event B"
+
+    events = db.list_events([gid], upcoming_only=True, today="2026-03-22")
+    assert len(events) == 1
+    assert events[0].name == "Event B"
+
+
+def test_db_update_event(client):
+    db = api._db
+    uid, gid = _create_user_and_group(db)
+    eid = db.create_event(
+        group_id=gid, type="rehearsal", name="Old Name", date="2026-03-21", created_by=uid
+    )
+
+    db.update_event(eid, name="New Name", status="confirmed", updated_by=uid)
+    event = db.get_event(eid)
+    assert event.name == "New Name"
+    assert event.status == "confirmed"
+    assert event.updated_by == uid
+    assert event.updated_at is not None
+
+
+def test_db_delete_event(client):
+    db = api._db
+    uid, gid = _create_user_and_group(db)
+    eid = db.create_event(
+        group_id=gid, type="rehearsal", name="Doomed", date="2026-03-21", created_by=uid
+    )
+    db.delete_event(eid)
+    assert db.get_event(eid) is None
+
+
+def test_db_event_responses(client):
+    db = api._db
+    uid1 = db.create_user("a@test.com", hash_password("pw"), name="Alice", role="editor")
+    uid2 = db.create_user("b@test.com", hash_password("pw"), name="Bob", role="editor")
+    gid = db.create_group("TestBand")
+    db.assign_user_to_group(uid1, gid)
+    db.assign_user_to_group(uid2, gid)
+    eid = db.create_event(
+        group_id=gid, type="rehearsal", name="Practice", date="2026-03-21", created_by=uid1
+    )
+
+    db.set_event_response(eid, uid1, "yes", comment="I'll bring snacks")
+    db.set_event_response(eid, uid2, "maybe")
+
+    responses = db.get_event_responses(eid)
+    assert len(responses) == 2
+    r1 = next(r for r in responses if r.user_id == uid1)
+    assert r1.status == "yes"
+    assert r1.comment == "I'll bring snacks"
+    assert r1.user_name == "Alice"
+
+    db.set_event_response(eid, uid2, "no", comment="Can't make it")
+    responses = db.get_event_responses(eid)
+    r2 = next(r for r in responses if r.user_id == uid2)
+    assert r2.status == "no"
+    assert r2.comment == "Can't make it"
+
+    db.delete_event_response(eid, uid1)
+    responses = db.get_event_responses(eid)
+    assert len(responses) == 1
+
+    summary = db.get_event_response_summary(eid, gid)
+    assert summary == {"yes": 0, "no": 1, "maybe": 0, "pending": 1}
+
+
+def test_create_and_list_events(auth_client):
+    client, uid, gid = auth_client
+    resp = client.post(
+        "/api/events",
+        json={
+            "group_id": gid,
+            "type": "rehearsal",
+            "name": "Tuesday Practice",
+            "date": "2026-03-21",
+            "time": "19:00",
+            "location": "Dave's garage",
+        },
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["name"] == "Tuesday Practice"
+    assert data["type"] == "rehearsal"
+    assert data["date"] == "2026-03-21"
+    assert data["time"] == "19:00"
+    assert data["location"] == "Dave's garage"
+    assert data["status"] == "tentative"
+    assert data["group_name"] == "TestBand"
+    assert data["response_summary"]["pending"] == 1
+
+    client.post(
+        "/api/events",
+        json={
+            "group_id": gid,
+            "type": "gig",
+            "name": "Blues Fest",
+            "date": "2026-04-05",
+            "time": "20:00",
+        },
+    )
+
+    resp = client.get("/api/events?include_past=true")
+    assert resp.status_code == 200
+    events = resp.json()
+    assert len(events) == 2
+    assert events[0]["name"] == "Tuesday Practice"
+    assert events[1]["name"] == "Blues Fest"
+
+
+def test_list_events_type_filter(auth_client):
+    client, uid, gid = auth_client
+    client.post(
+        "/api/events",
+        json={"group_id": gid, "type": "rehearsal", "name": "R1", "date": "2026-03-21"},
+    )
+    client.post(
+        "/api/events", json={"group_id": gid, "type": "gig", "name": "G1", "date": "2026-03-22"}
+    )
+
+    resp = client.get("/api/events?type=gig&include_past=true")
+    assert len(resp.json()) == 1
+    assert resp.json()[0]["name"] == "G1"
+
+
+def test_create_event_validation(auth_client):
+    client, uid, gid = auth_client
+
+    resp = client.post(
+        "/api/events", json={"group_id": gid, "type": "party", "name": "X", "date": "2026-03-21"}
+    )
+    assert resp.status_code == 422
+
+    resp = client.post(
+        "/api/events",
+        json={"group_id": gid, "type": "gig", "name": "X", "date": "2026-03-21", "time": "7pm"},
+    )
+    assert resp.status_code == 422
+
+    resp = client.post(
+        "/api/events", json={"group_id": gid, "type": "gig", "name": "  ", "date": "2026-03-21"}
+    )
+    assert resp.status_code == 400
+
+
+def test_get_event(auth_client):
+    client, uid, gid = auth_client
+    resp = client.post(
+        "/api/events", json={"group_id": gid, "type": "gig", "name": "Show", "date": "2026-04-01"}
+    )
+    eid = resp.json()["id"]
+
+    resp = client.get(f"/api/events/{eid}")
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Show"
+
+
+def test_get_event_not_found(auth_client):
+    client, uid, gid = auth_client
+    resp = client.get("/api/events/9999")
+    assert resp.status_code == 404
+
+
+def test_update_event(auth_client):
+    client, uid, gid = auth_client
+    resp = client.post(
+        "/api/events",
+        json={"group_id": gid, "type": "rehearsal", "name": "Old", "date": "2026-03-21"},
+    )
+    eid = resp.json()["id"]
+
+    resp = client.put(
+        f"/api/events/{eid}", json={"name": "New", "status": "confirmed", "location": "Studio B"}
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"] == "New"
+    assert data["status"] == "confirmed"
+    assert data["location"] == "Studio B"
+    assert data["updated_by_name"] is not None
+
+
+def test_update_event_validation(auth_client):
+    client, uid, gid = auth_client
+    resp = client.post(
+        "/api/events", json={"group_id": gid, "type": "gig", "name": "X", "date": "2026-03-21"}
+    )
+    eid = resp.json()["id"]
+
+    resp = client.put(f"/api/events/{eid}", json={"type": "party"})
+    assert resp.status_code == 422
+
+
+def test_delete_event(auth_client):
+    client, uid, gid = auth_client
+    resp = client.post(
+        "/api/events", json={"group_id": gid, "type": "gig", "name": "Doomed", "date": "2026-03-21"}
+    )
+    eid = resp.json()["id"]
+
+    resp = client.delete(f"/api/events/{eid}")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+    resp = client.get(f"/api/events/{eid}")
+    assert resp.status_code == 404
+
+
+def test_editor_cannot_delete_event(client):
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "editor@test.com", role="editor", group_id=gid)
+    eid = db.create_event(group_id=gid, type="gig", name="Show", date="2026-04-01")
+
+    resp = client.delete(f"/api/events/{eid}")
+    assert resp.status_code == 403
+
+
+def test_event_rsvp(auth_client):
+    client, uid, gid = auth_client
+    resp = client.post(
+        "/api/events",
+        json={"group_id": gid, "type": "rehearsal", "name": "Practice", "date": "2026-03-21"},
+    )
+    eid = resp.json()["id"]
+
+    resp = client.post(
+        f"/api/events/{eid}/respond", json={"status": "yes", "comment": "Bringing snacks"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+    resp = client.get(f"/api/events/{eid}")
+    data = resp.json()
+    assert data["my_response"]["status"] == "yes"
+    assert data["my_response"]["comment"] == "Bringing snacks"
+    assert data["response_summary"]["yes"] == 1
+
+    resp = client.post(f"/api/events/{eid}/respond", json={"status": "no"})
+    assert resp.status_code == 200
+    resp = client.get(f"/api/events/{eid}")
+    assert resp.json()["my_response"]["status"] == "no"
+
+    resp = client.delete(f"/api/events/{eid}/respond")
+    assert resp.status_code == 200
+    resp = client.get(f"/api/events/{eid}")
+    assert resp.json()["my_response"] is None
+
+
+def test_rsvp_invalid_status(auth_client):
+    client, uid, gid = auth_client
+    resp = client.post(
+        "/api/events", json={"group_id": gid, "type": "gig", "name": "Show", "date": "2026-04-01"}
+    )
+    eid = resp.json()["id"]
+
+    resp = client.post(f"/api/events/{eid}/respond", json={"status": "absolutely"})
+    assert resp.status_code == 422
+
+
+def test_readonly_can_rsvp(client):
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "readonly@test.com", role="readonly", group_id=gid)
+    eid = db.create_event(group_id=gid, type="rehearsal", name="Practice", date="2026-03-21")
+
+    resp = client.post(f"/api/events/{eid}/respond", json={"status": "yes"})
+    assert resp.status_code == 200
+
+
+def test_readonly_cannot_create_event(client):
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "readonly@test.com", role="readonly", group_id=gid)
+
+    resp = client.post(
+        "/api/events", json={"group_id": gid, "type": "gig", "name": "Show", "date": "2026-04-01"}
+    )
+    assert resp.status_code == 403
+
+
+def test_event_group_scoping(client):
+    db = api._db
+    uid1 = db.create_user("u1@test.com", hash_password("pw"), role="admin")
+    gid_a = db.create_group("GroupA")
+    db.update_group_features(gid_a, "scheduling")
+    db.assign_user_to_group(uid1, gid_a)
+    uid2 = db.create_user("u2@test.com", hash_password("pw"), role="admin")
+    gid_b = db.create_group("GroupB")
+    db.update_group_features(gid_b, "scheduling")
+    db.assign_user_to_group(uid2, gid_b)
+
+    db.create_event(group_id=gid_a, type="rehearsal", name="A Practice", date="2026-03-21")
+    db.create_event(group_id=gid_b, type="gig", name="B Show", date="2026-03-22")
+
+    client.post("/api/auth/login", json={"email": "u1@test.com", "password": "pw"})
+    resp = client.get("/api/events?include_past=true")
+    assert len(resp.json()) == 1
+    assert resp.json()[0]["name"] == "A Practice"
+
+
+def test_get_event_responses(auth_client):
+    client, uid, gid = auth_client
+    resp = client.post(
+        "/api/events",
+        json={"group_id": gid, "type": "rehearsal", "name": "Practice", "date": "2026-03-21"},
+    )
+    eid = resp.json()["id"]
+
+    client.post(f"/api/events/{eid}/respond", json={"status": "yes", "comment": "I'm in"})
+
+    resp = client.get(f"/api/events/{eid}/responses")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) >= 1
+    responded = [r for r in data if r["status"] != "pending"]
+    assert len(responded) == 1
+    assert responded[0]["status"] == "yes"
+    assert responded[0]["comment"] == "I'm in"

@@ -397,6 +397,7 @@ export default function Admin() {
                 <tr className="border-b border-gray-800 bg-gray-900 text-left text-xs text-gray-400">
                   <th className="px-3 py-2 font-medium">Name</th>
                   <th className="px-3 py-2 font-medium">Members</th>
+                  <th className="px-3 py-2 font-medium">Features</th>
                   <th className="px-3 py-2 font-medium text-right">Actions</th>
                 </tr>
               </thead>
@@ -406,6 +407,27 @@ export default function Admin() {
                     <td className="px-3 py-2 text-white">{group.name}</td>
                     <td className="px-3 py-2 text-gray-300">
                       {group.member_count} member{group.member_count !== 1 ? "s" : ""}
+                    </td>
+                    <td className="px-3 py-2">
+                      <label className="flex items-center gap-1.5 text-xs text-gray-400">
+                        <input
+                          type="checkbox"
+                          checked={group.features.includes("scheduling")}
+                          onChange={async (e) => {
+                            const newFeatures = e.target.checked
+                              ? [...group.features, "scheduling"]
+                              : group.features.filter((f) => f !== "scheduling");
+                            try {
+                              await api.adminUpdateGroupFeatures(group.id, newFeatures);
+                              await refresh();
+                            } catch (err: any) {
+                              setToast({ message: err.message, variant: "error" });
+                            }
+                          }}
+                          className="rounded border-gray-600 bg-gray-800"
+                        />
+                        Scheduling
+                      </label>
                     </td>
                     <td className="px-3 py-2 text-right">
                       <button

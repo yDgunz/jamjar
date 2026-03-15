@@ -690,6 +690,7 @@ def seed(db: Database):
     group_ids = {}
     for name in GROUPS:
         gid = db.create_group(name)
+        db.update_group_features(gid, "scheduling")
         group_ids[name] = gid
         print(f"  Group: {name} (id={gid})")
 
@@ -821,6 +822,54 @@ def seed(db: Database):
                 sl_id, notes, updated_by=editor,
             )
     print(f"  Setlists: {len(setlist_data)}")
+
+    # ── Events ────────────────────────────────────────────────────────
+    event_data = [
+        (
+            "Porch Dogs", "rehearsal", "Tuesday Practice", "2026-03-17",
+            "19:00", "Dave's garage", "confirmed",
+            "Bring charts for new songs",
+            [("yes", "I'll bring snacks"), ("yes", None), ("maybe", "Might be 15 min late")],
+        ),
+        (
+            "Porch Dogs", "gig", "The Tipsy Crow", "2026-03-28",
+            "20:00", "The Tipsy Crow, 1535 Broadway", "tentative",
+            "Waiting on confirmation from venue. $200 + tips.",
+            [("yes", None), ("maybe", "Need to check work schedule"), ("no", "Out of town")],
+        ),
+        (
+            "Porch Dogs", "rehearsal", "Pre-show Rehearsal", "2026-03-27",
+            "18:00", "Dave's garage", "tentative",
+            "Run through the setlist for Saturday",
+            [("yes", None), ("yes", None)],
+        ),
+        (
+            "The Slow Burners", "rehearsal", "Weekly Jam", "2026-03-19",
+            "20:00", "Mike's basement", "confirmed", "",
+            [("yes", None), ("yes", "Bringing the new amp")],
+        ),
+        (
+            "The Slow Burners", "gig", "Open Mic Night", "2026-04-10",
+            "19:30", "The Hollow", "confirmed",
+            "Acoustic set, 3 songs max",
+            [("yes", None)],
+        ),
+    ]
+    for ev_idx, (
+        group_name, etype, ename, edate, etime, eloc, estatus, enotes, rsvps
+    ) in enumerate(event_data):
+        gid = group_ids[group_name]
+        creator = pick_user(group_name, ev_idx)
+        eid = db.create_event(
+            group_id=gid, type=etype, name=ename, date=edate,
+            time=etime, location=eloc,
+            status=estatus, notes=enotes, created_by=creator,
+        )
+        members = db.get_users_for_group(gid)
+        for i, (rstatus, rcomment) in enumerate(rsvps):
+            if i < len(members):
+                db.set_event_response(eid, members[i].id, rstatus, rcomment)
+    print(f"  Events: {len(event_data)}")
 
     print(f"\nAll users have password: {DEFAULT_PASSWORD}")
     print("Done.")

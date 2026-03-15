@@ -24,9 +24,63 @@ export function formatDate(dateStr: string | null | undefined): string {
   return `${days[date.getDay()]} ${Number(m)}/${Number(d)}/${shortYear}`;
 }
 
+/**
+ * Convert a local time (HH:MM) + date (YYYY-MM-DD) to UTC for storage.
+ * Returns { date, time } in UTC.
+ */
+export function localToUtc(
+  date: string,
+  time: string,
+): { date: string; time: string } {
+  const local = new Date(`${date}T${time}:00`);
+  const utcDate = local.toISOString().slice(0, 10);
+  const utcTime = local.toISOString().slice(11, 16);
+  return { date: utcDate, time: utcTime };
+}
+
+/**
+ * Convert a UTC time (HH:MM) + date (YYYY-MM-DD) to local for display.
+ * Returns { date, time } in local timezone.
+ */
+export function utcToLocal(
+  date: string,
+  time: string,
+): { date: string; time: string } {
+  const utc = new Date(`${date}T${time}:00Z`);
+  const y = utc.getFullYear();
+  const m = String(utc.getMonth() + 1).padStart(2, "0");
+  const d = String(utc.getDate()).padStart(2, "0");
+  const h = String(utc.getHours()).padStart(2, "0");
+  const min = String(utc.getMinutes()).padStart(2, "0");
+  return { date: `${y}-${m}-${d}`, time: `${h}:${min}` };
+}
+
+/** Format a UTC HH:MM time for display in local timezone, e.g. "7:00 PM" */
+export function formatTime(
+  date: string,
+  time: string | null,
+): string {
+  if (!time) return "";
+  const utc = new Date(`${date}T${time}:00Z`);
+  return utc.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export interface AuthGroup {
   id: number;
   name: string;
+  features: string[];
+}
+
+/** Check if any of the user's groups have a given feature enabled */
+export function hasFeature(
+  user: AuthUser | null,
+  feature: string,
+): boolean {
+  if (!user) return false;
+  return user.groups.some((g) => g.features.includes(feature));
 }
 
 export type Role = "superadmin" | "admin" | "editor" | "readonly";
@@ -157,6 +211,39 @@ export interface SetlistSong {
   added_by_name: string | null;
 }
 
+export interface Event {
+  id: number;
+  group_id: number;
+  group_name: string;
+  type: "rehearsal" | "gig";
+  name: string;
+  date: string;
+  time: string | null;
+  location: string | null;
+  status: "tentative" | "confirmed" | "cancelled";
+  notes: string;
+  created_by_name: string | null;
+  created_at: string;
+  updated_by_name: string | null;
+  updated_at: string | null;
+  response_summary: {
+    yes: number;
+    no: number;
+    maybe: number;
+    pending: number;
+  } | null;
+  responses: { user_name: string; status: string }[];
+  my_response: { status: string; comment: string | null } | null;
+}
+
+export interface EventMemberResponse {
+  user_id: number;
+  user_name: string;
+  status: string;
+  comment: string | null;
+  responded_at: string | null;
+}
+
 export interface AdminUser {
   id: number;
   email: string;
@@ -169,6 +256,7 @@ export interface AdminGroup {
   id: number;
   name: string;
   member_count: number;
+  features: string[];
 }
 
 export interface UsageStatsUser {
@@ -561,6 +649,58 @@ export const api = {
   deleteSetlist: (id: number) =>
     fetchJson<{ ok: boolean }>(`${BASE}/setlists/${id}`, { method: "DELETE" }),
 
+  // Events
+  listEvents: (type?: string, includePast?: boolean) => {
+    const params = new URLSearchParams();
+    if (type) params.set("type", type);
+    if (includePast) params.set("include_past", "true");
+    const qs = params.toString();
+    return fetchJson<Event[]>(`${BASE}/events${qs ? `?${qs}` : ""}`);
+  },
+
+  createEvent: (data: {
+    group_id: number;
+    type: string;
+    name: string;
+    date: string;
+    time?: string;
+    location?: string;
+    status?: string;
+    notes?: string;
+  }) =>
+    fetchJson<Event>(`${BASE}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  getEvent: (id: number) => fetchJson<Event>(`${BASE}/events/${id}`),
+
+  updateEvent: (id: number, fields: Record<string, unknown>) =>
+    fetchJson<Event>(`${BASE}/events/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fields),
+    }),
+
+  deleteEvent: (id: number) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/events/${id}`, { method: "DELETE" }),
+
+  respondToEvent: (id: number, status: string, comment?: string) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/events/${id}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, comment: comment ?? null }),
+    }),
+
+  clearEventResponse: (id: number) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/events/${id}/respond`, {
+      method: "DELETE",
+    }),
+
+  getEventResponses: (id: number) =>
+    fetchJson<EventMemberResponse[]>(`${BASE}/events/${id}/responses`),
+
   // Share links
   createShareLink: (trackId: number) =>
     fetchJson<{ token: string; url: string }>(`${BASE}/tracks/${trackId}/share`, {
@@ -632,6 +772,13 @@ export const api = {
   adminDeleteGroup: (groupId: number) =>
     fetchJson<{ ok: boolean }>(`${BASE}/admin/groups/${groupId}`, {
       method: "DELETE",
+    }),
+
+  adminUpdateGroupFeatures: (groupId: number, features: string[]) =>
+    fetchJson<AdminGroup>(`${BASE}/admin/groups/${groupId}/features`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ features }),
     }),
 
   adminResendInvite: (userId: number) =>
