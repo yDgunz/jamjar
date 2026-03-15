@@ -90,8 +90,7 @@ def merge_tracks(
 
     # Restore tag and notes
     if song_id:
-        db.conn.execute("UPDATE tracks SET song_id = ? WHERE id = ?", (song_id, new_track_id))
-        db.conn.commit()
+        db.update_track(new_track_id, song_id=song_id)
     if notes:
         db.update_track_notes(new_track_id, notes)
 
@@ -177,8 +176,7 @@ def split_track(
         storage.put(rel_path_1, path_1)
 
     if song_id:
-        db.conn.execute("UPDATE tracks SET song_id = ? WHERE id = ?", (song_id, first_id))
-        db.conn.commit()
+        db.update_track(first_id, song_id=song_id)
     if notes:
         db.update_track_notes(first_id, notes)
 

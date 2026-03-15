@@ -1,10 +1,12 @@
 import asyncio
+import html
 import logging
 import os as _os
 import time
 from pathlib import Path
 from uuid import uuid4
 
+import requests as http_requests
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -84,7 +86,7 @@ _login_limiter = RateLimiter(max_attempts=5, window_seconds=60)
 
 # --- Auth middleware ---
 
-_PUBLIC_PATHS = {"/health", "/api/auth/login"}
+_PUBLIC_PATHS = {"/health", "/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/auth/reset-password/validate"}
 _last_active_cache: dict[int, float] = {}
 
 
@@ -273,6 +275,97 @@ def change_password(req: ChangePasswordRequest, request: Request):
 def logout():
     response = JSONResponse(content={"ok": True})
     response.delete_cookie(key="jam_session", path="/")
+    return response
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+@app.post("/api/auth/forgot-password")
+def forgot_password(req: ForgotPasswordRequest):
+    from jam_session_processor.email import send_password_reset_email
+
+    db = get_db()
+    user = db.get_user_by_email(req.email)
+    # Always return success to avoid email enumeration
+    if user and user.password_hash:
+        token = db.create_password_reset_token(user.id)
+        send_password_reset_email(user.email, token, user.name)
+    return {"ok": True}
+
+
+class ResetPasswordValidateRequest(BaseModel):
+    token: str
+
+
+@app.post("/api/auth/reset-password/validate")
+def reset_password_validate(req: ResetPasswordValidateRequest):
+    from datetime import datetime, timezone
+
+    db = get_db()
+    row = db.get_password_reset_token(req.token)
+    if not row:
+        raise HTTPException(status_code=404, detail="Invalid reset link")
+    if row.used_at is not None:
+        raise HTTPException(status_code=410, detail="This reset link has already been used")
+    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(
+        tzinfo=timezone.utc
+    )
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=410, detail="This reset link has expired")
+    user = db.get_user(row.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User no longer exists")
+    return {"email": user.email}
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str
+
+
+@app.post("/api/auth/reset-password")
+def reset_password(req: ResetPasswordRequest):
+    from datetime import datetime, timezone
+
+    if not req.password or len(req.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    db = get_db()
+    row = db.get_password_reset_token(req.token)
+    if not row:
+        raise HTTPException(status_code=404, detail="Invalid reset link")
+    if row.used_at is not None:
+        raise HTTPException(status_code=410, detail="This reset link has already been used")
+    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(
+        tzinfo=timezone.utc
+    )
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=410, detail="This reset link has expired")
+    user = db.get_user(row.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User no longer exists")
+    db.update_user_password(user.id, hash_password(req.password))
+    db.consume_password_reset_token(req.token)
+    token = create_jwt(user.id, user.email)
+    groups = db.get_user_groups(user.id)
+    response = JSONResponse(
+        {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+            "groups": [{"id": g.id, "name": g.name} for g in groups],
+        }
+    )
+    response.set_cookie(
+        key="jam_session",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=7 * 24 * 3600,
+        path="/",
+    )
     return response
 
 
@@ -948,8 +1041,7 @@ def upload_init(req: UploadInitRequest, request: Request):
 
     db.update_job_progress(job_id, "Waiting for upload...")
     # Set status back to pending (update_job_progress sets it to processing)
-    db.conn.execute("UPDATE jobs SET status = 'pending' WHERE id = ?", (job_id,))
-    db.conn.commit()
+    db.update_job_status(job_id, "pending")
 
     job = db.get_job(job_id)
     return UploadInitResponse(
@@ -1315,7 +1407,7 @@ def create_share_link(track_id: int, request: Request):
     track, session = _get_track_with_access(db, track_id, request)
     user = request.state.user
     link = db.create_share_link(track_id, user.id if user else None)
-    return {"token": link["token"], "url": f"/share/{link['token']}"}
+    return {"token": link.token, "url": f"/share/{link.token}"}
 
 
 @app.delete("/api/tracks/{track_id}/share")
@@ -1327,7 +1419,7 @@ def revoke_share_link(track_id: int, request: Request):
         raise HTTPException(status_code=404, detail="No share link exists for this track")
     # Allow the link creator or any admin/superadmin
     user = request.state.user
-    if user and link["created_by"] != user.id:
+    if user and link.created_by != user.id:
         if user.role not in ("admin", "superadmin"):
             raise HTTPException(
                 status_code=403,
@@ -1346,7 +1438,7 @@ def public_share_audio(token: str, download: int = 0):
     if not link:
         raise HTTPException(status_code=404, detail="Share link not found")
 
-    track = db.get_track(link["track_id"])
+    track = db.get_track(link.track_id)
     if not track:
         raise HTTPException(status_code=404, detail="Track not found")
 
@@ -1388,14 +1480,12 @@ def public_share_audio(token: str, download: int = 0):
 
 @app.get("/share/{token}")
 def share_landing_page(token: str):
-    import html as html_lib
-
     db = get_db()
     link = db.get_share_link_by_token(token)
     if not link:
         raise HTTPException(status_code=404, detail="Share link not found")
 
-    track = db.get_track(link["track_id"])
+    track = db.get_track(link.track_id)
     if not track:
         raise HTTPException(status_code=404, detail="Track not found")
 
@@ -1412,8 +1502,8 @@ def share_landing_page(token: str):
         else:
             date_display = session_date
 
-    title = html_lib.escape(track.song_name or f"Track {track.track_number}")
-    session_name = html_lib.escape(session_name)
+    title = html.escape(track.song_name or f"Track {track.track_number}")
+    session_name = html.escape(session_name)
     audio_url = f"/api/share/{token}/audio"
     download_url = f"/api/share/{token}/audio?download=1"
 
@@ -1621,10 +1711,7 @@ def create_song(req: CreateSongRequest, request: Request):
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Song name cannot be empty")
-    existing = db.conn.execute(
-        "SELECT id FROM songs WHERE name = ? AND group_id = ?", (name, req.group_id)
-    ).fetchone()
-    if existing:
+    if db.song_exists_in_group(name, req.group_id):
         raise HTTPException(status_code=409, detail="Song already exists in this group")
     user_id = request.state.user.id if request.state.user else None
     song_id = db._get_or_create_song(name, req.group_id, created_by=user_id)
@@ -1657,8 +1744,6 @@ def update_song_details(song_id: int, req: SongDetailsRequest, request: Request)
 
 @app.post("/api/songs/{song_id}/fetch-lyrics")
 def fetch_lyrics(song_id: int, request: Request):
-    import requests as http_requests
-
     db = get_db()
     song = _get_song_with_access(db, song_id, request)
     _require_role(request, "editor")
@@ -1832,10 +1917,7 @@ def create_setlist(req: CreateSetlistRequest, request: Request):
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Setlist name cannot be empty")
-    existing = db.conn.execute(
-        "SELECT id FROM setlists WHERE name = ? AND group_id = ?", (name, req.group_id)
-    ).fetchone()
-    if existing:
+    if db.setlist_exists_in_group(name, req.group_id):
         raise HTTPException(status_code=409, detail="Setlist already exists in this group")
     user_id = request.state.user.id if request.state.user else None
     sl_id = db.create_setlist(
@@ -1964,14 +2046,14 @@ def _validate_invite_token(db, token: str):
     row = db.get_invite_token(token)
     if not row:
         raise HTTPException(status_code=404, detail="Invalid invite link")
-    if row["used_at"] is not None:
+    if row.used_at is not None:
         raise HTTPException(status_code=410, detail="This invite has already been used")
-    expires_at = datetime.strptime(row["expires_at"], "%Y-%m-%d %H:%M:%S").replace(
+    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(
         tzinfo=timezone.utc
     )
     if datetime.now(timezone.utc) > expires_at:
         raise HTTPException(status_code=410, detail="This invite has expired")
-    user = db.get_user(row["user_id"])
+    user = db.get_user(row.user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User no longer exists")
     return row, user
@@ -2065,9 +2147,7 @@ def _admin_user_response(db, user) -> AdminUserResponse:
 
 
 def _admin_group_response(db, group) -> AdminGroupResponse:
-    count = db.conn.execute(
-        "SELECT COUNT(*) as cnt FROM user_groups WHERE group_id = ?", (group.id,)
-    ).fetchone()["cnt"]
+    count = db.get_group_member_count(group.id)
     return AdminGroupResponse(id=group.id, name=group.name, member_count=count)
 
 

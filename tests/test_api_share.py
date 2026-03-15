@@ -115,7 +115,7 @@ def test_public_share_audio(auth_client, tmp_path):
     link = db.create_share_link(tracks[0].id, uid)
     # Need to clear auth cookie to test public access
     client.cookies.clear()
-    resp = client.get(f"/api/share/{link['token']}/audio")
+    resp = client.get(f"/api/share/{link.token}/audio")
     assert resp.status_code == 200
 
 
@@ -125,7 +125,7 @@ def test_public_share_audio_download(auth_client, tmp_path):
     tracks = db.get_tracks_for_session(1)
     link = db.create_share_link(tracks[0].id, uid)
     client.cookies.clear()
-    resp = client.get(f"/api/share/{link['token']}/audio?download=1")
+    resp = client.get(f"/api/share/{link.token}/audio?download=1")
     assert resp.status_code == 200
     assert "attachment" in resp.headers.get("content-disposition", "")
 
@@ -141,11 +141,11 @@ def test_share_landing_page(auth_client):
     tracks = db.get_tracks_for_session(1)
     link = db.create_share_link(tracks[0].id, uid)
     client.cookies.clear()
-    resp = client.get(f"/share/{link['token']}")
+    resp = client.get(f"/share/{link.token}")
     assert resp.status_code == 200
     assert "text/html" in resp.headers.get("content-type", "")
     assert "JamJar" in resp.text
-    assert f"/api/share/{link['token']}/audio" in resp.text
+    assert f"/api/share/{link.token}/audio" in resp.text
 
 
 def test_share_landing_page_invalid_token(client):
@@ -160,7 +160,7 @@ def test_share_landing_page_shows_song_name(auth_client):
     db.tag_track(tracks[0].id, "My Song", gid)
     link = db.create_share_link(tracks[0].id, uid)
     client.cookies.clear()
-    resp = client.get(f"/share/{link['token']}")
+    resp = client.get(f"/share/{link.token}")
     assert "My Song" in resp.text
 
 
@@ -170,5 +170,5 @@ def test_share_landing_page_has_download_link(auth_client):
     tracks = db.get_tracks_for_session(1)
     link = db.create_share_link(tracks[0].id, uid)
     client.cookies.clear()
-    resp = client.get(f"/share/{link['token']}")
+    resp = client.get(f"/share/{link.token}")
     assert "download=1" in resp.text

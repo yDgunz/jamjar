@@ -118,6 +118,15 @@ CREATE TABLE IF NOT EXISTS invite_tokens (
     used_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT NOT NULL UNIQUE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -227,6 +236,35 @@ class SetlistSong:
     artist: str
     sheet: str
     added_by: int | None = None
+
+
+@dataclass
+class ShareLink:
+    id: int
+    token: str
+    track_id: int
+    created_by: int | None
+    created_at: str
+
+
+@dataclass
+class InviteToken:
+    id: int
+    token: str
+    user_id: int
+    expires_at: str
+    created_at: str
+    used_at: str | None = None
+
+
+@dataclass
+class PasswordResetToken:
+    id: int
+    token: str
+    user_id: int
+    expires_at: str
+    created_at: str
+    used_at: str | None = None
 
 
 def clean_session_name(source_file: str) -> str:
@@ -538,6 +576,13 @@ class Database:
         ).fetchall()
         return [row["group_id"] for row in rows]
 
+    def get_group_member_count(self, group_id: int) -> int:
+        row = self.conn.execute(
+            "SELECT COUNT(*) as cnt FROM user_groups WHERE group_id = ?",
+            (group_id,),
+        ).fetchone()
+        return row["cnt"]
+
     # --- Sessions ---
 
     def create_session(
@@ -809,7 +854,7 @@ class Database:
 
     # --- Share links ---
 
-    def create_share_link(self, track_id: int, created_by: int | None) -> dict:
+    def create_share_link(self, track_id: int, created_by: int | None) -> ShareLink | None:
         """Create a share link for a track. Returns existing link if one exists."""
         existing = self.get_share_link_by_track(track_id)
         if existing:
@@ -833,15 +878,15 @@ class Database:
             self.conn.commit()
         return self.get_share_link_by_track(track_id)
 
-    def get_share_link_by_token(self, token: str) -> dict | None:
+    def get_share_link_by_token(self, token: str) -> ShareLink | None:
         row = self.conn.execute("SELECT * FROM share_links WHERE token = ?", (token,)).fetchone()
-        return dict(row) if row else None
+        return ShareLink(**row) if row else None
 
-    def get_share_link_by_track(self, track_id: int) -> dict | None:
+    def get_share_link_by_track(self, track_id: int) -> ShareLink | None:
         row = self.conn.execute(
             "SELECT * FROM share_links WHERE track_id = ?", (track_id,)
         ).fetchone()
-        return dict(row) if row else None
+        return ShareLink(**row) if row else None
 
     def delete_share_link(self, track_id: int):
         self.conn.execute("DELETE FROM share_links WHERE track_id = ?", (track_id,))
@@ -865,10 +910,10 @@ class Database:
         self.conn.commit()
         return token
 
-    def get_invite_token(self, token: str) -> dict | None:
+    def get_invite_token(self, token: str) -> InviteToken | None:
         """Get an invite token record. Returns None if not found."""
         row = self.conn.execute("SELECT * FROM invite_tokens WHERE token = ?", (token,)).fetchone()
-        return dict(row) if row else None
+        return InviteToken(**row) if row else None
 
     def consume_invite_token(self, token: str):
         """Mark a token as used."""
@@ -881,6 +926,41 @@ class Database:
     def delete_invite_tokens_for_user(self, user_id: int):
         """Delete all invite tokens for a user (used when resending invites)."""
         self.conn.execute("DELETE FROM invite_tokens WHERE user_id = ?", (user_id,))
+        self.conn.commit()
+
+    # --- Password reset tokens ---
+
+    def create_password_reset_token(self, user_id: int, expires_hours: int = 1) -> str:
+        """Create a password reset token for a user. Returns the token string."""
+        import secrets
+        from datetime import datetime, timedelta, timezone
+
+        # Delete any existing tokens for this user
+        self.conn.execute("DELETE FROM password_reset_tokens WHERE user_id = ?", (user_id,))
+        token = secrets.token_urlsafe(32)
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=expires_hours)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        self.conn.execute(
+            "INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES (?, ?, ?)",
+            (token, user_id, expires_at),
+        )
+        self.conn.commit()
+        return token
+
+    def get_password_reset_token(self, token: str) -> PasswordResetToken | None:
+        """Get a password reset token record. Returns None if not found."""
+        row = self.conn.execute(
+            "SELECT * FROM password_reset_tokens WHERE token = ?", (token,)
+        ).fetchone()
+        return PasswordResetToken(**row) if row else None
+
+    def consume_password_reset_token(self, token: str):
+        """Mark a password reset token as used."""
+        self.conn.execute(
+            "UPDATE password_reset_tokens SET used_at = datetime('now') WHERE token = ?",
+            (token,),
+        )
         self.conn.commit()
 
     # --- Songs ---
@@ -897,6 +977,13 @@ class Database:
         )
         self.conn.commit()
         return cur.lastrowid
+
+    def song_exists_in_group(self, name: str, group_id: int) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM songs WHERE name = ? AND group_id = ?",
+            (name, group_id),
+        ).fetchone()
+        return row is not None
 
     def list_songs(self, group_ids: list[int] | None = None) -> list[Song]:
         if group_ids is not None and not group_ids:
@@ -1051,6 +1138,13 @@ class Database:
         )
         self.conn.commit()
 
+    def update_job_status(self, job_id: str, status: str):
+        self.conn.execute(
+            "UPDATE jobs SET status = ?, updated_at = datetime('now') WHERE id = ?",
+            (status, job_id),
+        )
+        self.conn.commit()
+
     # --- Setlists ---
 
     def create_setlist(
@@ -1081,6 +1175,13 @@ class Database:
         if not row:
             return None
         return Setlist(**row)
+
+    def setlist_exists_in_group(self, name: str, group_id: int) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM setlists WHERE name = ? AND group_id = ?",
+            (name, group_id),
+        ).fetchone()
+        return row is not None
 
     def list_setlists(self, group_ids: list[int] | None = None) -> list[Setlist]:
         if group_ids is not None and not group_ids:

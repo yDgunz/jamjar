@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 import { api } from "../api";
 
 export default function Login() {
@@ -69,6 +70,14 @@ export default function Login() {
           >
             {loading ? "Signing in..." : "Sign in"}
           </button>
+          <div className="text-center">
+            <Link
+              to="/forgot-password"
+              className="text-sm text-gray-500 hover:text-gray-300 transition"
+            >
+              Forgot password?
+            </Link>
+          </div>
         </form>
       </div>
     </div>

@@ -656,4 +656,26 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token, password }),
     }),
+
+  // Password reset (public)
+  forgotPassword: (email: string) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    }),
+
+  validateResetToken: (token: string) =>
+    fetchJson<{ email: string }>(`${BASE}/auth/reset-password/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    }),
+
+  resetPassword: (token: string, password: string) =>
+    fetchJson<AuthUser>(`${BASE}/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, password }),
+    }),
 };

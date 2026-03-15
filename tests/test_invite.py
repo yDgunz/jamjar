@@ -60,8 +60,8 @@ class TestInviteTokens:
         token = db.create_invite_token(uid, expires_hours=168)
         row = db.get_invite_token(token)
         assert row is not None
-        assert row["user_id"] == uid
-        assert row["used_at"] is None
+        assert row.user_id == uid
+        assert row.used_at is None
 
     def test_get_invite_token_not_found(self, db):
         assert db.get_invite_token("nonexistent") is None
@@ -71,7 +71,7 @@ class TestInviteTokens:
         token = db.create_invite_token(uid, expires_hours=168)
         db.consume_invite_token(token)
         row = db.get_invite_token(token)
-        assert row["used_at"] is not None
+        assert row.used_at is not None
 
     def test_delete_invite_tokens_for_user(self, db):
         uid = db.create_user("alice@example.com", "", name="Alice")
@@ -179,7 +179,7 @@ class TestInviteAPI:
         data = resp.json()
         assert data["email"] == "alice@example.com"
         row = db.get_invite_token(token)
-        assert row["used_at"] is not None
+        assert row.used_at is not None
         user = db.get_user(uid)
         assert user.password_hash != ""
         assert "jam_session" in resp.cookies
