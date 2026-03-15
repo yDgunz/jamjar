@@ -14,7 +14,7 @@ export default function Login() {
     setLoading(true);
     try {
       await api.login(email, password);
-      window.location.href = "/";
+      window.location.href = "/sessions";
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -26,8 +26,10 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center bg-gray-950 px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-2">
-          <img src="/logo.png" alt="JamJar" className="h-20 w-20" />
-          <h1 className="text-3xl font-bold text-white">JamJar</h1>
+          <Link to="/" className="flex flex-col items-center gap-2 hover:opacity-80 transition">
+            <img src="/logo.png" alt="JamJar" className="h-20 w-20" />
+            <h1 className="text-3xl font-bold text-white">JamJar</h1>
+          </Link>
           <p className="text-sm text-gray-500">Band session recordings</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">

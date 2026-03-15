@@ -179,15 +179,15 @@ function Layout({ children }: { children: React.ReactNode }) {
       )}
       <header className={`hidden border-b border-gray-800 px-4 py-3 sm:block ${online ? "pt-[max(0.75rem,env(safe-area-inset-top))]" : ""}`}>
         <div className="mx-auto flex max-w-5xl items-center gap-x-8">
-          <NavLink to="/" className="flex items-center gap-1.5 text-xl font-bold text-white hover:text-accent-300 transition">
+          <NavLink to="/sessions" className="flex items-center gap-1.5 text-xl font-bold text-white hover:text-accent-300 transition">
             <img src="/logo.png" alt="JamJar" className="h-7 w-7" />
             <span>JamJar</span>
           </NavLink>
           <nav className="flex flex-1 gap-4 text-sm">
             <NavLink
-              to="/"
+              to="/sessions"
               className={() => {
-                const active = location.pathname === "/" || location.pathname.startsWith("/sessions");
+                const active = location.pathname.startsWith("/sessions");
                 return `py-2 px-3 ${active ? "text-accent-400" : "text-gray-400 hover:text-gray-200"}`;
               }}
             >
@@ -297,8 +297,8 @@ function Layout({ children }: { children: React.ReactNode }) {
       {/* Bottom tab bar for mobile */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-gray-800 bg-gray-950 pb-[env(safe-area-inset-bottom)] sm:hidden">
         <div className="flex items-stretch justify-around">
-          <NavLink to="/" className={() => {
-            const active = location.pathname === "/" || location.pathname.startsWith("/sessions");
+          <NavLink to="/sessions" className={() => {
+            const active = location.pathname.startsWith("/sessions");
             return `flex flex-1 flex-col items-center gap-0.5 py-2 ${active ? "text-accent-400" : "text-gray-500"}`;
           }}>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
