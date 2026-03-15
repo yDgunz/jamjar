@@ -156,6 +156,7 @@ All `/api` endpoints require authentication (JWT cookie or API key header). Role
 **Events:** `GET /api/events` | `POST /api/events` (editor) | `GET /api/events/{id}` | `PUT /api/events/{id}` (editor) | `DELETE /api/events/{id}` (admin) | `POST /api/events/{id}/respond` | `DELETE /api/events/{id}/respond` | `GET /api/events/{id}/responses`
 **Setlists:** `GET /api/setlists` | `POST /api/setlists` (editor) | `GET /api/setlists/{id}` | `GET /api/setlists/{id}/songs` | `PUT /api/setlists/{id}/name` (editor) | `PUT /api/setlists/{id}/date` (editor) | `PUT /api/setlists/{id}/notes` (editor) | `PUT /api/setlists/{id}/songs` (editor, replace order) | `POST /api/setlists/{id}/songs` (editor, add song) | `DELETE /api/setlists/{id}/songs/{position}` (editor) | `DELETE /api/setlists/{id}` (admin)
 **Admin:** `GET/POST /api/admin/users` | `DELETE /api/admin/users/{id}` | `POST .../resend-invite` | `PUT .../password` | `PUT .../role` | `PUT .../name` | `POST/DELETE .../groups/{id}` | `GET/POST /api/admin/groups` | `DELETE /api/admin/groups/{id}` | `GET /api/admin/stats` (all superadmin)
+**Public:** `GET /` (landing page) | `POST /api/access-request`
 **Health:** `GET /health`
 
 ## Build & Development Commands
@@ -273,6 +274,7 @@ All configuration is via `JAM_*` environment variables. Defaults match pre-confi
 | `JAM_SMTP_PASSWORD` | *(empty)* | SMTP password |
 | `JAM_SMTP_FROM` | *(empty)* | From address for emails (falls back to SMTP_USER) |
 | `JAM_APP_URL` | `http://localhost:5173` | Public URL of the app (used in invite links) |
+| `JAM_ACCESS_REQUEST_EMAIL` | *(empty)* | Email address for access request notifications (falls back to `JAM_SMTP_FROM`) |
 
 Path values stored in the DB are relative to `JAM_DATA_DIR`. The `config.resolve_path()` method resolves them to absolute at runtime. Already-absolute paths (from old DBs) pass through unchanged.
 
