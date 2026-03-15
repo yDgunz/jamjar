@@ -1594,22 +1594,6 @@ def share_landing_page(token: str):
             border-radius: 12px;
             padding: 2rem;
         }}
-        .brand {{
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-size: 1rem;
-            font-weight: 700;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-            color: #9ca3af;
-            margin-bottom: 1.5rem;
-        }}
-        .brand img {{
-            width: 2rem;
-            height: 2rem;
-            border-radius: 6px;
-        }}
         .title {{
             font-size: 1.25rem;
             font-weight: 700;
@@ -1649,7 +1633,6 @@ def share_landing_page(token: str):
 </head>
 <body>
     <div class="card">
-        <p class="brand"><img src="/logo.png" alt="">JamJar</p>
         <h1 class="title">{title}</h1>
         <p class="meta">{session_name}{(" &middot; " + date_display) if date_display else ""}</p>
         <audio controls preload="metadata" src="{audio_url}"></audio>
@@ -1681,9 +1664,10 @@ def share_landing_page(token: str):
                 <span id="share-label">Share</span>
             </button>
         </div>
-        <p style="margin-top: 1.5rem; font-size: 0.8125rem; color: #6b7280;">
-            <a href="/" style="color: #34d399; text-decoration: none;">Check out JamJar →</a>
-        </p>
+        <a href="/" style="display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 1.5rem; font-size: 0.8125rem; color: #6b7280; text-decoration: none;">
+            <img src="/logo.png" alt="" style="width: 1rem; height: 1rem; border-radius: 3px;">
+            Shared with <span style="color: #34d399;">JamJar</span>
+        </a>
         <svg id="check-icon" style="display:none"
              width="16" height="16" fill="none"
              viewBox="0 0 24 24" stroke="currentColor"
