@@ -21,6 +21,7 @@ import ScheduleDetail from "./pages/ScheduleDetail";
 import AcceptInvite from "./pages/AcceptInvite";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import Landing from "./pages/Landing";
 
 function ChangePasswordModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -428,7 +429,7 @@ function AuthenticatedApp() {
         <Route path="*" element={
           <Layout>
             <Routes>
-              <Route path="/" element={<SessionList />} />
+              <Route path="/sessions" element={<SessionList />} />
               <Route path="/sessions/:id" element={<SessionDetail />} />
               <Route path="/songs" element={<SongCatalog />} />
               <Route path="/songs/:id" element={<SongHistory />} />
@@ -450,6 +451,7 @@ export default function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <Routes>
+          <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password/:token" element={<ResetPassword />} />
