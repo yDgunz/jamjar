@@ -825,4 +825,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token, password }),
     }),
+
+  // Access request (public)
+  requestAccess: (email: string, band_name: string, message: string) =>
+    fetchJson<{ ok: boolean; message: string }>(`${BASE}/access-request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, band_name, message }),
+    }),
 };
