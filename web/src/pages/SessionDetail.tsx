@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from "react-router";
 import { api, formatDate, formatDateTime, canEdit, canAdmin } from "../api";
 import type { Session, Track, Song } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
-import type { Marker } from "../components/AudioPlayer";
+import type { Segment } from "../components/AudioPlayer";
 import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
@@ -372,10 +372,12 @@ export default function SessionDetail() {
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">Full Recording</p>
           <AudioPlayer
             src={api.sessionAudioUrl(sessionId)}
-            markers={tracks.flatMap((t): Marker[] => [
-              { timeSec: t.start_sec, label: `Track ${t.track_number} start` },
-              { timeSec: t.end_sec, label: `Track ${t.track_number} end` },
-            ])}
+            durationSec={session.duration_sec ?? undefined}
+            segments={tracks.map((t): Segment => ({
+              startSec: t.start_sec,
+              endSec: t.end_sec,
+              label: `Track ${t.track_number}`,
+            }))}
           />
         </div>
         )}

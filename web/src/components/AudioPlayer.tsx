@@ -19,11 +19,18 @@ export interface Marker {
   label?: string;
 }
 
+export interface Segment {
+  startSec: number;
+  endSec: number;
+  label?: string;
+}
+
 interface Props {
   src: string;
   durationSec?: number;
   downloadUrl?: string;
   markers?: Marker[];
+  segments?: Segment[];
   onPlayStateChange?: (playing: boolean, currentTime: number) => void;
   onTimeUpdate?: (currentTime: number) => void;
   onShare?: () => void;
@@ -32,7 +39,7 @@ interface Props {
 
 const SKIP_SECONDS = 30;
 
-export default function AudioPlayer({ src, durationSec, downloadUrl, markers, onPlayStateChange, onTimeUpdate, onShare, shareState = "idle" }: Props) {
+export default function AudioPlayer({ src, durationSec, downloadUrl, markers, segments, onPlayStateChange, onTimeUpdate, onShare, shareState = "idle" }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState(false);
@@ -244,7 +251,20 @@ export default function AudioPlayer({ src, durationSec, downloadUrl, markers, on
             className="absolute top-0 left-0 h-full rounded-full bg-accent-500 transition-[width] duration-100"
             style={{ width: `${progress}%` }}
           />
-          {/* Take boundary markers */}
+          {/* Track segments */}
+          {segments && duration > 0 && segments.map((s, i) => {
+            const left = (s.startSec / duration) * 100;
+            const width = ((s.endSec - s.startSec) / duration) * 100;
+            return (
+              <div
+                key={`seg-${i}`}
+                className="absolute top-0 h-full rounded-full bg-accent-400/25"
+                style={{ left: `${left}%`, width: `${width}%` }}
+                title={s.label ?? `${formatTime(s.startSec)} – ${formatTime(s.endSec)}`}
+              />
+            );
+          })}
+          {/* Boundary markers */}
           {markers && duration > 0 && markers.map((m, i) => (
             <div
               key={i}

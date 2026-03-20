@@ -756,6 +756,10 @@ def seed(db: Database):
             db.update_session_notes(session_id, notes, updated_by=editor)
         source_stem = Path(source_file).stem
 
+        # Set session duration to last track end + some trailing silence
+        last_end = max(end for _, end, _, _ in tracks)
+        db.update_session_duration(session_id, float(last_end + 30))
+
         for i, (start, end, song_name, track_notes) in enumerate(tracks, 1):
             audio_path = fake_audio_path(source_stem, i, start, end)
             track_id = db.create_track(
