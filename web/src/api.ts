@@ -395,6 +395,16 @@ export const api = {
       body: JSON.stringify({ split_at_sec: splitAtSec }),
     }),
 
+  trimTrack: (trackId: number, startDelta?: number, endDelta?: number) =>
+    fetchJson<Track>(`${BASE}/tracks/${trackId}/trim`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        start_delta: startDelta ?? 0,
+        end_delta: endDelta ?? 0,
+      }),
+    }),
+
   reprocessSession: (sessionId: number, threshold: number, minDuration: number, single?: boolean) =>
     fetchJson<Job>(`${BASE}/sessions/${sessionId}/reprocess`, {
       method: "POST",
