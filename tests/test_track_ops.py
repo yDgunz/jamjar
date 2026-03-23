@@ -5,7 +5,7 @@ import pytest
 from jam_session_processor.config import reset_config
 from jam_session_processor.db import Database
 from jam_session_processor.storage import reset_storage
-from jam_session_processor.track_ops import merge_tracks, split_track
+from jam_session_processor.track_ops import merge_tracks, split_track, trim_track
 
 
 @pytest.fixture(autouse=True)
@@ -208,3 +208,73 @@ def test_merge_deletes_old_audio_files(mock_export, db, session_with_tracks):
     # Old files should be deleted
     assert not Path(t1.audio_path).exists()
     assert not Path(t2.audio_path).exists()
+
+
+@patch("jam_session_processor.track_ops.export_segment", side_effect=_mock_export)
+def test_trim_start(mock_export, db, session_with_tracks):
+    sid, tids, output_dir = session_with_tracks
+    result = trim_track(db, tids[0], start_delta=10.0)
+    assert result.start_sec == 10.0
+    assert result.end_sec == 300.0
+    assert result.duration_sec == 290.0
+    assert result.track_number == 1
+    mock_export.assert_called_once()
+
+
+@patch("jam_session_processor.track_ops.export_segment", side_effect=_mock_export)
+def test_trim_end(mock_export, db, session_with_tracks):
+    sid, tids, output_dir = session_with_tracks
+    result = trim_track(db, tids[0], end_delta=-20.0)
+    assert result.start_sec == 0.0
+    assert result.end_sec == 280.0
+    assert result.duration_sec == 280.0
+
+
+@patch("jam_session_processor.track_ops.export_segment", side_effect=_mock_export)
+def test_trim_preserves_metadata(mock_export, db, group_id, session_with_tracks):
+    sid, tids, output_dir = session_with_tracks
+    db.tag_track(tids[0], "Fat Cat", group_id)
+    db.update_track_notes(tids[0], "Great take")
+    result = trim_track(db, tids[0], start_delta=10.0)
+    assert result.song_name == "Fat Cat"
+    assert result.notes == "Great take"
+
+
+@patch("jam_session_processor.track_ops.export_segment", side_effect=_mock_export)
+def test_trim_extend_start(mock_export, db, session_with_tracks):
+    sid, tids, output_dir = session_with_tracks
+    result = trim_track(db, tids[1], start_delta=-5.0)
+    assert result.start_sec == 295.0
+    assert result.end_sec == 600.0
+    assert result.duration_sec == 305.0
+
+
+def test_trim_no_deltas_fails(db, session_with_tracks):
+    sid, tids, output_dir = session_with_tracks
+    with pytest.raises(ValueError, match="at least one"):
+        trim_track(db, tids[0])
+
+
+def test_trim_result_too_short_fails(db, session_with_tracks):
+    sid, tids, output_dir = session_with_tracks
+    with pytest.raises(ValueError, match="at least 1 second"):
+        trim_track(db, tids[0], start_delta=299.5)
+
+
+def test_trim_nonexistent_track_fails(db):
+    with pytest.raises(ValueError, match="not found"):
+        trim_track(db, 9999, start_delta=10.0)
+
+
+def test_trim_start_before_zero_fails(db, session_with_tracks):
+    sid, tids, output_dir = session_with_tracks
+    with pytest.raises(ValueError, match="before start of recording"):
+        trim_track(db, tids[0], start_delta=-10.0)
+
+
+@patch("jam_session_processor.track_ops.export_segment", side_effect=_mock_export)
+def test_trim_end_past_session_fails(mock_export, db, session_with_tracks):
+    sid, tids, output_dir = session_with_tracks
+    db.update_session_duration(sid, 900.0)
+    with pytest.raises(ValueError, match="past end of recording"):
+        trim_track(db, tids[2], end_delta=10.0)

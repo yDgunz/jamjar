@@ -198,6 +198,79 @@ def split_track(
     return db.get_tracks_for_session(session.id)
 
 
+def trim_track(
+    db: Database,
+    track_id: int,
+    start_delta: float = 0.0,
+    end_delta: float = 0.0,
+    audio_format: AudioFormat = DEFAULT_FORMAT,
+) -> Track:
+    """Trim a track by adjusting start/end boundaries and re-exporting.
+
+    start_delta positive = remove from beginning, negative = extend earlier.
+    end_delta positive = extend later, negative = remove from end.
+    Returns the updated Track.
+    """
+    if start_delta == 0.0 and end_delta == 0.0:
+        raise ValueError("Must provide at least one of start_delta or end_delta")
+
+    track = db.get_track(track_id)
+    if not track:
+        raise ValueError("Track not found")
+
+    new_start = track.start_sec + start_delta
+    new_end = track.end_sec + end_delta
+
+    if new_start < 0:
+        raise ValueError("Cannot extend before start of recording")
+
+    session = db.get_session(track.session_id)
+    if session.duration_sec and new_end > session.duration_sec:
+        raise ValueError("Cannot extend past end of recording")
+
+    new_duration = new_end - new_start
+    if new_duration < 1.0:
+        raise ValueError("Trimmed track must be at least 1 second long")
+
+    cfg = get_config()
+    storage = get_storage()
+    source_file = cfg.resolve_path(session.source_file)
+    output_dir = cfg.resolve_path(track.audio_path).parent
+
+    if storage.is_remote:
+        source_file = storage.get(session.source_file, source_file)
+
+    total_tracks = len(db.get_tracks_for_session(session.id))
+    filename = generate_output_name(
+        track.track_number,
+        max(total_tracks, 1),
+        new_start,
+        new_end,
+        extension=audio_format.extension,
+    )
+    new_path = output_dir / filename
+    export_segment(source_file, new_path, new_start, new_end, audio_format=audio_format)
+
+    old_audio_path = track.audio_path
+    new_rel_path = cfg.make_relative(new_path)
+
+    if old_audio_path != new_rel_path:
+        storage.delete(old_audio_path)
+
+    if storage.is_remote:
+        storage.put(new_rel_path, new_path)
+
+    db.update_track(
+        track_id,
+        start_sec=new_start,
+        end_sec=new_end,
+        duration_sec=new_duration,
+        audio_path=new_rel_path,
+    )
+
+    return db.get_track(track_id)
+
+
 def _renumber_tracks(
     db: Database,
     session_id: int,
