@@ -32,6 +32,7 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
   const [playerTime, setPlayerTime] = useState(0);
   const [operationLoading, setOperationLoading] = useState(false);
   const [confirmingSplit, setConfirmingSplit] = useState(false);
+  const [confirmingTrim, setConfirmingTrim] = useState<"start" | "end" | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shared, setShared] = useState(false);
 
@@ -52,6 +53,24 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
     await api.updateTrackNotes(track.id, notesInput.trim());
     setEditingNotes(false);
     onUpdate();
+  };
+
+  const handleTrim = async () => {
+    const trimType = confirmingTrim;
+    setConfirmingTrim(null);
+    setOperationLoading(true);
+    try {
+      if (trimType === "start") {
+        await api.trimTrack(track.id, playerTime);
+      } else {
+        await api.trimTrack(track.id, undefined, -(track.duration_sec - playerTime));
+      }
+      onUpdate();
+    } catch (err) {
+      onError(`Trim failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setOperationLoading(false);
+    }
   };
 
   const handleSplit = async () => {
@@ -225,21 +244,59 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
         shareState={shareLoading ? "loading" : shared ? "copied" : "idle"}
       />
 
-      {/* Split button — shown when paused mid-take */}
-      {canSplit && canAdmin(user) && (
-        <div className="mt-2">
-          <button
-            onClick={() => setConfirmingSplit(true)}
-            disabled={operationLoading}
-            className="flex items-center gap-1.5 rounded bg-gray-800 px-3 py-2 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
-          >
-            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" d="M12 4v16M4 12h16" />
-            </svg>
-            Split here ({formatTime(playerTime)})
-          </button>
+      {/* Track edit buttons — shown when paused mid-take */}
+      {!playerPlaying && playerTime > 0 && canAdmin(user) && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {playerTime > 1 && (
+            <button
+              onClick={() => setConfirmingTrim("start")}
+              disabled={operationLoading}
+              className="flex items-center gap-1.5 rounded bg-gray-800 px-3 py-2 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
+            >
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" d="M9 3v18M15 3l-6 6M15 21l-6-6" />
+              </svg>
+              Trim start to {formatTime(playerTime)}
+            </button>
+          )}
+          {playerTime < track.duration_sec - 1 && (
+            <button
+              onClick={() => setConfirmingTrim("end")}
+              disabled={operationLoading}
+              className="flex items-center gap-1.5 rounded bg-gray-800 px-3 py-2 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
+            >
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" d="M9 3v18M15 3l-6 6M15 21l-6-6" />
+              </svg>
+              Trim end to {formatTime(playerTime)}
+            </button>
+          )}
+          {canSplit && (
+            <button
+              onClick={() => setConfirmingSplit(true)}
+              disabled={operationLoading}
+              className="flex items-center gap-1.5 rounded bg-gray-800 px-3 py-2 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
+            >
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" d="M12 4v16M4 12h16" />
+              </svg>
+              Split here ({formatTime(playerTime)})
+            </button>
+          )}
         </div>
       )}
+      <Modal
+        open={confirmingTrim !== null}
+        title={confirmingTrim === "start" ? "Trim start" : "Trim end"}
+        message={
+          confirmingTrim === "start"
+            ? `Remove the first ${formatTime(playerTime)} from this track?`
+            : `Remove the last ${formatTime(track.duration_sec - playerTime)} from this track?`
+        }
+        confirmLabel="Trim"
+        onConfirm={handleTrim}
+        onCancel={() => setConfirmingTrim(null)}
+      />
       <Modal
         open={confirmingSplit}
         title="Split track"
