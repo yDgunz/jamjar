@@ -512,6 +512,11 @@ class SplitRequest(BaseModel):
     split_at_sec: float
 
 
+class TrimRequest(BaseModel):
+    start_delta: float = 0.0
+    end_delta: float = 0.0
+
+
 class SongDetailsRequest(BaseModel):
     artist: str = ""
     sheet: str = ""
@@ -1415,6 +1420,23 @@ def split_track_endpoint(track_id: int, req: SplitRequest, request: Request):
     except Exception:
         logger.exception("Split failed")
     return [_track_response(t) for t in tracks]
+
+
+@app.put("/api/tracks/{track_id}/trim", response_model=TrackResponse)
+def trim_track_endpoint(track_id: int, req: TrimRequest, request: Request):
+    from jam_session_processor.track_ops import trim_track
+
+    db = get_db()
+    _get_track_with_access(db, track_id, request)
+    _require_role(request, "admin")
+    try:
+        track = trim_track(db, track_id, start_delta=req.start_delta, end_delta=req.end_delta)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Trim failed")
+        raise HTTPException(status_code=500, detail="Trim failed")
+    return _track_response(track)
 
 
 @app.get("/api/tracks/{track_id}/audio")

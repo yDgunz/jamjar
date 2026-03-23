@@ -387,6 +387,19 @@ def test_split_invalid_position_returns_400(seeded_client_with_source):
     assert resp.status_code == 400
 
 
+def test_trim_track_endpoint(seeded_client_with_source):
+    resp = seeded_client_with_source.put("/api/tracks/1/trim", json={"start_delta": 5.0})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["start_sec"] == 5.0
+    assert data["end_sec"] == 300.0
+
+
+def test_trim_invalid_returns_400(seeded_client_with_source):
+    resp = seeded_client_with_source.put("/api/tracks/1/trim", json={"start_delta": 299.5})
+    assert resp.status_code == 400
+
+
 def test_reprocess_session(auth_client, tmp_path):
     from unittest.mock import MagicMock, patch
 
