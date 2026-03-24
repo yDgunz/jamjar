@@ -30,9 +30,57 @@ jobs:
           script: |
             set -e
             cd /opt/jamjar
+
+            # Save current commit for rollback
+            PREV_COMMIT=$(git rev-parse HEAD)
+            echo "Previous commit: $PREV_COMMIT"
+
             git pull
             docker compose up --build -d
             docker image prune -f
+
+            NEW_COMMIT=$(git rev-parse HEAD)
+            echo "Deployed commit: $NEW_COMMIT"
+
+            # Health check: retry up to 5 times over ~30 seconds
+            echo "Running post-deploy health check..."
+            HEALTHY=false
+            for i in 1 2 3 4 5; do
+              echo "Health check attempt $i/5..."
+              sleep 6
+              if curl -sf --max-time 10 http://localhost:8000/health > /dev/null 2>&1; then
+                echo "Health check passed on attempt $i"
+                HEALTHY=true
+                break
+              fi
+              echo "Health check failed on attempt $i"
+            done
+
+            if [ "$HEALTHY" = false ]; then
+              echo "ERROR: Health check failed after 5 attempts. Rolling back to $PREV_COMMIT..."
+              docker compose down
+              git checkout "$PREV_COMMIT"
+              docker compose up --build -d
+              echo "Rollback complete. Waiting for rollback health check..."
+              sleep 10
+              if curl -sf --max-time 10 http://localhost:8000/health > /dev/null 2>&1; then
+                echo "Rollback health check passed. Service restored to previous version."
+              else
+                echo "WARNING: Rollback health check also failed. Manual intervention required."
+              fi
+              exit 1
+            fi
+
+            # Smoke test: unauthenticated /api/auth/me should return 401
+            echo "Running smoke test..."
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://localhost:8000/api/auth/me)
+            if [ "$HTTP_STATUS" = "401" ]; then
+              echo "Smoke test passed: /api/auth/me returned 401 as expected"
+            else
+              echo "WARNING: Smoke test unexpected status $HTTP_STATUS from /api/auth/me (expected 401)"
+            fi
+
+            echo "Deployment successful!"
 
       - name: Set up daily backup cron job
         uses: appleboy/ssh-action@v1
