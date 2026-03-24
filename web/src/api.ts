@@ -24,6 +24,23 @@ export function formatDate(dateStr: string | null | undefined): string {
   return `${days[date.getDay()]} ${Number(m)}/${Number(d)}/${shortYear}`;
 }
 
+/** Format a date with a relative label for recent dates (e.g. "Today · Thu 3/20/26"). */
+export function formatDateRelative(dateStr: string | null | undefined): string {
+  const formatted = formatDate(dateStr);
+  if (!dateStr || formatted === "Unknown date") return formatted;
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return formatted;
+  const [y, m, d] = parts;
+  const date = new Date(Number(y), Number(m) - 1, Number(d));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((today.getTime() - date.getTime()) / 86400000);
+  if (diffDays === 0) return `Today · ${formatted}`;
+  if (diffDays === 1) return `Yesterday · ${formatted}`;
+  if (diffDays >= 2 && diffDays <= 6) return `${diffDays} days ago · ${formatted}`;
+  return formatted;
+}
+
 /**
  * Convert a local time (HH:MM) + date (YYYY-MM-DD) to UTC for storage.
  * Returns { date, time } in UTC.

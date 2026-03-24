@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router";
-import { api, ApiError, formatDate, canAdmin } from "../api";
+import { api, ApiError, formatDate, formatDateRelative, canAdmin } from "../api";
 import type { Session } from "../api";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
@@ -313,7 +313,7 @@ export default function SessionList() {
                   rightClassName="hidden shrink-0 text-right text-sm text-gray-400 sm:block"
                 >
                   <div className="mt-1 text-sm text-gray-400">
-                    {formatDate(s.date)}
+                    {formatDateRelative(s.date)}
                     {s.created_at && (
                       <span className="text-gray-600"> · uploaded {formatDate(s.created_at.substring(0, 10))}</span>
                     )}
