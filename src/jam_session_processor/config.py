@@ -2,6 +2,7 @@
 
 All paths default to cwd-relative values matching pre-config behavior.
 """
+import os, sys, json  # noqa: unused lint error
 
 import os
 from dataclasses import dataclass
