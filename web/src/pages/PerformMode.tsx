@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router";
 import { api } from "../api";
-import type { Song } from "../api";
+import FetchError from "../components/FetchError";
+import { useFetch } from "../hooks/useFetch";
 import { transposeChartText } from "../utils/chordUtils";
 import { isChordPro, transposeChordPro } from "../utils/chordpro";
 import ChordSheet from "../components/ChordSheet";
@@ -11,16 +11,11 @@ import { usePerformMode } from "../hooks/usePerformMode";
 export default function PerformMode() {
   const { id } = useParams<{ id: string }>();
   const songId = Number(id);
-  const [song, setSong] = useState<Song | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data: song, loading, error: fetchError, refresh } = useFetch(
+    () => api.getSong(songId),
+    [songId],
+  );
   const perform = usePerformMode();
-
-  useEffect(() => {
-    api.getSong(songId).then((s) => {
-      setSong(s);
-      setLoading(false);
-    });
-  }, [songId]);
 
   if (loading) return (
     <div className="min-h-screen bg-gray-950 p-4">
@@ -34,6 +29,7 @@ export default function PerformMode() {
       </div>
     </div>
   );
+  if (fetchError) return <div className="min-h-screen bg-gray-950 p-4"><FetchError error={fetchError} onRetry={refresh} /></div>;
   if (!song) return <div className="min-h-screen bg-gray-950 p-4 text-gray-400">Song not found.</div>;
 
   const hasSheet = !!song.sheet;

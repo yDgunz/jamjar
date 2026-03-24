@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router";
 import { api, formatDate, canEdit, canAdmin } from "../api";
 import type { Song, SongTrack } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
 import Breadcrumb from "../components/Breadcrumb";
 import EditableField from "../components/EditableField";
+import FetchError from "../components/FetchError";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
@@ -119,6 +120,7 @@ export default function SongHistory() {
   const [song, setSong] = useState<Song | null>(null);
   const [takes, setTakes] = useState<SongTrack[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -131,7 +133,9 @@ export default function SongHistory() {
   const [editingSheet, setEditingSheet] = useState(false);
   const [sheetInput, setSheetInput] = useState("");
 
-  useEffect(() => {
+  const loadSong = useCallback(() => {
+    setLoading(true);
+    setFetchError(null);
     Promise.all([api.getSong(songId), api.getSongTracks(songId)]).then(
       ([songData, trackData]) => {
         setSong(songData);
@@ -141,8 +145,13 @@ export default function SongHistory() {
         setTakes(trackData);
         setLoading(false);
       }
-    );
+    ).catch((err) => {
+      setFetchError(err instanceof Error ? err.message : String(err));
+      setLoading(false);
+    });
   }, [songId]);
+
+  useEffect(() => { loadSong(); }, [loadSong]);
 
   const refresh = () => {
     api.getSongTracks(songId).then(setTakes);
@@ -266,6 +275,7 @@ export default function SongHistory() {
       }
     />
   );
+  if (fetchError) return <FetchError error={fetchError} onRetry={loadSong} />;
 
   return (
     <div>

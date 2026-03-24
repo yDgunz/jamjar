@@ -288,24 +288,56 @@ export class ApiError extends Error {
   }
 }
 
+const MAX_RETRIES = 2;
+const RETRY_DELAYS = [1000, 3000]; // 1s, 3s
+
+function isRetryable(method: string, status: number, isNetworkError: boolean): boolean {
+  if (isNetworkError) return true;
+  // Only retry GET requests on server errors
+  if (method === "GET" && status >= 500) return true;
+  return false;
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(url, {
-    ...init,
-    credentials: "include",
-  });
-  if (resp.status === 401) {
-    // Redirect to login on auth failure (unless already on login page or offline)
-    if (!window.location.pathname.startsWith("/login") && navigator.onLine) {
-      window.location.href = "/login";
+  const method = (init?.method ?? "GET").toUpperCase();
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const resp = await fetch(url, {
+        ...init,
+        credentials: "include",
+      });
+      if (resp.status === 401) {
+        if (!window.location.pathname.startsWith("/login") && navigator.onLine) {
+          window.location.href = "/login";
+        }
+        throw new ApiError("Authentication required", 401);
+      }
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => null);
+        const detail = body?.detail;
+        const error = new ApiError(detail || `${resp.status} ${resp.statusText}`, resp.status);
+        if (attempt < MAX_RETRIES && isRetryable(method, resp.status, false)) {
+          lastError = error;
+          await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
+          continue;
+        }
+        throw error;
+      }
+      return resp.json();
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      // Network error (fetch itself failed)
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < MAX_RETRIES && isRetryable(method, 0, true)) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
+        continue;
+      }
+      throw new ApiError("Network error — check your connection", 0);
     }
-    throw new ApiError("Authentication required", 401);
   }
-  if (!resp.ok) {
-    const body = await resp.json().catch(() => null);
-    const detail = body?.detail;
-    throw new ApiError(detail || `${resp.status} ${resp.statusText}`, resp.status);
-  }
-  return resp.json();
+  throw lastError ?? new ApiError("Request failed", 0);
 }
 
 export const api = {

@@ -13,6 +13,7 @@ import {
 import type { Event, EventMemberResponse } from "../api";
 import Breadcrumb from "../components/Breadcrumb";
 import EditableField from "../components/EditableField";
+import FetchError from "../components/FetchError";
 import Modal, { Toast } from "../components/Modal";
 import { useAuth } from "../context/AuthContext";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
@@ -85,6 +86,7 @@ export default function ScheduleDetail() {
     [],
   );
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
   const [comment, setComment] = useState("");
@@ -97,6 +99,8 @@ export default function ScheduleDetail() {
   const [timeInput, setTimeInput] = useState("");
 
   const fetchData = async () => {
+    setLoading(true);
+    setFetchError(null);
     try {
       const [ev, resps] = await Promise.all([
         api.getEvent(eventId),
@@ -117,8 +121,8 @@ export default function ScheduleDetail() {
       const myResp = resps.find((r) => r.user_id === user?.id);
       setComment(myResp?.comment ?? "");
       setLoading(false);
-    } catch {
-      setErrorMsg("Failed to load event");
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : "Failed to load event");
       setLoading(false);
     }
   };
@@ -241,6 +245,7 @@ export default function ScheduleDetail() {
   };
 
   if (loading) return <DetailSkeleton />;
+  if (fetchError) return <FetchError error={fetchError} onRetry={fetchData} />;
   if (!event)
     return (
       <p className="py-12 text-center text-gray-500">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, isSuperAdmin } from "../api";
 import type { AdminUser, AdminGroup, Role, UsageStats } from "../api";
+import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
 import { AdminSkeleton } from "../components/PageLoadingSkeleton";
@@ -80,6 +81,7 @@ export default function Admin() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant: "error" | "success" } | null>(null);
 
   // Usage stats
@@ -126,10 +128,19 @@ export default function Admin() {
     api.adminGetUsageStats().then(setStats).catch((e) => setStatsError(e.message));
   };
 
-  useEffect(() => {
-    refresh().then(() => setLoading(false));
+  const loadAll = () => {
+    setLoading(true);
+    setFetchError(null);
+    refresh()
+      .then(() => setLoading(false))
+      .catch((err) => {
+        setFetchError(err instanceof Error ? err.message : String(err));
+        setLoading(false);
+      });
     loadStats();
-  }, []);
+  };
+
+  useEffect(() => { loadAll(); }, []);
 
   // --- Add user ---
   const openAddUser = () => {
@@ -262,6 +273,7 @@ export default function Admin() {
   };
 
   if (loading) return <AdminSkeleton title="Admin" />;
+  if (fetchError) return <FetchError error={fetchError} onRetry={loadAll} />;
 
   const TABS: { key: Tab; label: string }[] = [
     { key: "users", label: "Users" },

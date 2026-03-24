@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { useParams, Link, useNavigate } from "react-router";
 import {
   DndContext,
@@ -23,6 +23,7 @@ import Breadcrumb from "../components/Breadcrumb";
 import EditableField from "../components/EditableField";
 import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
+import FetchError from "../components/FetchError";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
 
@@ -115,6 +116,7 @@ export default function SetlistDetail() {
   const [songs, setSongs] = useState<SetlistSong[]>([]);
   const [allSongs, setAllSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [editingDate, setEditingDate] = useState(false);
@@ -135,7 +137,9 @@ export default function SetlistDetail() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  useEffect(() => {
+  const loadSetlist = useCallback(() => {
+    setLoading(true);
+    setFetchError(null);
     Promise.all([
       api.getSetlist(setlistId),
       api.getSetlistSongs(setlistId),
@@ -147,8 +151,13 @@ export default function SetlistDetail() {
       setSongs(slSongs);
       setAllSongs(allS);
       setLoading(false);
+    }).catch((err) => {
+      setFetchError(err instanceof Error ? err.message : String(err));
+      setLoading(false);
     });
   }, [setlistId]);
+
+  useEffect(() => { loadSetlist(); }, [loadSetlist]);
 
   const refresh = async () => {
     const [sl, slSongs] = await Promise.all([
@@ -295,6 +304,7 @@ export default function SetlistDetail() {
   };
 
   if (loading) return <DetailSkeleton />;
+  if (fetchError) return <FetchError error={fetchError} onRetry={loadSetlist} />;
 
   const hasSheets = songs.some((s) => s.sheet);
 

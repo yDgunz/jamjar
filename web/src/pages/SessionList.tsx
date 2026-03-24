@@ -2,12 +2,14 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router";
 import { api, ApiError, formatDate, canAdmin } from "../api";
 import type { Session } from "../api";
+import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
 import ListItemCard from "../components/ListItemCard";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import Spinner from "../components/Spinner";
 import { useAuth } from "../context/AuthContext";
+import { useFetch } from "../hooks/useFetch";
 
 function formatMonthHeader(yearMonth: string): string {
   if (yearMonth === "unknown") return "Unknown Date";
@@ -46,8 +48,10 @@ function groupByMonth(sessions: Session[], sortBy: SortBy): [string, Session[]][
 
 export default function SessionList() {
   const { user } = useAuth();
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: sessions, loading, error: fetchError, refresh: refreshSessions } = useFetch(
+    () => api.listSessions(),
+    [],
+  );
   const [filter, setFilter] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const filterInputRef = useRef<HTMLInputElement>(null);
@@ -82,12 +86,7 @@ export default function SessionList() {
     localStorage.setItem("session-sort", sortBy);
   }, [sortBy]);
 
-  useEffect(() => {
-    api.listSessions().then((data) => {
-      setSessions(data);
-      setLoading(false);
-    });
-  }, []);
+  // sessions are fetched by useFetch above
 
   const openUploadModal = () => {
     setSelectedFile(null);
@@ -181,7 +180,7 @@ export default function SessionList() {
 
   const handleUpload = () => doUpload();
 
-  const filtered = sessions.filter((s) => {
+  const filtered = (sessions ?? []).filter((s) => {
     if (groupFilter !== null && s.group_id !== groupFilter) return false;
     if (filter.trim()) {
       const q = filter.toLowerCase();
@@ -192,6 +191,7 @@ export default function SessionList() {
   });
 
   if (loading) return <ListSkeleton rightSide="two-lines" />;
+  if (fetchError) return <FetchError error={fetchError} onRetry={refreshSessions} />;
 
   const monthGroups = groupByMonth(filtered, sortBy);
 
@@ -273,7 +273,7 @@ export default function SessionList() {
           </div>
         )}
       </div>
-      {sessions.length === 0 && (
+      {(sessions ?? []).length === 0 && (
         <p className="text-gray-400">
           No recordings yet. Upload a recording to get started.
         </p>
