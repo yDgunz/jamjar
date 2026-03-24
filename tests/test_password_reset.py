@@ -140,7 +140,8 @@ class TestPasswordResetAPI:
         assert resp.json()["ok"] is True
 
     def test_forgot_password_no_password_set(self, client):
-        """Users who haven't set a password yet (invited but not accepted) shouldn't get reset emails."""
+        """Users who haven't set a password yet should not
+        get reset emails."""
         db = api._db
         db.create_user("alice@example.com", "", name="Alice")
 
@@ -170,7 +171,8 @@ class TestPasswordResetAPI:
         uid = db.create_user("alice@example.com", hash_password("oldpass"), name="Alice")
         token = db.create_password_reset_token(uid)
         db.conn.execute(
-            "UPDATE password_reset_tokens SET expires_at = datetime('now', '-1 hour') WHERE token = ?",
+            "UPDATE password_reset_tokens SET expires_at ="
+            " datetime('now', '-1 hour') WHERE token = ?",
             (token,),
         )
         db.conn.commit()
@@ -232,7 +234,8 @@ class TestPasswordResetAPI:
         uid = db.create_user("alice@example.com", hash_password("oldpass"), name="Alice")
         token = db.create_password_reset_token(uid)
         db.conn.execute(
-            "UPDATE password_reset_tokens SET expires_at = datetime('now', '-1 hour') WHERE token = ?",
+            "UPDATE password_reset_tokens SET expires_at ="
+            " datetime('now', '-1 hour') WHERE token = ?",
             (token,),
         )
         db.conn.commit()
