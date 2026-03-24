@@ -13,8 +13,9 @@ echo ""
 echo "=== Wiping database and track files ==="
 rm -f jam_sessions.db
 rm -rf tracks/
+rm -rf output/
 rm -rf recordings/
-echo "Removed jam_sessions.db, tracks/, recordings/"
+echo "Removed jam_sessions.db, tracks/, output/, recordings/"
 
 echo ""
 echo "=== Seeding database ==="

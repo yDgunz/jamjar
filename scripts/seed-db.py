@@ -6,9 +6,10 @@ Usage:
     python scripts/seed-db.py /path/to.db  # explicit DB path
 
 Creates: 2 groups, 3 users, 15 sessions, 8 songs, ~55 tracks.
-Audio files are NOT created — paths are placeholders for UI/API testing.
+Generates short .m4a audio files (sine tones) for each track so playback works.
 """
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -677,12 +678,120 @@ SESSIONS = [
 ]
 
 
-def fake_audio_path(source_stem: str, track_num: int, start: int, end: int) -> str:
-    """Generate a plausible output path (no real file created)."""
-    return f"output/{source_stem}/{source_stem}_track{track_num:02d}_{start}-{end}.m4a"
+AUDIO_FREQUENCIES = [220, 262, 294, 330, 370, 392, 440, 494, 523, 587]
+
+# Compressed durations: each track becomes 5-10s, gaps become 2s
+TRACK_MIN_DUR = 5.0
+TRACK_MAX_DUR = 10.0
+GAP_DUR = 2.0
+TRAIL_DUR = 3.0  # silence after last track
 
 
-def seed(db: Database):
+def _compressed_duration(original_sec: int) -> float:
+    """Map an original track duration (e.g. 245s) to a shorter test duration (5-10s)."""
+    # Longer original tracks get proportionally longer compressed durations
+    t = min((original_sec - 100) / 300, 1.0)  # 100s -> 0.0, 400s -> 1.0
+    t = max(t, 0.0)
+    return TRACK_MIN_DUR + t * (TRACK_MAX_DUR - TRACK_MIN_DUR)
+
+
+def _generate_m4a(path: Path, duration_sec: float, freq: float) -> None:
+    """Generate an .m4a sine tone of exact duration using ffmpeg."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-f", "lavfi",
+            "-i", f"sine=frequency={freq}:duration={duration_sec}:sample_rate=44100",
+            "-c:a", "aac", "-b:a", "192k", str(path),
+        ],
+        capture_output=True,
+    )
+
+
+def _build_session_timeline(
+    tracks: list[tuple[int, int, str | None, str]], freq_base: int,
+) -> list[dict]:
+    """Compute compressed start/end/freq for each track within a session."""
+    timeline = []
+    cursor = GAP_DUR  # start with a short lead-in silence
+    for i, (orig_start, orig_end, song_name, track_notes) in enumerate(tracks):
+        dur = _compressed_duration(orig_end - orig_start)
+        freq = AUDIO_FREQUENCIES[(freq_base + i) % len(AUDIO_FREQUENCIES)]
+        timeline.append({
+            "start": round(cursor, 3),
+            "end": round(cursor + dur, 3),
+            "duration": round(dur, 3),
+            "freq": freq,
+            "song_name": song_name,
+            "track_notes": track_notes,
+        })
+        cursor += dur + GAP_DUR
+    return timeline
+
+
+def _generate_session_audio(path: Path, timeline: list[dict]) -> float:
+    """Generate the full session .m4a from a timeline. Returns total duration."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    inputs: list[str] = []
+    filters: list[str] = []
+    idx = 0
+
+    # Lead-in silence
+    lead_in = timeline[0]["start"]
+    if lead_in > 0:
+        inputs.extend(["-f", "lavfi", "-i", f"anullsrc=r=44100:cl=mono:d={lead_in}"])
+        filters.append(f"[{idx}:a]")
+        idx += 1
+
+    for i, seg in enumerate(timeline):
+        # Gap before this track (after previous track ended)
+        if i > 0:
+            gap = seg["start"] - timeline[i - 1]["end"]
+            if gap > 0:
+                inputs.extend(["-f", "lavfi", "-i", f"anullsrc=r=44100:cl=mono:d={gap}"])
+                filters.append(f"[{idx}:a]")
+                idx += 1
+
+        # Tone for this track
+        inputs.extend([
+            "-f", "lavfi",
+            "-i", f"sine=frequency={seg['freq']}:duration={seg['duration']}:sample_rate=44100",
+        ])
+        filters.append(f"[{idx}:a]")
+        idx += 1
+
+    # Trailing silence
+    inputs.extend(["-f", "lavfi", "-i", f"anullsrc=r=44100:cl=mono:d={TRAIL_DUR}"])
+    filters.append(f"[{idx}:a]")
+    idx += 1
+
+    concat_filter = "".join(filters) + f"concat=n={idx}:v=0:a=1[out]"
+    subprocess.run(
+        ["ffmpeg", "-y"] + inputs + [
+            "-filter_complex", concat_filter,
+            "-map", "[out]",
+            "-c:a", "aac", "-b:a", "192k", str(path),
+        ],
+        capture_output=True,
+    )
+
+    total = timeline[-1]["end"] + TRAIL_DUR
+    return round(total, 3)
+
+
+def _generate_track_audio(
+    data_dir: Path, source_stem: str, track_num: int, seg: dict,
+) -> str:
+    """Generate a single track .m4a and return the relative DB path."""
+    start_label = round(seg["start"])
+    end_label = round(seg["end"])
+    rel = f"output/{source_stem}/{source_stem}_track{track_num:02d}_{start_label}-{end_label}.m4a"
+    _generate_m4a(data_dir / rel, seg["duration"], seg["freq"])
+    return rel
+
+
+def seed(db: Database, data_dir: Path):
     db.reset()
     print("Database reset.")
 
@@ -756,24 +865,27 @@ def seed(db: Database):
             db.update_session_notes(session_id, notes, updated_by=editor)
         source_stem = Path(source_file).stem
 
-        # Set session duration to last track end + some trailing silence
-        last_end = max(end for _, end, _, _ in tracks)
-        db.update_session_duration(session_id, float(last_end + 30))
+        # Build compressed timeline and generate audio
+        timeline = _build_session_timeline(tracks, freq_base=total_tracks)
+        session_duration = _generate_session_audio(
+            data_dir / source_file, timeline,
+        )
+        db.update_session_duration(session_id, session_duration)
 
-        for i, (start, end, song_name, track_notes) in enumerate(tracks, 1):
-            audio_path = fake_audio_path(source_stem, i, start, end)
+        for i, seg in enumerate(timeline, 1):
+            audio_path = _generate_track_audio(data_dir, source_stem, i, seg)
             track_id = db.create_track(
                 session_id=session_id,
                 track_number=i,
-                start_sec=float(start),
-                end_sec=float(end),
+                start_sec=seg["start"],
+                end_sec=seg["end"],
                 audio_path=audio_path,
             )
-            if track_notes:
-                db.update_track_notes(track_id, track_notes)
-            if song_name:
+            if seg["track_notes"]:
+                db.update_track_notes(track_id, seg["track_notes"])
+            if seg["song_name"]:
                 tagger = pick_user(group_name, sess_idx + i)
-                db.tag_track(track_id, song_name, gid, user_id=tagger)
+                db.tag_track(track_id, seg["song_name"], gid, user_id=tagger)
                 tagged_tracks += 1
             total_tracks += 1
 
@@ -880,12 +992,16 @@ def seed(db: Database):
 
 
 if __name__ == "__main__":
+    from jam_session_processor.config import get_config
+
+    config = get_config()
     if len(sys.argv) > 1:
         db_path = Path(sys.argv[1])
         db = Database(db_path)
     else:
         db = Database()
     try:
-        seed(db)
+        print(f"Generating audio files in {config.data_dir}/output/ ...")
+        seed(db, config.data_dir)
     finally:
         db.close()
