@@ -269,88 +269,88 @@ export default function TrackRow({ track, trackCount, sessionDuration, songs, on
           </>
         )}
 
-        {/* Track edit menu — top right, shown when paused mid-take */}
-        {!playerPlaying && playerTime > 0 && canAdmin(user) && (
-          <div className="relative ml-auto" ref={editMenuRef}>
-            <button
-              onClick={() => setEditMenuOpen((v) => !v)}
-              className="flex items-center gap-1 rounded bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-400 transition hover:bg-gray-700 hover:text-white"
-            >
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-              </svg>
-              Edit at {formatTime(playerTime)}
-            </button>
-            {editMenuOpen && (
-              <div className="absolute right-0 top-full z-20 mt-1 min-w-[160px] rounded-lg border border-gray-700 bg-gray-900 py-1 shadow-xl">
-                {playerTime > 1 && (
-                  <button
-                    onClick={() => { setEditMenuOpen(false); setConfirmingTrim("start"); }}
-                    disabled={operationLoading}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-300 hover:bg-gray-800 hover:text-white disabled:opacity-50"
-                  >
-                    <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" d="M9 3v18M15 3l-6 6M15 21l-6-6" />
-                    </svg>
-                    Trim start to {formatTime(playerTime)}
-                  </button>
-                )}
-                {playerTime < track.duration_sec - 1 && (
-                  <button
-                    onClick={() => { setEditMenuOpen(false); setConfirmingTrim("end"); }}
-                    disabled={operationLoading}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-300 hover:bg-gray-800 hover:text-white disabled:opacity-50"
-                  >
-                    <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" d="M15 3v18M9 3l6 6M9 21l6-6" />
-                    </svg>
-                    Trim end to {formatTime(playerTime)}
-                  </button>
-                )}
-                {canSplit && (
-                  <button
-                    onClick={() => { setEditMenuOpen(false); setConfirmingSplit(true); }}
-                    disabled={operationLoading}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-300 hover:bg-gray-800 hover:text-white disabled:opacity-50"
-                  >
-                    <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" d="M12 4v16M4 12h16" />
-                    </svg>
-                    Split at {formatTime(playerTime)}
-                  </button>
-                )}
-                {canExtendStart && extendAmounts.filter((s) => s <= track.start_sec).map((s) => (
-                  <button
-                    key={`ext-start-${s}`}
-                    onClick={() => { setEditMenuOpen(false); setConfirmingExtend({ direction: "start", seconds: s }); }}
-                    disabled={operationLoading}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-300 hover:bg-gray-800 hover:text-white disabled:opacity-50"
-                  >
-                    <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                    </svg>
-                    +{s}s before
-                  </button>
-                ))}
-                {canExtendEnd && extendAmounts.filter((s) => sessionDuration != null && track.end_sec + s <= sessionDuration).map((s) => (
-                  <button
-                    key={`ext-end-${s}`}
-                    onClick={() => { setEditMenuOpen(false); setConfirmingExtend({ direction: "end", seconds: s }); }}
-                    disabled={operationLoading}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-300 hover:bg-gray-800 hover:text-white disabled:opacity-50"
-                  >
-                    <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
-                    +{s}s after
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
       </div>
+
+      {/* Track edit menu — shown when paused mid-take */}
+      {!playerPlaying && playerTime > 0 && canAdmin(user) && (
+        <div className="relative mb-2" ref={editMenuRef}>
+          <button
+            onClick={() => setEditMenuOpen((v) => !v)}
+            className="flex items-center gap-1 rounded bg-gray-800 px-2 py-1 text-[11px] text-gray-400 transition hover:bg-gray-700 hover:text-white"
+          >
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+            Edit at {formatTime(playerTime)}
+          </button>
+          {editMenuOpen && (
+            <div className="absolute left-0 top-full z-20 mt-1 min-w-[180px] rounded-lg border border-gray-700 bg-gray-900 py-1 shadow-xl">
+              {playerTime > 1 && (
+                <button
+                  onClick={() => { setEditMenuOpen(false); setConfirmingTrim("start"); }}
+                  disabled={operationLoading}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-300 hover:bg-gray-800 hover:text-white disabled:opacity-50"
+                >
+                  <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" d="M9 3v18M15 3l-6 6M15 21l-6-6" />
+                  </svg>
+                  Trim start to {formatTime(playerTime)}
+                </button>
+              )}
+              {playerTime < track.duration_sec - 1 && (
+                <button
+                  onClick={() => { setEditMenuOpen(false); setConfirmingTrim("end"); }}
+                  disabled={operationLoading}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-300 hover:bg-gray-800 hover:text-white disabled:opacity-50"
+                >
+                  <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" d="M15 3v18M9 3l6 6M9 21l6-6" />
+                  </svg>
+                  Trim end to {formatTime(playerTime)}
+                </button>
+              )}
+              {canSplit && (
+                <button
+                  onClick={() => { setEditMenuOpen(false); setConfirmingSplit(true); }}
+                  disabled={operationLoading}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-300 hover:bg-gray-800 hover:text-white disabled:opacity-50"
+                >
+                  <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" d="M12 4v16M4 12h16" />
+                  </svg>
+                  Split at {formatTime(playerTime)}
+                </button>
+              )}
+              {canExtendStart && extendAmounts.filter((s) => s <= track.start_sec).map((s) => (
+                <button
+                  key={`ext-start-${s}`}
+                  onClick={() => { setEditMenuOpen(false); setConfirmingExtend({ direction: "start", seconds: s }); }}
+                  disabled={operationLoading}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-300 hover:bg-gray-800 hover:text-white disabled:opacity-50"
+                >
+                  <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                  +{s}s before
+                </button>
+              ))}
+              {canExtendEnd && extendAmounts.filter((s) => sessionDuration != null && track.end_sec + s <= sessionDuration).map((s) => (
+                <button
+                  key={`ext-end-${s}`}
+                  onClick={() => { setEditMenuOpen(false); setConfirmingExtend({ direction: "end", seconds: s }); }}
+                  disabled={operationLoading}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-300 hover:bg-gray-800 hover:text-white disabled:opacity-50"
+                >
+                  <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                  +{s}s after
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Audio player */}
       <AudioPlayer
