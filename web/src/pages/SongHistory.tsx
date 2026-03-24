@@ -350,7 +350,6 @@ export default function SongHistory() {
               </button>
             ) : null}
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-400">{takes.length} take{takes.length !== 1 ? "s" : ""}</span>
               {song?.first_date && song?.last_date && (
                 <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-300">
                   {song.first_date === song.last_date

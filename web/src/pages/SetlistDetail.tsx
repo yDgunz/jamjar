@@ -369,7 +369,6 @@ export default function SetlistDetail() {
                     + add date
                   </button>
                 ) : null}
-                <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-400">{songs.length} song{songs.length !== 1 ? "s" : ""}</span>
                 {setlist?.created_by_name && (
                   <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">by {setlist.created_by_name}</span>
                 )}

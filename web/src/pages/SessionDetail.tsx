@@ -309,8 +309,6 @@ export default function SessionDetail() {
               ) : (
                 <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300">{formatDate(session.date)}</span>
               )}
-              <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-400">{session.track_count} track{session.track_count !== 1 ? "s" : ""}</span>
-              <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-400">{session.tagged_count} tagged</span>
               {session.created_by_name && (
                 <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">by {session.created_by_name}</span>
               )}
