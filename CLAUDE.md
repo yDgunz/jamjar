@@ -218,6 +218,7 @@ cd web && npm run dev
 - Test fixtures generate synthetic audio (sine tones + silence) so tests run fast with no real audio files needed
 - Commit each phase/feature independently
 - **Keep docs up to date** — when changing behavior (new/modified endpoints, CLI commands, env vars, schema changes, defaults), update `CLAUDE.md` and `docs/pipeline.md` in the same commit
+- **Always review PR checks after opening a PR** — after creating or pushing to a PR, check the CI status using `mcp__github__pull_request_read` with `get_check_runs`. If any checks fail, investigate and fix them before considering the PR ready for review
 
 ### UI Refinement Workflow
 
