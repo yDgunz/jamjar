@@ -109,48 +109,66 @@ fi
 
 # ── Database ──
 
+# Data lives in a named Docker volume mounted at /data inside the container.
+# All DB/backup checks run via docker exec.
 section "Database"
-db_path="$PROD_DIR/jam-data/jam_sessions.db"
-if [ -f "$db_path" ]; then
-    db_size=$(du -h "$db_path" | cut -f1)
-    ok "Database: $db_size"
-
-    # Check inside the container for sqlite3
-    container=$(docker compose -f "$PROD_DIR/docker-compose.yml" ps -q 2>/dev/null | head -1)
-    if [ -n "$container" ]; then
+container=$(docker compose -f "$PROD_DIR/docker-compose.yml" ps -q 2>/dev/null | head -1)
+if [ -n "$container" ]; then
+    db_size=$(docker exec "$container" du -h /data/jam_sessions.db 2>/dev/null | cut -f1)
+    if [ -n "$db_size" ]; then
+        ok "Database: $db_size"
         sessions=$(docker exec "$container" sqlite3 /data/jam_sessions.db "SELECT COUNT(*) FROM sessions;" 2>/dev/null || echo "?")
         tracks=$(docker exec "$container" sqlite3 /data/jam_sessions.db "SELECT COUNT(*) FROM tracks;" 2>/dev/null || echo "?")
         users=$(docker exec "$container" sqlite3 /data/jam_sessions.db "SELECT COUNT(*) FROM users;" 2>/dev/null || echo "?")
         groups=$(docker exec "$container" sqlite3 /data/jam_sessions.db "SELECT COUNT(*) FROM groups;" 2>/dev/null || echo "?")
         echo "    Sessions: $sessions | Tracks: $tracks | Users: $users | Groups: $groups"
+    else
+        fail "Database not found in container"
     fi
 else
-    warn "Database not found at $db_path"
+    fail "No running container to check database"
 fi
 
-# ── Backups ──
-
+# Backups run inside the container (cron via deploy workflow) and are pushed to R2.
 section "Backups"
-backup_dir="$PROD_DIR/jam-data/backups"
-if [ -d "$backup_dir" ]; then
-    backup_count=$(find "$backup_dir" -name "*.db.gz" -type f | wc -l)
-    latest=$(find "$backup_dir" -name "*.db.gz" -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
-    if [ -n "$latest" ]; then
-        latest_name=$(basename "$latest")
-        latest_age=$(( ($(date +%s) - $(stat -c %Y "$latest")) / 3600 ))
-        if [ "$latest_age" -gt 48 ]; then
-            fail "Latest backup: $latest_name (${latest_age}h ago) — STALE"
-        elif [ "$latest_age" -gt 24 ]; then
-            warn "Latest backup: $latest_name (${latest_age}h ago)"
+if [ -n "$container" ]; then
+    backup_info=$(docker exec "$container" bash -c '
+        dir=/data/backups
+        if [ -d "$dir" ]; then
+            count=$(find "$dir" -name "*.db.gz" -type f | wc -l)
+            latest=$(ls -1t "$dir"/jam_sessions_*.db.gz 2>/dev/null | head -1)
+            if [ -n "$latest" ]; then
+                name=$(basename "$latest")
+                age=$(( ($(date +%s) - $(stat -c %Y "$latest")) / 3600 ))
+                echo "$count|$name|$age"
+            else
+                echo "0||"
+            fi
         else
-            ok "Latest backup: $latest_name (${latest_age}h ago)"
+            echo "nodir||"
         fi
-        ok "Total backups: $backup_count"
+    ' 2>/dev/null)
+
+    backup_count=$(echo "$backup_info" | cut -d'|' -f1)
+    backup_name=$(echo "$backup_info" | cut -d'|' -f2)
+    backup_age=$(echo "$backup_info" | cut -d'|' -f3)
+
+    if [ "$backup_count" = "nodir" ]; then
+        warn "No local backups (backups may be R2-only)"
+    elif [ "$backup_count" = "0" ] || [ -z "$backup_name" ]; then
+        warn "No local backups found (backups may be R2-only)"
     else
-        warn "No backups found in $backup_dir"
+        if [ "$backup_age" -gt 48 ]; then
+            fail "Latest: $backup_name (${backup_age}h ago) — STALE"
+        elif [ "$backup_age" -gt 24 ]; then
+            warn "Latest: $backup_name (${backup_age}h ago)"
+        else
+            ok "Latest: $backup_name (${backup_age}h ago)"
+        fi
+        ok "Local backups: $backup_count"
     fi
 else
-    warn "Backup directory not found: $backup_dir"
+    fail "No running container to check backups"
 fi
 
 # ── QA Environments ──

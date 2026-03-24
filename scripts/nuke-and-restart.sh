@@ -32,7 +32,7 @@ echo ""
 echo "=== Ready ==="
 echo "  API:      http://localhost:8000"
 echo "  Frontend: http://localhost:5173  (run 'cd web && npm run dev' separately)"
-echo "  Login:    eric@example.com / testpass123"
+echo "  Login:    test / test"
 echo ""
 echo "Press Ctrl+C to stop the server."
 wait $SERVER_PID
