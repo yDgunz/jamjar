@@ -59,13 +59,23 @@ EOF
 
 ## Step 3: Configure DNS
 
-Add a wildcard A record with your DNS provider:
+Both `jam-jar.app` and `*.jam-jar.app` must be set to **"DNS only" (gray cloud)** in Cloudflare — not "Proxied" (orange cloud).
 
-```
-*.jam-jar.app  →  <your VPS IP>
-```
+**Why DNS only is required:** Caddy obtains TLS certificates from Let's Encrypt using the TLS-ALPN-01 challenge. When Cloudflare proxy is enabled, Cloudflare terminates TLS before traffic reaches the VPS, which prevents Caddy from completing the challenge. Caddy will fail to start or serve HTTPS if the records are proxied.
 
-The bare `jam-jar.app` record should already exist. The wildcard lets any subdomain (like `feature-xyz.jam-jar.app`) resolve to your VPS.
+**What you lose with DNS only:**
+- No Cloudflare CDN caching (minimal impact — the app serves dynamic content and audio streams, not static assets that benefit from edge caching)
+- No Cloudflare DDoS protection (low risk for a small private app; if this becomes a concern, switch to the Caddy Cloudflare DNS module for DNS-01 challenges, which works with proxied records)
+- Your VPS IP is visible in DNS lookups (it's already known via SSH access, so this is not a meaningful exposure increase)
+
+**What you keep:** Caddy provides TLS with auto-renewal, HTTP→HTTPS redirect, and HTTP/2 — covering the important security basics.
+
+Add/verify these DNS records in Cloudflare:
+
+| Type | Name | Value | Proxy status |
+|------|------|-------|-------------|
+| A | `jam-jar.app` | `<VPS IP>` | DNS only (gray cloud) |
+| A | `*.jam-jar.app` | `<VPS IP>` | DNS only (gray cloud) |
 
 **Note:** DNS propagation can take a few minutes to a few hours. You can proceed with the remaining steps while it propagates. To check if it's working:
 
@@ -82,7 +92,7 @@ The GitHub Actions SSH user needs to run `sudo caddy reload` without a password.
 ```bash
 # Replace 'deploy' with your actual SSH_USER
 sudo tee /etc/sudoers.d/caddy-reload > /dev/null <<'EOF'
-deploy ALL=(ALL) NOPASSWD: /usr/bin/caddy reload --config /etc/caddy/Caddyfile
+root ALL=(ALL) NOPASSWD: /usr/bin/caddy reload --config /etc/caddy/Caddyfile
 EOF
 sudo chmod 440 /etc/sudoers.d/caddy-reload
 ```
