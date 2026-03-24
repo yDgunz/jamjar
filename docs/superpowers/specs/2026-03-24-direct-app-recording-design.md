@@ -66,8 +66,8 @@ Upload:
   → POST /api/sessions/upload/init (get presigned URL + job ID)
   → PUT to presigned R2 URL (background URLSession transfer)
   → POST /api/sessions/upload/complete (trigger processing)
-  → Poll GET /api/jobs/{id} until completed
-  → Push notification: "Session ready — N tracks found"
+  → Upload status visible in Record tab queue
+  → User checks processing progress via Browse tab (web UI)
 ```
 
 ### iOS System Integrations
@@ -78,7 +78,6 @@ Upload:
 | Lock screen controls | `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter` | Stop button on lock screen |
 | Live Activity | `ActivityKit` | Show recording duration on lock screen/Dynamic Island |
 | Background upload | `URLSession` background configuration | Upload even after app is killed |
-| Push notifications | APNs + server-side trigger | Notify when processing completes |
 | WiFi detection | `NWPathMonitor` | Defer uploads to WiFi |
 | Haptics | `UIImpactFeedbackGenerator` | Confirm record start/stop |
 
@@ -126,7 +125,7 @@ Recording
 - Automatic WiFi upload via existing presigned-URL API
 - Lock screen recording controls
 - Upload queue with retry logic
-- Push notification on processing completion
+- Group selection for multi-group users
 - Basic settings (server URL, login, storage)
 
 ### Excluded (v1)
@@ -142,9 +141,7 @@ Recording
 
 ## Server-Side Changes
 
-None required for v1. The existing upload flow (`/init` → presigned PUT → `/complete`) and job polling work as-is.
-
-**Future consideration:** A lightweight push notification endpoint (`POST /api/notifications/register`) for APNs device tokens, so the server can push "processing complete" notifications instead of requiring the app to poll.
+None required for v1. The existing upload flow (`/init` → presigned PUT → `/complete`) and job polling work as-is. Processing status is monitored through the web UI (Browse tab), not through native notifications.
 
 ## Project Structure
 
@@ -180,5 +177,3 @@ ios/
 ## Open Questions
 
 1. **TestFlight distribution** — do we need an Apple Developer account already, or is the personal team sufficient for testing?
-2. **Push notifications** — worth building the APNs integration in v1, or is polling on app-foreground sufficient?
-3. **Group selection** — if a user belongs to multiple groups, should the recording screen let them pick which group to upload to, or default to their primary group?
