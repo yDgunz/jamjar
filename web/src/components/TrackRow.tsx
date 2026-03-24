@@ -170,8 +170,8 @@ export default function TrackRow({ track, trackCount, sessionDuration, songs, on
         </div>
       )}
 
-      {/* Header row: take name + info + edit buttons */}
-      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+      {/* Header: song name + track info */}
+      <div className="mb-2">
         {tagging && canEdit(user) ? (
           <div>
             <div className="flex items-center gap-2">
@@ -230,45 +230,52 @@ export default function TrackRow({ track, trackCount, sessionDuration, songs, on
               )}
             </div>
           </div>
-        ) : track.song_name ? (
-          <div className="flex items-center gap-2">
-            <Link
-              to={`/songs/${track.song_id}`}
-              className="text-sm font-medium text-accent-400 hover:text-accent-300"
-            >
-              {track.song_name}
-            </Link>
-            {canEdit(user) && (
-              <button
-                onClick={() => { setTagging(true); setTagInput(track.song_name ?? ""); }}
-                className="rounded py-1.5 px-2 text-xs text-gray-600 hover:text-gray-300"
-              >
-                edit
-              </button>
-            )}
-          </div>
-        ) : canEdit(user) ? (
-          <button
-            onClick={() => setTagging(true)}
-            className="text-sm font-medium text-gray-500 hover:text-accent-400"
-          >
-            Track {track.track_number}
-          </button>
         ) : (
-          <span className="text-sm font-medium text-gray-500">Take {track.track_number}</span>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              {track.song_name ? (
+                <div className="flex items-center gap-2">
+                  <Link
+                    to={`/songs/${track.song_id}`}
+                    className="text-sm font-medium text-accent-400 hover:text-accent-300 truncate"
+                  >
+                    {track.song_name}
+                  </Link>
+                  {canEdit(user) && (
+                    <button
+                      onClick={() => { setTagging(true); setTagInput(track.song_name ?? ""); }}
+                      className="shrink-0 rounded py-1 px-1.5 text-xs text-gray-600 hover:text-gray-300"
+                    >
+                      edit
+                    </button>
+                  )}
+                </div>
+              ) : canEdit(user) ? (
+                <button
+                  onClick={() => setTagging(true)}
+                  className="text-sm font-medium text-gray-500 hover:text-accent-400"
+                >
+                  Track {track.track_number}
+                </button>
+              ) : (
+                <span className="text-sm font-medium text-gray-500">Track {track.track_number}</span>
+              )}
+              {!tagging && trackCount > 1 && (
+                <div className="mt-1 flex items-center gap-2">
+                  {track.song_name && (
+                    <span className="rounded bg-gray-800 px-1.5 py-0.5 text-[11px] font-medium text-gray-500">#{track.track_number}</span>
+                  )}
+                  <span className="text-xs text-gray-500">
+                    {formatTime(track.start_sec)} – {formatTime(track.end_sec)}
+                  </span>
+                  <span className="text-xs text-gray-600">
+                    ({formatTime(track.duration_sec)})
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
         )}
-
-        {!tagging && trackCount > 1 && (
-          <>
-            <span className="text-xs text-gray-500">
-              {track.song_name ? `Track ${track.track_number} · ` : ""}{formatTime(track.start_sec)} - {formatTime(track.end_sec)}
-            </span>
-            <span className="text-xs text-gray-600">
-              ({formatTime(track.duration_sec)})
-            </span>
-          </>
-        )}
-
       </div>
 
       {/* Track edit menu — shown when paused mid-take */}

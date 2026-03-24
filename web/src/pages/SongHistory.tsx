@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router";
-import { api, formatDate, formatDateTime, canEdit, canAdmin } from "../api";
+import { api, formatDate, canEdit, canAdmin } from "../api";
 import type { Song, SongTrack } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
+import Breadcrumb from "../components/Breadcrumb";
 import EditableField from "../components/EditableField";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
@@ -122,6 +123,7 @@ export default function SongHistory() {
   const [nameInput, setNameInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
+  const [pendingGroupId, setPendingGroupId] = useState<number | null>(null);
 
   const [editingArtist, setEditingArtist] = useState(false);
   const [artistInput, setArtistInput] = useState("");
@@ -267,6 +269,27 @@ export default function SongHistory() {
 
   return (
     <div>
+      <Breadcrumb
+        items={[
+          { label: "Songs", to: "/songs" },
+          { label: song?.name ?? "Unknown Song" },
+        ]}
+        right={song?.group_name && user && user.groups.length > 1 ? (
+          canAdmin(user) ? (
+            <select
+              value={song.group_id}
+              onChange={(e) => setPendingGroupId(Number(e.target.value))}
+              className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:border-gray-600 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
+            >
+              {user!.groups.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{song.group_name}</span>
+          )
+        ) : undefined}
+      />
       <div>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
@@ -280,36 +303,15 @@ export default function SongHistory() {
                   if (e.key === "Escape") { setEditingName(false); setNameInput(song?.name ?? ""); }
                 }}
                 onBlur={handleSaveName}
-                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-lg font-bold text-white focus:border-accent-500 focus:outline-none"
+                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xl font-bold text-white focus:border-accent-500 focus:outline-none"
               />
             ) : (
               <h1
                 onClick={() => canEdit(user) && setEditingName(true)}
-                className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
+                className={`text-xl font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
                 title={canEdit(user) ? "Click to rename" : undefined}
               >
                 {song?.name ?? "Unknown Song"}
-                {song?.group_name && user && user.groups.length > 1 && canAdmin(user) ? (
-                  <select
-                    value={song.group_id}
-                    onChange={async (e) => {
-                      try {
-                        const updated = await api.updateSongGroup(songId, Number(e.target.value));
-                        setSong(updated);
-                      } catch (err) {
-                        setErrorMsg(`Move failed: ${err instanceof Error ? err.message : err}`);
-                      }
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="ml-2 rounded border border-transparent bg-transparent py-0 text-base sm:text-sm font-normal text-gray-500 hover:border-gray-700 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
-                  >
-                    {user!.groups.map((g) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
-                ) : song?.group_name ? (
-                  <span className="ml-2 text-sm font-normal text-gray-500">{song.group_name}</span>
-                ) : null}
               </h1>
             )}
             {editingArtist && canEdit(user) ? (
@@ -323,7 +325,7 @@ export default function SongHistory() {
                 }}
                 onBlur={handleSaveArtist}
                 placeholder="Artist name"
-                className="mt-0.5 w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-gray-300 placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+                className="mt-1 w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-gray-300 placeholder-gray-500 focus:border-accent-500 focus:outline-none"
               />
             ) : song?.artist ? (
               <p
@@ -340,31 +342,18 @@ export default function SongHistory() {
                 + add artist
               </button>
             ) : null}
-            <p className="mt-0.5 text-sm text-gray-400">
-              {takes.length} track{takes.length !== 1 ? "s" : ""}
-              {song?.first_date && song?.last_date && (
-                <span>
-                  {" "}&middot;{" "}
-                  {song.first_date === song.last_date
-                    ? formatDate(song.first_date)
-                    : `${formatDate(song.first_date)} — ${formatDate(song.last_date)}`}
-                </span>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-300">{takes.length} take{takes.length !== 1 ? "s" : ""}</span>
+              {song?.created_by_name && (
+                <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">by {song.created_by_name}</span>
               )}
-            </p>
-            {(song?.created_by_name || song?.updated_by_name) && (
-              <p className="mt-1.5 text-xs text-gray-500">
-                {song?.created_by_name && <>Added by {song.created_by_name}</>}
-                {song?.updated_by_name && (
-                  <>{song?.created_by_name ? " · " : ""}Last edited by {song.updated_by_name}{song?.updated_at ? ` ${formatDateTime(song.updated_at)}` : ""}</>
-                )}
-              </p>
-            )}
+            </div>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             {song?.sheet && (
               <Link
                 to={`/songs/${songId}/perform`}
-                className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
+                className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
               >
                 Perform
               </Link>
@@ -372,10 +361,12 @@ export default function SongHistory() {
             {canAdmin(user) && (
               <button
                 onClick={() => setShowDelete(true)}
-                className="rounded px-3 py-1.5 text-xs text-gray-600 hover:bg-red-950 hover:text-red-400"
+                className="rounded-lg p-2 text-gray-500 transition hover:bg-red-950 hover:text-red-400"
                 title="Delete song"
               >
-                Delete
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
               </button>
             )}
           </div>
@@ -490,6 +481,23 @@ export default function SongHistory() {
         confirmLabel="Append"
         onConfirm={doFetchLyrics}
         onCancel={() => setShowFetchConfirm(false)}
+      />
+      <Modal
+        open={pendingGroupId !== null}
+        title="Move song"
+        message={`Move "${song?.name}" to "${user?.groups.find(g => g.id === pendingGroupId)?.name}"? Tracks in existing sessions will stay in their current group.`}
+        confirmLabel="Move"
+        onConfirm={async () => {
+          const gid = pendingGroupId!;
+          setPendingGroupId(null);
+          try {
+            const updated = await api.updateSongGroup(songId, gid);
+            setSong(updated);
+          } catch (err) {
+            setErrorMsg(`Move failed: ${err instanceof Error ? err.message : err}`);
+          }
+        }}
+        onCancel={() => setPendingGroupId(null)}
       />
       <Modal
         open={showDelete}
