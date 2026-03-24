@@ -230,37 +230,36 @@ export default function SessionDetail() {
 
   return (
     <div>
-      <Breadcrumb items={[
-        { label: "Recordings", to: "/sessions" },
-        { label: session.name || `Session ${session.id}` },
-      ]} />
+      <Breadcrumb
+        items={[
+          { label: "Recordings", to: "/sessions" },
+          { label: session.name || `Session ${session.id}` },
+        ]}
+        right={session.group_name && user && user.groups.length > 1 ? (
+          canAdmin(user) ? (
+            <select
+              value={session.group_id}
+              onChange={async (e) => {
+                try {
+                  const updated = await api.updateSessionGroup(sessionId, Number(e.target.value));
+                  setSession(updated);
+                  api.listSongs(updated.group_id).then(setSongs);
+                } catch (err) {
+                  showError(`Move failed: ${err instanceof Error ? err.message : err}`);
+                }
+              }}
+              className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:border-gray-600 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
+            >
+              {user!.groups.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{session.group_name}</span>
+          )
+        ) : undefined}
+      />
       <div>
-        {/* Group badge */}
-        {session.group_name && user && user.groups.length > 1 && (
-          <div className="mb-2">
-            {canAdmin(user) ? (
-              <select
-                value={session.group_id}
-                onChange={async (e) => {
-                  try {
-                    const updated = await api.updateSessionGroup(sessionId, Number(e.target.value));
-                    setSession(updated);
-                    api.listSongs(updated.group_id).then(setSongs);
-                  } catch (err) {
-                    showError(`Move failed: ${err instanceof Error ? err.message : err}`);
-                  }
-                }}
-                className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:border-gray-600 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
-              >
-                {user!.groups.map((g) => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-              </select>
-            ) : (
-              <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{session.group_name}</span>
-            )}
-          </div>
-        )}
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             {editingName && canEdit(user) ? (

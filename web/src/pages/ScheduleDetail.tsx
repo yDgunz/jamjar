@@ -252,10 +252,15 @@ export default function ScheduleDetail() {
 
   return (
     <div>
-      <Breadcrumb items={[
-        { label: "Schedule", to: "/schedule" },
-        { label: event.name },
-      ]} />
+      <Breadcrumb
+        items={[
+          { label: "Schedule", to: "/schedule" },
+          { label: event.name },
+        ]}
+        right={event.group_name && user && user.groups.length > 1 ? (
+          <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{event.group_name}</span>
+        ) : undefined}
+      />
       {errorMsg && (
         <Toast
           message={errorMsg}
@@ -263,11 +268,8 @@ export default function ScheduleDetail() {
         />
       )}
 
-      {/* Group badge + type/status pills */}
+      {/* Type/status pills */}
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        {event.group_name && user && user.groups.length > 1 && (
-          <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{event.group_name}</span>
-        )}
         <span
           className={`rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase ${
             event.type === "gig"

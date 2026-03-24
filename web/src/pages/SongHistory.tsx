@@ -268,36 +268,35 @@ export default function SongHistory() {
 
   return (
     <div>
-      <Breadcrumb items={[
-        { label: "Songs", to: "/songs" },
-        { label: song?.name ?? "Unknown Song" },
-      ]} />
+      <Breadcrumb
+        items={[
+          { label: "Songs", to: "/songs" },
+          { label: song?.name ?? "Unknown Song" },
+        ]}
+        right={song?.group_name && user && user.groups.length > 1 ? (
+          canAdmin(user) ? (
+            <select
+              value={song.group_id}
+              onChange={async (e) => {
+                try {
+                  const updated = await api.updateSongGroup(songId, Number(e.target.value));
+                  setSong(updated);
+                } catch (err) {
+                  setErrorMsg(`Move failed: ${err instanceof Error ? err.message : err}`);
+                }
+              }}
+              className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:border-gray-600 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
+            >
+              {user!.groups.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{song.group_name}</span>
+          )
+        ) : undefined}
+      />
       <div>
-        {/* Group badge */}
-        {song?.group_name && user && user.groups.length > 1 && (
-          <div className="mb-2">
-            {canAdmin(user) ? (
-              <select
-                value={song.group_id}
-                onChange={async (e) => {
-                  try {
-                    const updated = await api.updateSongGroup(songId, Number(e.target.value));
-                    setSong(updated);
-                  } catch (err) {
-                    setErrorMsg(`Move failed: ${err instanceof Error ? err.message : err}`);
-                  }
-                }}
-                className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:border-gray-600 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
-              >
-                {user!.groups.map((g) => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-              </select>
-            ) : (
-              <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{song.group_name}</span>
-            )}
-          </div>
-        )}
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             {editingName && canEdit(user) ? (

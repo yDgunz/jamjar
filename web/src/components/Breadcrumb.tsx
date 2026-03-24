@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link } from "react-router";
 
 export interface BreadcrumbItem {
@@ -5,7 +6,7 @@ export interface BreadcrumbItem {
   to?: string;
 }
 
-export default function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
+export default function Breadcrumb({ items, right }: { items: BreadcrumbItem[]; right?: ReactNode }) {
   return (
     <nav className="mb-3 flex items-center gap-1.5 text-sm text-gray-500">
       {items.map((item, i) => (
@@ -24,6 +25,7 @@ export default function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
           )}
         </span>
       ))}
+      {right && <div className="ml-auto shrink-0">{right}</div>}
     </nav>
   );
 }

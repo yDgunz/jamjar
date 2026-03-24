@@ -300,17 +300,16 @@ export default function SetlistDetail() {
 
   return (
     <div>
-      <Breadcrumb items={[
-        { label: "Setlists", to: "/setlists" },
-        { label: setlist?.name ?? "Unknown Setlist" },
-      ]} />
+      <Breadcrumb
+        items={[
+          { label: "Setlists", to: "/setlists" },
+          { label: setlist?.name ?? "Unknown Setlist" },
+        ]}
+        right={setlist?.group_name && user && user.groups.length > 1 ? (
+          <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{setlist.group_name}</span>
+        ) : undefined}
+      />
       <div>
-        {/* Group badge */}
-        {setlist?.group_name && user && user.groups.length > 1 && (
-          <div className="mb-2">
-            <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{setlist.group_name}</span>
-          </div>
-        )}
         <div>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
