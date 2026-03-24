@@ -15,9 +15,10 @@ jobs:
     steps:
       - name: Sanitize branch name
         id: branch
+        env:
+          RAW_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
-          RAW="${{ github.event.pull_request.head.ref }}"
-          SANITIZED=$(echo "$RAW" | tr '[:upper:]' '[:lower:]' | sed 's|[^a-z0-9-]|-|g' | sed 's|-\+|-|g' | sed 's|^-\+||;s|-\+$||' | cut -c1-63)
+          SANITIZED=$(echo "$RAW_BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's|[^a-z0-9-]|-|g' | sed 's|-\+|-|g' | sed 's|^-\+||;s|-\+$||' | cut -c1-63)
 
           if [[ "$SANITIZED" =~ ^(main|master|prod)$ ]]; then
             echo "::error::Reserved branch name: $SANITIZED"
@@ -25,6 +26,7 @@ jobs:
           fi
 
           echo "name=$SANITIZED" >> "$GITHUB_OUTPUT"
+          echo "raw=$RAW_BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Deploy QA environment
         uses: appleboy/ssh-action@v1
@@ -40,7 +42,7 @@ jobs:
             /opt/jamjar/scripts/qa-deploy.sh \
               "${{ steps.branch.outputs.name }}" \
               "https://github.com/${{ github.repository }}.git" \
-              "${{ github.event.pull_request.head.ref }}"
+              "${{ steps.branch.outputs.raw }}"
 
       - name: Comment on PR
         uses: actions/github-script@v7
