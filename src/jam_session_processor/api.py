@@ -2673,6 +2673,140 @@ def admin_get_stats(request: Request):
     return db.get_activity_stats()
 
 
+# --- Server health endpoint ---
+
+_app_start_time = time.time()
+
+
+def _read_proc_file(path: str) -> str | None:
+    try:
+        return Path(path).read_text()
+    except OSError:
+        return None
+
+
+def _get_memory_info() -> dict:
+    """Read memory info from /proc/meminfo (Linux) or fallback."""
+    content = _read_proc_file("/proc/meminfo")
+    if not content:
+        return {"total_mb": 0, "used_mb": 0, "percent": 0}
+    info = {}
+    for line in content.splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            info[parts[0].rstrip(":")] = int(parts[1])  # in kB
+    total = info.get("MemTotal", 0)
+    available = info.get("MemAvailable", info.get("MemFree", 0))
+    used = total - available
+    total_mb = total // 1024
+    used_mb = used // 1024
+    pct = round(used * 100 / total) if total else 0
+    return {"total_mb": total_mb, "used_mb": used_mb, "percent": pct}
+
+
+def _get_disk_info() -> list[dict]:
+    """Get disk usage for key paths."""
+    import shutil
+
+    results = []
+    seen = set()
+    config = get_config()
+    paths = {"/": "/", "data": str(config.data_dir)}
+    for label, path in paths.items():
+        try:
+            usage = shutil.disk_usage(path)
+            # Deduplicate by device (same total = same partition)
+            key = usage.total
+            if key in seen:
+                continue
+            seen.add(key)
+            total_gb = round(usage.total / (1024**3), 1)
+            used_gb = round(usage.used / (1024**3), 1)
+            pct = round(usage.used * 100 / usage.total) if usage.total else 0
+            results.append(
+                {
+                    "mount": label,
+                    "total_gb": total_gb,
+                    "used_gb": used_gb,
+                    "percent": pct,
+                }
+            )
+        except OSError:
+            pass
+    return results
+
+
+def _get_uptime() -> dict:
+    """Get system uptime from /proc/uptime."""
+    content = _read_proc_file("/proc/uptime")
+    if content:
+        secs = float(content.split()[0])
+        return {"seconds": int(secs)}
+    return {"seconds": 0}
+
+
+def _get_db_stats(db: Database) -> dict:
+    """Get database size and record counts."""
+    config = get_config()
+    db_path = config.resolve_path(config.db_path)
+    try:
+        size_bytes = db_path.stat().st_size
+    except OSError:
+        size_bytes = 0
+
+    size_mb = round(size_bytes / (1024 * 1024), 2)
+
+    # Record counts via raw queries
+    counts = {}
+    for table in ["sessions", "tracks", "songs", "users", "groups", "setlists", "events"]:
+        try:
+            row = db.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()  # noqa: S608
+            counts[table] = row[0] if row else 0
+        except Exception:
+            counts[table] = 0
+
+    return {"size_mb": size_mb, "counts": counts}
+
+
+def _get_storage_info() -> dict:
+    """Get storage backend info."""
+    config = get_config()
+    backend = "r2" if config.r2_bucket else "local"
+    return {"backend": backend}
+
+
+@app.get("/api/admin/server-health")
+def admin_server_health(request: Request):
+    _require_role(request, "superadmin")
+    import platform
+    import socket
+
+    db = get_db()
+    config = get_config()
+
+    now = time.time()
+    app_uptime_secs = int(now - _app_start_time)
+
+    return {
+        "system": {
+            "hostname": socket.gethostname(),
+            "platform": platform.platform(),
+            "python_version": platform.python_version(),
+            "time": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
+        },
+        "app": {
+            "uptime_seconds": app_uptime_secs,
+            "port": config.port,
+            "data_dir": str(config.data_dir),
+        },
+        "memory": _get_memory_info(),
+        "disk": _get_disk_info(),
+        "uptime": _get_uptime(),
+        "database": _get_db_stats(db),
+        "storage": _get_storage_info(),
+    }
+
+
 # --- SPA static file serving ---
 
 _static_dir = _os.environ.get("JAM_STATIC_DIR")
