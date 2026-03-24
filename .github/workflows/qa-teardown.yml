@@ -4,6 +4,9 @@ on:
   pull_request:
     types: [closed, unlabeled]
 
+permissions:
+  pull-requests: write
+
 concurrency:
   group: qa-${{ github.event.pull_request.head.ref }}
 
