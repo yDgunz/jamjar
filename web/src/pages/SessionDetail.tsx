@@ -235,6 +235,32 @@ export default function SessionDetail() {
         { label: session.name || `Session ${session.id}` },
       ]} />
       <div>
+        {/* Group badge */}
+        {session.group_name && user && user.groups.length > 1 && (
+          <div className="mb-2">
+            {canAdmin(user) ? (
+              <select
+                value={session.group_id}
+                onChange={async (e) => {
+                  try {
+                    const updated = await api.updateSessionGroup(sessionId, Number(e.target.value));
+                    setSession(updated);
+                    api.listSongs(updated.group_id).then(setSongs);
+                  } catch (err) {
+                    showError(`Move failed: ${err instanceof Error ? err.message : err}`);
+                  }
+                }}
+                className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:border-gray-600 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
+              >
+                {user!.groups.map((g) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{session.group_name}</span>
+            )}
+          </div>
+        )}
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             {editingName && canEdit(user) ? (
@@ -247,40 +273,18 @@ export default function SessionDetail() {
                   if (e.key === "Escape") { setEditingName(false); setNameInput(session.name); }
                 }}
                 onBlur={handleSaveName}
-                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-lg font-bold text-white focus:border-accent-500 focus:outline-none"
+                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xl font-bold text-white focus:border-accent-500 focus:outline-none"
               />
             ) : (
               <h1
                 onClick={() => canEdit(user) && setEditingName(true)}
-                className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
+                className={`text-xl font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
                 title={canEdit(user) ? "Click to rename" : undefined}
               >
                 {session.name || `Session ${session.id}`}
-                {session.group_name && user && user.groups.length > 1 && canAdmin(user) ? (
-                  <select
-                    value={session.group_id}
-                    onChange={async (e) => {
-                      try {
-                        const updated = await api.updateSessionGroup(sessionId, Number(e.target.value));
-                        setSession(updated);
-                        api.listSongs(updated.group_id).then(setSongs);
-                      } catch (err) {
-                        showError(`Move failed: ${err instanceof Error ? err.message : err}`);
-                      }
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="ml-2 rounded border border-transparent bg-transparent py-0 text-base sm:text-sm font-normal text-gray-500 hover:border-gray-700 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
-                  >
-                    {user!.groups.map((g) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
-                ) : session.group_name ? (
-                  <span className="ml-2 text-sm font-normal text-gray-500">{session.group_name}</span>
-                ) : null}
               </h1>
             )}
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-400">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               {editingDate && canEdit(user) ? (
                 <input
                   type="date"
@@ -297,40 +301,41 @@ export default function SessionDetail() {
               ) : canEdit(user) ? (
                 <button
                   onClick={() => setEditingDate(true)}
-                  className="hover:text-accent-400"
+                  className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300 hover:bg-gray-700"
                   title="Click to change date"
                 >
                   {formatDate(session.date)}
                 </button>
               ) : (
-                <span>{formatDate(session.date)}</span>
+                <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300">{formatDate(session.date)}</span>
               )}
-              <span className="text-gray-600">&middot;</span>
-              <span>{session.track_count} track{session.track_count !== 1 ? "s" : ""}</span>
-              <span className="text-gray-600">&middot;</span>
-              <span>{session.tagged_count} tagged</span>
+              <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-400">{session.track_count} track{session.track_count !== 1 ? "s" : ""}</span>
+              <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-400">{session.tagged_count} tagged</span>
               {session.created_by_name && (
-                <>
-                  <span className="text-gray-600">&middot;</span>
-                  <span className="text-gray-500">Added by {session.created_by_name}</span>
-                </>
+                <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">by {session.created_by_name}</span>
               )}
             </div>
           </div>
           {canAdmin(user) && (
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center">
               <button
                 onClick={() => setReprocessOpen(true)}
                 disabled={!!processingProgress}
-                className="rounded px-2 py-2 text-xs text-gray-500 transition hover:text-gray-300 disabled:opacity-30 disabled:hover:text-gray-500"
+                className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-800 hover:text-gray-300 disabled:opacity-30"
+                title="Reprocess"
               >
-                Reprocess
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
               </button>
               <button
                 onClick={() => setConfirmDelete(true)}
-                className="rounded px-2 py-2 text-xs text-gray-500 transition hover:text-red-400"
+                className="rounded-lg p-2 text-gray-500 transition hover:bg-red-950 hover:text-red-400"
+                title="Delete"
               >
-                Delete
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
               </button>
             </div>
           )}

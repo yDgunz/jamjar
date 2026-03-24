@@ -305,6 +305,12 @@ export default function SetlistDetail() {
         { label: setlist?.name ?? "Unknown Setlist" },
       ]} />
       <div>
+        {/* Group badge */}
+        {setlist?.group_name && user && user.groups.length > 1 && (
+          <div className="mb-2">
+            <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{setlist.group_name}</span>
+          </div>
+        )}
         <div>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
@@ -318,21 +324,18 @@ export default function SetlistDetail() {
                     if (e.key === "Escape") { setEditingName(false); setNameInput(setlist?.name ?? ""); }
                   }}
                   onBlur={handleSaveName}
-                  className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-lg font-bold text-white focus:border-accent-500 focus:outline-none"
+                  className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xl font-bold text-white focus:border-accent-500 focus:outline-none"
                 />
               ) : (
                 <h1
                   onClick={() => canEdit(user) && setEditingName(true)}
-                  className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
+                  className={`text-xl font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
                   title={canEdit(user) ? "Click to rename" : undefined}
                 >
                   {setlist?.name ?? "Unknown Setlist"}
-                  {setlist?.group_name && user && user.groups.length > 1 && (
-                    <span className="ml-2 text-sm font-normal text-gray-500">{setlist.group_name}</span>
-                  )}
                 </h1>
               )}
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-400">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 {editingDate && canEdit(user) ? (
                   <input
                     autoFocus
@@ -350,37 +353,33 @@ export default function SetlistDetail() {
                   canEdit(user) ? (
                     <button
                       onClick={() => setEditingDate(true)}
-                      className="hover:text-accent-400"
+                      className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300 hover:bg-gray-700"
                       title="Click to change date"
                     >
                       {formatDate(setlist.date)}
                     </button>
                   ) : (
-                    <span>{formatDate(setlist.date)}</span>
+                    <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300">{formatDate(setlist.date)}</span>
                   )
                 ) : canEdit(user) ? (
                   <button
                     onClick={() => setEditingDate(true)}
-                    className="text-gray-600 hover:text-gray-400"
+                    className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-800 hover:text-gray-400"
                   >
                     + add date
                   </button>
                 ) : null}
-                <span className="text-gray-600">&middot;</span>
-                <span>{songs.length} song{songs.length !== 1 ? "s" : ""}</span>
+                <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-400">{songs.length} song{songs.length !== 1 ? "s" : ""}</span>
                 {setlist?.created_by_name && (
-                  <>
-                    <span className="text-gray-600">&middot;</span>
-                    <span className="text-gray-500">Added by {setlist.created_by_name}</span>
-                  </>
+                  <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">by {setlist.created_by_name}</span>
                 )}
               </div>
             </div>
-            <div className="hidden items-center gap-1 sm:flex">
+            <div className="flex shrink-0 items-center gap-1">
               {hasSheets && songs.length > 0 && (
                 <Link
                   to={`/setlists/${setlistId}/perform`}
-                  className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
+                  className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
                 >
                   Perform
                 </Link>
@@ -388,33 +387,15 @@ export default function SetlistDetail() {
               {canAdmin(user) && (
                 <button
                   onClick={() => setShowDelete(true)}
-                  className="rounded px-3 py-1.5 text-xs text-gray-600 hover:bg-red-950 hover:text-red-400"
+                  className="rounded-lg p-2 text-gray-500 transition hover:bg-red-950 hover:text-red-400"
                   title="Delete setlist"
                 >
-                  Delete
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
                 </button>
               )}
             </div>
-          </div>
-          {/* Action buttons on mobile — below title */}
-          <div className="mt-2 flex items-center gap-2 sm:hidden">
-            {hasSheets && songs.length > 0 && (
-              <Link
-                to={`/setlists/${setlistId}/perform`}
-                className="rounded bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
-              >
-                Perform
-              </Link>
-            )}
-            {canAdmin(user) && (
-              <button
-                onClick={() => setShowDelete(true)}
-                className="rounded px-3 py-2 text-xs text-gray-500 hover:bg-red-950 hover:text-red-400"
-                title="Delete setlist"
-              >
-                Delete
-              </button>
-            )}
           </div>
         </div>
       </div>

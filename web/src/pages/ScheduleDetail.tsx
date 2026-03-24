@@ -263,39 +263,43 @@ export default function ScheduleDetail() {
         />
       )}
 
+      {/* Group badge + type/status pills */}
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        {event.group_name && user && user.groups.length > 1 && (
+          <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{event.group_name}</span>
+        )}
+        <span
+          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase ${
+            event.type === "gig"
+              ? "bg-accent-900 text-accent-300"
+              : "bg-gray-700 text-gray-300"
+          }`}
+        >
+          {event.type}
+        </span>
+        {canEdit(user) ? (
+          <select
+            value={event.status}
+            onChange={(e) =>
+              handleUpdateField("status", e.target.value)
+            }
+            className={`rounded-full border-0 px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[event.status]}`}
+          >
+            <option value="tentative">Tentative</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        ) : (
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[event.status]}`}
+          >
+            {capitalize(event.status)}
+          </span>
+        )}
+      </div>
+
       <div className="mb-4 flex items-start justify-between">
         <div className="min-w-0 flex-1">
-          <div className="mb-1 flex items-center gap-2">
-            <span
-              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-                event.type === "gig"
-                  ? "bg-accent-900 text-accent-300"
-                  : "bg-gray-700 text-gray-300"
-              }`}
-            >
-              {event.type}
-            </span>
-            {canEdit(user) ? (
-              <select
-                value={event.status}
-                onChange={(e) =>
-                  handleUpdateField("status", e.target.value)
-                }
-                className={`rounded border-0 px-1.5 py-0.5 text-[10px] font-medium ${STATUS_BADGE[event.status]}`}
-              >
-                <option value="tentative">Tentative</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            ) : (
-              <span
-                className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_BADGE[event.status]}`}
-              >
-                {capitalize(event.status)}
-              </span>
-            )}
-          </div>
-
           {/* Name */}
           {editingName && canEdit(user) ? (
             <input
@@ -310,25 +314,20 @@ export default function ScheduleDetail() {
                 }
               }}
               onBlur={handleSaveName}
-              className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-lg font-bold text-white focus:border-accent-500 focus:outline-none"
+              className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xl font-bold text-white focus:border-accent-500 focus:outline-none"
             />
           ) : (
             <h1
               onClick={() => canEdit(user) && setEditingName(true)}
-              className={`text-lg font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
+              className={`text-xl font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
               title={canEdit(user) ? "Click to rename" : undefined}
             >
               {event.name}
-              {event.group_name && user && user.groups.length > 1 && (
-                <span className="ml-2 text-sm font-normal text-gray-500">
-                  {event.group_name}
-                </span>
-              )}
             </h1>
           )}
 
-          {/* Date & Time */}
-          <div className="mt-0.5 flex items-center gap-2 text-sm text-gray-400">
+          {/* Date & Time as pills */}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             {editingDate && canEdit(user) ? (
               <input
                 autoFocus
@@ -348,13 +347,13 @@ export default function ScheduleDetail() {
             ) : canEdit(user) ? (
               <button
                 onClick={() => setEditingDate(true)}
-                className="hover:text-accent-400"
+                className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300 hover:bg-gray-700"
                 title="Click to change date"
               >
                 {formatDate(localDate)}
               </button>
             ) : (
-              <span>{formatDate(localDate)}</span>
+              <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300">{formatDate(localDate)}</span>
             )}
 
             {editingTime && canEdit(user) ? (
@@ -377,37 +376,40 @@ export default function ScheduleDetail() {
               canEdit(user) ? (
                 <button
                   onClick={() => setEditingTime(true)}
-                  className="hover:text-accent-400"
+                  className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300 hover:bg-gray-700"
                   title="Click to change time"
                 >
                   {formatTime(event.date, event.time)}
                 </button>
               ) : (
-                <span>
+                <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300">
                   {formatTime(event.date, event.time)}
                 </span>
               )
             ) : canEdit(user) ? (
               <button
                 onClick={() => setEditingTime(true)}
-                className="text-gray-600 hover:text-gray-400"
+                className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-800 hover:text-gray-400"
               >
-                + Add time
+                + add time
               </button>
             ) : null}
+            {event.location && (
+              <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-400">
+                {event.location}
+              </span>
+            )}
           </div>
-          {event.location && (
-            <p className="text-sm text-gray-400">
-              {event.location}
-            </p>
-          )}
         </div>
         {canAdmin(user) && (
           <button
             onClick={() => setShowDelete(true)}
-            className="shrink-0 rounded px-3 py-1.5 text-sm text-red-400 transition hover:bg-red-900/30"
+            className="shrink-0 rounded-lg p-2 text-gray-500 transition hover:bg-red-950 hover:text-red-400"
+            title="Delete"
           >
-            Delete
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
           </button>
         )}
       </div>
