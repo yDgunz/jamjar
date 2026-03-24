@@ -2,7 +2,7 @@ name: QA Deploy
 
 on:
   pull_request:
-    types: [labeled]
+    types: [labeled, synchronize]
 
 permissions:
   pull-requests: write
@@ -13,7 +13,9 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event.label.name == 'deploy-qa'
+    if: >-
+      (github.event.action == 'labeled' && github.event.label.name == 'deploy-qa') ||
+      (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'deploy-qa'))
     runs-on: ubuntu-latest
     steps:
       - name: Sanitize branch name
