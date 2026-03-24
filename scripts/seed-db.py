@@ -9,6 +9,7 @@ Creates: 2 groups, 3 users, 15 sessions, 8 songs, ~55 tracks.
 Generates short .m4a audio files (sine tones) for each track so playback works.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -31,7 +32,7 @@ USERS = [
     ("mike@example.com", "Mike", "The Slow Burners", "editor"),
 ]
 
-DEFAULT_PASSWORD = "test"
+DEFAULT_PASSWORD = os.environ.get("JAM_QA_PASSWORD", "test")
 
 SONGS = {
     "Porch Dogs": [
