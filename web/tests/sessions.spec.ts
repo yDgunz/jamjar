@@ -27,11 +27,8 @@ test.describe("Sessions", () => {
     // Should navigate to /sessions/<id>
     await expect(page).toHaveURL(/\/sessions\/\d+/);
 
-    // Session detail should show tracks
-    // Each track is rendered in a card with duration info
-    await expect(page.locator('[class*="rounded-lg"][class*="border"]').first()).toBeVisible({
-      timeout: 10_000,
-    });
+    // Session detail should show tracks with track numbers
+    await expect(page.getByText("#1")).toBeVisible({ timeout: 10_000 });
   });
 
   test("session detail shows track list with track numbers", async ({ page }) => {

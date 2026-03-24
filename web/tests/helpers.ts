@@ -11,12 +11,6 @@ export const TEST_USER = {
   role: "superadmin",
 };
 
-export const SECONDARY_USER = {
-  email: "dave@example.com",
-  password: process.env.JAM_QA_PASSWORD ?? "test",
-  name: "Dave",
-};
-
 /**
  * Log in via the login form and wait for redirect to /sessions.
  */

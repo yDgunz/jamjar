@@ -46,15 +46,10 @@ test.describe("Authentication", () => {
   });
 
   test("redirects unauthenticated users away from protected pages", async ({ page }) => {
-    // Try to access sessions without logging in — the app should show login or redirect
+    // Try to access sessions without logging in — the app should redirect to login
     await page.goto("/sessions");
-    // The AuthProvider should redirect to login or show login-like content
-    // (depends on SPA behavior — the API returns 401 which triggers redirect)
-    await page.waitForTimeout(2_000);
-    // Either we see login page content, or the sessions page is empty/error
-    const onLogin = page.url().includes("/login");
-    const hasLoginForm = await page.getByLabel("Username").isVisible().catch(() => false);
-    expect(onLogin || hasLoginForm).toBeTruthy();
+    // The AuthProvider redirects to /login after the API returns 401
+    await expect(page.getByLabel("Username")).toBeVisible({ timeout: 10_000 });
   });
 
   test("forgot password link is accessible from login page", async ({ page }) => {
