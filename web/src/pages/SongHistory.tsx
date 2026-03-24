@@ -343,13 +343,7 @@ export default function SongHistory() {
               </button>
             ) : null}
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              {song?.first_date && song?.last_date && (
-                <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-300">
-                  {song.first_date === song.last_date
-                    ? formatDate(song.first_date)
-                    : `${formatDate(song.first_date)} — ${formatDate(song.last_date)}`}
-                </span>
-              )}
+              <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-300">{takes.length} take{takes.length !== 1 ? "s" : ""}</span>
               {song?.created_by_name && (
                 <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">by {song.created_by_name}</span>
               )}
