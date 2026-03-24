@@ -1686,7 +1686,9 @@ def share_landing_page(token: str):
                 <span id="share-label">Share</span>
             </button>
         </div>
-        <a href="/" style="display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 1.5rem; font-size: 0.8125rem; color: #6b7280; text-decoration: none;">
+        <a href="/" style="display: inline-flex; align-items: center; gap: 0.4rem;
+            margin-top: 1.5rem; font-size: 0.8125rem; color: #6b7280;
+            text-decoration: none;">
             <img src="/logo.png" alt="" style="width: 1rem; height: 1rem; border-radius: 3px;">
             Shared with <span style="color: #34d399;">JamJar</span>
         </a>
