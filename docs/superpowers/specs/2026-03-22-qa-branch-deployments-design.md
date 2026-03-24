@@ -8,233 +8,272 @@ Development currently requires `localhost` — no way to review UI changes on a 
 
 ## Solution
 
-Add a Caddy reverse proxy in front of the production app. On push to any non-`main` branch, automatically build and deploy a QA instance at `<branch-name>.jam-jar.app` with a seeded test database. Tear it down when the branch is deleted or merged.
+Add a Caddy reverse proxy in front of the production app. When a `deploy-qa` label is added to a PR, build and deploy a QA instance at `<branch-name>.jam-jar.app` with a seeded test database. Tear it down when the label is removed or the PR is closed/merged. A weekly scheduled workflow cleans up any orphaned environments.
 
 ## Architecture
 
 ```
-Internet → Caddy (:80/:443, wildcard TLS via Cloudflare DNS challenge)
-              ├── jam-jar.app            → production container (:8000)
-              ├── fix-login.jam-jar.app  → QA container qa-fix-login (:8000)
-              └── new-feat.jam-jar.app   → QA container qa-new-feat (:8000)
+Internet → Caddy (systemd on host, :80/:443, auto TLS via Let's Encrypt)
+              ├── jam-jar.app              → localhost:8000 (production)
+              ├── fix-login.jam-jar.app    → localhost:8001 (QA container)
+              └── new-feat.jam-jar.app     → localhost:8002 (QA container)
 ```
 
-All containers share a Docker network (`jamjar-net`). Caddy is the only service with host port bindings. QA containers are ephemeral — they have their own data volumes and no access to production data or R2.
+Caddy runs as a systemd service on the VPS host. Each QA environment is a separate Docker Compose project with its own container, volume, and dynamically assigned port. Caddy routes are managed via per-environment config files and `caddy reload`.
 
 ## Infrastructure Changes
 
-### Caddy service (added to `docker-compose.yml`)
+### Caddy (systemd service on host)
 
-Caddy requires the Cloudflare DNS module for wildcard TLS, which is not included in the stock image. A custom Caddy Dockerfile builds the image with `xcaddy` and the `github.com/caddy-dns/cloudflare` module.
+Caddy runs directly on the host (not in Docker) to keep networking simple and let it manage TLS certificates via Let's Encrypt without Docker complexity.
 
-Caddy runs as a service in the production compose file:
+**Base Caddyfile** (`/etc/caddy/Caddyfile`):
 
-- Binds ports 80 and 443
-- Uses a `Caddyfile` checked into the repo
-- Uses the Caddy Cloudflare DNS module for wildcard TLS (`*.jam-jar.app`)
-- Requires a `CLOUDFLARE_API_TOKEN` env var with Zone:DNS:Edit permissions for the domain
+```
+jam-jar.app {
+    reverse_proxy localhost:8000
+}
 
-### Custom Caddy Dockerfile (`Dockerfile.caddy`)
+import /etc/caddy/qa-sites/*
+```
 
-```dockerfile
-FROM caddy:2-builder AS builder
-RUN xcaddy build --with github.com/caddy-dns/cloudflare
+The `import` directive loads per-QA site config files. Each QA deploy writes a file to `/etc/caddy/qa-sites/` and runs `caddy reload`. This approach survives Caddy restarts — unlike the admin API, file-based configs are persistent.
 
-FROM caddy:2
-COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+**Per-QA config file** (`/etc/caddy/qa-sites/<branch>.caddy`):
+
+```
+feature-xyz.jam-jar.app {
+    reverse_proxy localhost:8001
+}
+```
+
+**Route management:**
+
+```bash
+# Add a QA route
+cat > /etc/caddy/qa-sites/feature-xyz.caddy <<EOF
+feature-xyz.jam-jar.app {
+    reverse_proxy localhost:8001
+}
+EOF
+sudo caddy reload --config /etc/caddy/Caddyfile
+
+# Remove a QA route
+rm /etc/caddy/qa-sites/feature-xyz.caddy
+sudo caddy reload --config /etc/caddy/Caddyfile
 ```
 
 ### Production compose changes
 
-- Remove `ports: - "80:8000"` from the `app` service
-- Add `hostname: jamjar-prod` to the `app` service (prevents DNS conflicts with QA containers that also have service name `app`)
-- Add both `app` and `caddy` to the shared `jamjar-net` network
-- Add the Caddy service definition
-
-### Caddyfile
-
-```
-jam-jar.app {
-    reverse_proxy jamjar-prod:8000
-}
-
-*.jam-jar.app {
-    tls {
-        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
-    }
-    reverse_proxy {labels.2}:8000
-}
-```
-
-**How routing works:**
-
-- The bare domain routes to hostname `jamjar-prod` — the production container's explicit hostname on the shared network.
-- The wildcard block extracts the subdomain via `{labels.2}` (zero-indexed from the right: `app`=0, `jam-jar`=1, subdomain=2) and proxies to a container with that hostname on the Docker network.
-- QA containers set `hostname: ${QA_BRANCH_NAME}` so they are resolvable by branch name on `jamjar-net`.
-- Production sets `hostname: jamjar-prod` to avoid conflicts with QA services that are also named `app` in their compose files.
-
-No per-branch config files or Caddy reloads needed. Requests to non-existent subdomains will get a 502 (no container to proxy to); this is expected and harmless.
-
-Note: Caddy automatically redirects HTTP to HTTPS. Existing `http://jam-jar.app` bookmarks will redirect seamlessly. The bare domain uses HTTP-01/TLS-ALPN-01 for its certificate (ports 80/443 are bound to Caddy). If Cloudflare proxy (orange cloud) is enabled for the bare domain, add the `tls { dns cloudflare ... }` directive to the bare domain block as well.
+Port mapping changes from `"80:8000"` to `"8000:8000"`. Caddy handles all external traffic on ports 80/443.
 
 ### DNS
 
-Add a wildcard A record: `*.jam-jar.app → <VPS IP>`. This is a one-time manual step. The bare `jam-jar.app` A record should already exist.
-
-### Cloudflare API token
-
-Create a scoped API token with `Zone:DNS:Edit` permission for `jam-jar.app`. Add as `CLOUDFLARE_API_TOKEN` in the VPS `.env` file and as a GitHub Actions secret.
-
-## QA Compose File
-
-New file: `docker-compose.qa.yml`
-
-```yaml
-services:
-  app:
-    build: .
-    container_name: ${QA_BRANCH_NAME}
-    hostname: ${QA_BRANCH_NAME}
-    labels:
-      - "qa=true"
-    environment:
-      - JAM_DATA_DIR=/data
-      - JAM_STATIC_DIR=/app/static
-      - JAM_JWT_SECRET=qa-shared-secret-not-for-production
-      - JAM_APP_URL=https://${QA_BRANCH_NAME}.jam-jar.app
-      - JAM_CORS_ORIGINS=https://${QA_BRANCH_NAME}.jam-jar.app
-    volumes:
-      - qa-data:/data
-    networks:
-      - jamjar-net
-    restart: unless-stopped
-    entrypoint: ["/app/scripts/qa-entrypoint.sh"]
-
-volumes:
-  qa-data:
-
-networks:
-  jamjar-net:
-    external: true
-```
-
-Key details:
-- **Hostname matches subdomain** — `hostname: ${QA_BRANCH_NAME}` makes the container resolvable by branch name on the Docker network; Caddy's `{labels.2}` resolves to this hostname
-- **`qa=true` label** — used by the resource guard to count active QA containers
-- **No port mapping** — Caddy routes via Docker network
-- **R2 disabled** — local storage only, no risk of touching production audio
-- **SMTP disabled** — no emails sent from QA
-- **Hardcoded JWT secret** — QA instances use test data only; a static secret is acceptable and avoids secret management complexity
-- **Own data volume** — Docker Compose prefixes with project name (`qa-<name>_qa-data`), ensuring isolation between branches
-- **Custom entrypoint** seeds the database on first boot
-
-Note: Audio playback in QA will return 404s since the seed script creates placeholder paths without actual audio files. This is acceptable for UI testing.
-
-## QA Entrypoint Script
-
-New file: `scripts/qa-entrypoint.sh`
-
-```sh
-#!/bin/sh
-set -e
-
-if [ ! -f /data/jam_sessions.db ]; then
-    echo "Seeding QA database..."
-    python /app/scripts/seed-db.py /data/jam_sessions.db
-fi
-
-exec jam-session serve
-```
-
-Seeds the database on first start only. Restarts preserve data.
+Add a wildcard A record: `*.jam-jar.app → <VPS IP>`. One-time manual step. The bare `jam-jar.app` A record should already exist.
 
 ## Branch Name Sanitization
 
-Both deploy and cleanup workflows must produce identical sanitized names. The logic:
+All workflows must produce identical sanitized names. The logic:
 
 1. Convert to lowercase
 2. Replace `/` and any non-alphanumeric characters (except hyphens) with `-`
 3. Collapse consecutive hyphens to a single hyphen
 4. Strip leading and trailing hyphens
 5. Truncate to 63 characters (DNS label limit)
+6. Reject reserved names: `main`, `master`, `prod`
 
 Examples:
 - `feature/my-thing` → `feature-my-thing`
 - `Fix/Login_Bug` → `fix-login-bug`
 - `--weird--branch--` → `weird-branch`
 
-This logic should be extracted into a shared shell function or inline script used by both workflows to guarantee consistency.
+This logic should be a shared shell function used by all three workflows.
+
+## QA Compose Setup
+
+Each QA environment runs as its own Docker Compose project. Rather than a committed `docker-compose.qa.yml`, the deploy script generates a compose file on the fly since each environment needs different port/volume/project names.
+
+**Generated compose structure:**
+
+```yaml
+services:
+  app:
+    build: .
+    ports:
+      - "<dynamic-port>:8000"
+    environment:
+      - JAM_DATA_DIR=/data
+      - JAM_STATIC_DIR=/app/static
+      - JAM_JWT_SECRET=<generated-per-deploy>
+      - JAM_APP_URL=https://<branch>.jam-jar.app
+      - JAM_CORS_ORIGINS=https://<branch>.jam-jar.app
+      - JAM_QA_PASSWORD=<from-server-env>
+    volumes:
+      - qa-data:/data
+    mem_limit: 512m
+    cpus: 1.0
+    restart: unless-stopped
+
+volumes:
+  qa-data:
+```
+
+Key details:
+- **Dynamic port** — starting at 8001, scanning for unused ports (see Port Assignment below)
+- **Resource limits** — 512MB RAM and 1 CPU per QA container to protect production from resource starvation
+- **No R2 env vars** — local-only storage, no risk of touching production audio
+- **No SMTP env vars** — no emails sent from QA
+- **Generated JWT secret** — QA cookies don't work on production and vice versa
+- **Own data volume** — Docker Compose prefixes with project name, ensuring isolation
+- **`JAM_QA_PASSWORD`** — passed from server `.env`, used by seed script for all test users
+
+### Port Assignment
+
+The deploy script assigns ports starting at 8001 by checking existing workspace port files:
+
+1. Read all `/opt/jamjar-qa/*/port` files to find ports currently in use
+2. Starting at 8001, find the first port not in any port file
+3. Verify the port is not bound: `ss -tlnp | grep :<port>`
+4. Write the assigned port to `/opt/jamjar-qa/<branch>/port`
+
+This avoids race conditions between deploys since the concurrency group prevents parallel deploys to the same branch, and the port file check prevents collisions across branches.
+
+### Maximum Concurrent Environments
+
+The deploy script checks how many QA environments are currently running. If 3 or more exist, the deploy fails with a comment on the PR explaining the limit. This prevents resource exhaustion on the shared VPS.
+
+## Seed Script Changes
+
+`scripts/seed-db.py` is modified to:
+- Read `JAM_QA_PASSWORD` env var
+- If set, use it as the password for all seeded users (replacing `DEFAULT_PASSWORD = "test"`)
+- If not set, fall back to the existing `DEFAULT_PASSWORD = "test"` (preserving local dev workflow)
+
+The `JAM_QA_PASSWORD` requirement is enforced in the deploy script, not the seed script — the deploy script checks that `JAM_QA_PASSWORD` is set in the server environment before starting and exits with an error if it's missing. This keeps the seed script working for local development without any env var.
 
 ## GitHub Actions Workflows
 
 ### QA Deploy (`.github/workflows/qa-deploy.yml`)
 
-**Trigger:** Push to any branch except `main`.
+**Trigger:** `pull_request: types: [labeled]` — fires when the `deploy-qa` label is added to a PR.
 
-**Concurrency:** `concurrency: { group: qa-${{ github.ref_name }}, cancel-in-progress: true }` — prevents concurrent deploys to the same branch. If a second push arrives while the first is still deploying, the first is cancelled.
+**Condition:** Only runs if the added label is `deploy-qa`.
 
-**Steps:**
-
-1. Sanitize branch name (see Branch Name Sanitization above)
-2. **Resource guard:** SSH into VPS and count running QA containers (`docker ps --filter "label=qa=true" -q | wc -l`). If >= 5, exit with a warning comment on the PR and skip deployment.
-3. Create workspace at `/opt/jamjar-qa/<branch-name>/` if it doesn't exist
-4. Pull/clone the branch into the workspace
-5. Create the shared network if it doesn't exist: `docker network create jamjar-net || true`
-6. Build and start: `QA_BRANCH_NAME=<name> docker compose -p qa-<name> -f docker-compose.qa.yml up --build -d`
-7. **Health check:** `curl --retry 5 --retry-delay 3 --retry-connrefused https://<name>.jam-jar.app/health`
-8. If a PR exists for this branch, post/update a comment with the QA URL
-
-### QA Cleanup (`.github/workflows/qa-cleanup.yml`)
-
-**Trigger:** Branch delete event AND `pull_request: types: [closed]` (covers merges without branch deletion).
-
-**Concurrency:** `concurrency: { group: qa-${{ github.ref_name }} }` — matches the deploy workflow's group to prevent deploy/cleanup races.
+**Concurrency:** `concurrency: { group: qa-${{ github.event.pull_request.head.ref }}, cancel-in-progress: true }` — prevents concurrent deploys to the same branch.
 
 **Steps:**
 
-1. Sanitize branch name (same logic as deploy)
-2. SSH into VPS
-3. `cd /opt/jamjar-qa/<branch-name>/ && docker compose -p qa-<name> -f docker-compose.qa.yml down -v` (must run before removing workspace since compose file is in the workspace; if directory doesn't exist, skip this step)
-4. Remove workspace directory `/opt/jamjar-qa/<branch-name>/`
-5. `docker image prune -f`
+1. Sanitize branch name (reject reserved names)
+2. SSH into VPS and run `scripts/qa-deploy.sh <branch-name> <git-ref>`:
+   a. Check `JAM_QA_PASSWORD` is set in server environment; exit with error if missing
+   b. Count running QA environments; exit with error if >= 3
+   c. Create workspace at `/opt/jamjar-qa/<branch-name>/`
+   d. Shallow clone the branch: `git clone --depth 1 --branch <ref> <repo-url> .`
+   e. Assign a port (see Port Assignment) and write to `port` file
+   f. Generate a compose file with the assigned port and resource limits
+   g. Build and start: `docker compose -p jamjar-qa-<branch> up --build -d`
+   h. Seed the database: `docker compose -p jamjar-qa-<branch> exec app python /app/scripts/seed-db.py /data/jam_sessions.db`
+   i. Write Caddy config file and reload: `sudo caddy reload --config /etc/caddy/Caddyfile`
+   j. Health check: `curl --retry 10 --retry-delay 5 --retry-max-time 120 --retry-connrefused https://<branch>.jam-jar.app/health`
+   k. On health check failure, dump last 50 container log lines for debugging
+3. Post a comment on the PR with the QA URL, using a hidden HTML marker (`<!-- qa-deploy -->`) to identify it for later editing
 
-The cleanup is idempotent — running it when no QA instance exists is a no-op. The `docker compose down` step is skipped if the workspace directory doesn't exist (e.g., if deploy never completed).
+### QA Teardown (`.github/workflows/qa-teardown.yml`)
 
-## Production Migration
+**Triggers:**
+- `pull_request: types: [closed]` — PR merged or closed
+- `pull_request: types: [unlabeled]` — `deploy-qa` label removed
 
-The existing production deploy workflow needs updates:
+**Condition:** For `unlabeled`, only runs if the removed label is `deploy-qa`. For `closed`, only runs if the PR has the `deploy-qa` label.
 
-1. First deploy: build custom Caddy image, create the shared network, move production behind Caddy
-2. Subsequent deploys: same as today but without the port mapping
+**Concurrency:** `concurrency: { group: qa-${{ github.event.pull_request.head.ref }} }` — prevents deploy/teardown races.
 
-The migration is:
-1. Add Caddy service + network to `docker-compose.yml`
-2. Remove port 80 mapping from `app`
-3. Add `Caddyfile` and `Dockerfile.caddy` to repo
-4. Set up wildcard DNS record (manual, one-time)
-5. Create Cloudflare API token (manual, one-time)
-6. Add `CLOUDFLARE_API_TOKEN` to VPS `.env` and GitHub secrets
-7. Deploy — Caddy takes over TLS and routing
+**Steps:**
 
-Production experiences a brief downtime during the switchover (seconds, while Caddy starts and obtains the cert). Caddy automatically redirects HTTP to HTTPS, so existing bookmarks work.
+1. Sanitize branch name
+2. SSH into VPS and run `scripts/qa-teardown.sh <branch-name>`:
+   a. Remove Caddy config file: `rm -f /etc/caddy/qa-sites/<branch>.caddy`
+   b. Reload Caddy: `sudo caddy reload --config /etc/caddy/Caddyfile`
+   c. Stop and remove Compose project with volumes: `docker compose -p jamjar-qa-<branch> down -v`
+   d. Remove workspace directory: `rm -rf /opt/jamjar-qa/<branch-name>/`
+   e. Prune unused images: `docker image prune -f`
+3. Edit the PR comment (found via `<!-- qa-deploy -->` marker) to say "QA environment torn down"
 
-## Dockerfile Changes
+Teardown is idempotent — running it when no QA instance exists is a no-op.
 
-The existing `COPY scripts/ /app/scripts/` line already copies all scripts into the image. The only addition is making `qa-entrypoint.sh` executable (either `chmod +x` in the repo or add a `RUN chmod` in the Dockerfile).
+### QA Orphan Cleanup (`.github/workflows/qa-cleanup.yml`)
+
+**Trigger:** `schedule: - cron: '0 6 * * 0'` — weekly, Sunday at 6am UTC.
+
+**Steps:**
+
+1. SSH into VPS
+2. List all directories in `/opt/jamjar-qa/`
+3. For each directory, use the GitHub API (via `curl` with `GITHUB_TOKEN`) to check whether an open PR with the `deploy-qa` label exists for that branch
+4. If no matching PR exists, run the teardown: remove Caddy config file, reload Caddy, `docker compose down -v`, remove workspace directory
+5. Final `docker image prune -f`
+
+Note: The cleanup workflow uses the GitHub API directly (via `curl` with `GITHUB_TOKEN`) rather than `gh` CLI, avoiding the need to install `gh` on the VPS.
+
+## Manual Setup Tasks
+
+These must be completed before the first QA deploy:
+
+1. **Add wildcard DNS record:** `*.jam-jar.app → <VPS IP>` (with DNS provider)
+2. **Install Caddy on VPS:**
+   ```bash
+   sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+   sudo apt update
+   sudo apt install caddy
+   ```
+3. **Create QA sites directory:** `sudo mkdir -p /etc/caddy/qa-sites`
+4. **Write Caddyfile** at `/etc/caddy/Caddyfile` with prod reverse proxy and `import /etc/caddy/qa-sites/*`
+5. **Enable and start Caddy:** `sudo systemctl enable --now caddy`
+6. **Verify Caddy is running:** `curl localhost:2019/config/` should return a valid JSON response
+7. **Update prod docker-compose.yml** port from `"80:8000"` to `"8000:8000"` and restart
+8. **Verify** `https://jam-jar.app` works through Caddy
+9. **Add `JAM_QA_PASSWORD`** to the VPS `.env` file
+10. **Create QA directory:** `sudo mkdir -p /opt/jamjar-qa`
+11. **Grant deploy user Caddy reload permission:** ensure the SSH deploy user can run `sudo caddy reload` without a password (e.g., via sudoers rule)
+12. **Verify firewall:** ports 80/443 must be open for Caddy; dynamic QA ports (8001+) should NOT be externally accessible (Caddy proxies via localhost)
+13. **Verify existing GitHub Actions SSH secrets** work for the QA workflows (same secrets as production deploy)
+
+## File Changes Summary
+
+**New files:**
+- `.github/workflows/qa-deploy.yml` — deploy workflow (label trigger)
+- `.github/workflows/qa-teardown.yml` — teardown workflow (unlabel/close trigger)
+- `.github/workflows/qa-cleanup.yml` — weekly orphan cleanup
+- `scripts/qa-deploy.sh` — server-side deploy script
+- `scripts/qa-teardown.sh` — server-side teardown script
+
+**Modified files:**
+- `scripts/seed-db.py` — read `JAM_QA_PASSWORD` env var, use it if set, fall back to default if not
+- `docker-compose.yml` — port mapping `"80:8000"` → `"8000:8000"`
+- `CLAUDE.md` — document QA deploy process
+
+**No changes to:**
+- `Dockerfile` — reused as-is for QA builds
+- Application code (`api.py`, `db.py`, etc.)
+- Production deploy workflow (`.github/workflows/deploy.yml`)
 
 ## Security Considerations
 
-- QA instances use a separate JWT secret — QA cookies don't work on production and vice versa
-- QA has no access to production data (separate Docker volumes)
-- R2 is disabled in QA — no risk of reading/writing production audio
-- QA uses the seed database with test credentials only
-- QA instances are publicly accessible (same as production) — acceptable since they contain only test data
-- Cloudflare API token is scoped to DNS only
+- **QA password from env var** — test user credentials are not in the repo; controlled via `JAM_QA_PASSWORD` in the server's `.env` file. Deploy script validates this is set before proceeding.
+- **Separate JWT secret** — generated per QA deploy; QA cookies don't work on production and vice versa
+- **Cookie isolation** — cookies on `<branch>.jam-jar.app` are not sent to `jam-jar.app` (subdomain cookies don't propagate to parent domains). This must not be broken by setting `domain=.jam-jar.app` on cookies in the future.
+- **No production data access** — QA uses separate Docker volumes with seeded test data only
+- **No R2 access** — local-only storage, no risk of reading/writing production audio
+- **No SMTP** — QA environments don't send emails
+- **Resource limits** — 512MB RAM, 1 CPU per QA container; max 3 concurrent environments
+- **Firewall** — QA ports (8001+) should not be externally accessible; all traffic goes through Caddy on 80/443
 
 ## Out of Scope
 
 - Per-branch database snapshots from production
-- Authentication/password protection on QA instances
 - Slack/email notifications on QA deploy
 - Multi-server deployment
 - Real audio file generation for QA seed data
+- Caddy basic auth layer (using `JAM_QA_PASSWORD` for app-level auth instead)
