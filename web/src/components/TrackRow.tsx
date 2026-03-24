@@ -157,7 +157,7 @@ export default function TrackRow({ track, trackCount, sessionDuration, songs, on
         </div>
       )}
 
-      {/* Header row: take name + info */}
+      {/* Header row: take name + info + edit buttons */}
       <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-0.5">
         {tagging && canEdit(user) ? (
           <div>
@@ -256,6 +256,74 @@ export default function TrackRow({ track, trackCount, sessionDuration, songs, on
           </>
         )}
 
+        {/* Track edit buttons — top right, shown when paused mid-take */}
+        {!playerPlaying && playerTime > 0 && canAdmin(user) && (
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            {playerTime > 1 && (
+              <button
+                onClick={() => setConfirmingTrim("start")}
+                disabled={operationLoading}
+                className="flex items-center gap-1 rounded bg-gray-800 px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" d="M9 3v18M15 3l-6 6M15 21l-6-6" />
+                </svg>
+                Trim start to {formatTime(playerTime)}
+              </button>
+            )}
+            {playerTime < track.duration_sec - 1 && (
+              <button
+                onClick={() => setConfirmingTrim("end")}
+                disabled={operationLoading}
+                className="flex items-center gap-1 rounded bg-gray-800 px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" d="M9 3v18M15 3l-6 6M15 21l-6-6" />
+                </svg>
+                Trim end to {formatTime(playerTime)}
+              </button>
+            )}
+            {canSplit && (
+              <button
+                onClick={() => setConfirmingSplit(true)}
+                disabled={operationLoading}
+                className="flex items-center gap-1 rounded bg-gray-800 px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" d="M12 4v16M4 12h16" />
+                </svg>
+                Split at {formatTime(playerTime)}
+              </button>
+            )}
+            {canExtendStart && extendAmounts.filter((s) => s <= track.start_sec).map((s) => (
+              <button
+                key={`ext-start-${s}`}
+                onClick={() => setConfirmingExtend({ direction: "start", seconds: s })}
+                disabled={operationLoading}
+                className="flex items-center gap-1 rounded bg-gray-800 px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+                +{s}s before
+              </button>
+            ))}
+            {canExtendEnd && extendAmounts.filter((s) => sessionDuration != null && track.end_sec + s <= sessionDuration).map((s) => (
+              <button
+                key={`ext-end-${s}`}
+                onClick={() => setConfirmingExtend({ direction: "end", seconds: s })}
+                disabled={operationLoading}
+                className="flex items-center gap-1 rounded bg-gray-800 px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
+              >
+                +{s}s after
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            ))}
+          </div>
+        )}
+
       </div>
 
       {/* Audio player */}
@@ -268,74 +336,6 @@ export default function TrackRow({ track, trackCount, sessionDuration, songs, on
         onShare={handleShare}
         shareState={shareLoading ? "loading" : shared ? "copied" : "idle"}
       />
-
-      {/* Track edit buttons — shown when paused mid-take */}
-      {!playerPlaying && playerTime > 0 && canAdmin(user) && (
-        <div className="mt-2 flex flex-wrap gap-2">
-          {playerTime > 1 && (
-            <button
-              onClick={() => setConfirmingTrim("start")}
-              disabled={operationLoading}
-              className="flex items-center gap-1.5 rounded bg-gray-800 px-3 py-2 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
-            >
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" d="M9 3v18M15 3l-6 6M15 21l-6-6" />
-              </svg>
-              Trim start to {formatTime(playerTime)}
-            </button>
-          )}
-          {playerTime < track.duration_sec - 1 && (
-            <button
-              onClick={() => setConfirmingTrim("end")}
-              disabled={operationLoading}
-              className="flex items-center gap-1.5 rounded bg-gray-800 px-3 py-2 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
-            >
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" d="M9 3v18M15 3l-6 6M15 21l-6-6" />
-              </svg>
-              Trim end to {formatTime(playerTime)}
-            </button>
-          )}
-          {canSplit && (
-            <button
-              onClick={() => setConfirmingSplit(true)}
-              disabled={operationLoading}
-              className="flex items-center gap-1.5 rounded bg-gray-800 px-3 py-2 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
-            >
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" d="M12 4v16M4 12h16" />
-              </svg>
-              Split here ({formatTime(playerTime)})
-            </button>
-          )}
-          {canExtendStart && extendAmounts.filter((s) => s <= track.start_sec).map((s) => (
-            <button
-              key={`ext-start-${s}`}
-              onClick={() => setConfirmingExtend({ direction: "start", seconds: s })}
-              disabled={operationLoading}
-              className="flex items-center gap-1.5 rounded bg-gray-800 px-3 py-2 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
-            >
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-              </svg>
-              +{s}s before
-            </button>
-          ))}
-          {canExtendEnd && extendAmounts.filter((s) => sessionDuration != null && track.end_sec + s <= sessionDuration).map((s) => (
-            <button
-              key={`ext-end-${s}`}
-              onClick={() => setConfirmingExtend({ direction: "end", seconds: s })}
-              disabled={operationLoading}
-              className="flex items-center gap-1.5 rounded bg-gray-800 px-3 py-2 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
-            >
-              +{s}s after
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          ))}
-        </div>
-      )}
       <Modal
         open={confirmingTrim !== null}
         title={confirmingTrim === "start" ? "Trim start" : "Trim end"}

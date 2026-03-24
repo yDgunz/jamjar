@@ -12,7 +12,5 @@ Prioritized backlog, roughly ordered by importance.
 8. Observability (structured logging, Sentry, usage metrics)
 9. Separate audio processing worker — extract `_process_upload()` into a standalone worker process that polls the jobs table, decoupling CPU-heavy FFmpeg work from the API server so processing doesn't degrade request handling for other users
 10. Data export (CSV/JSON catalog, zip downloads)
-11. Show date coordination
-12. Metronome
-13. Import chart from external source
-14. Refactor granular PUT endpoints — consolidate per-field PUT endpoints (e.g., `/sessions/{id}/name`, `/sessions/{id}/notes`) into single partial-update PUT endpoints per resource
+11. Import chart from external source
+12. Refactor granular PUT endpoints — consolidate per-field PUT endpoints (e.g., `/sessions/{id}/name`, `/sessions/{id}/notes`) into single partial-update PUT endpoints per resource
