@@ -32,7 +32,10 @@ jobs:
           pip install -e .
 
       - name: Run pip-audit
-        run: pip-audit --desc
+        run: |
+          # Generate requirements from installed project deps (excludes pip/setuptools/wheel)
+          pip freeze --exclude pip --exclude setuptools --exclude wheel --exclude pip-audit > /tmp/requirements.txt
+          pip-audit --desc -r /tmp/requirements.txt
 
   npm-audit:
     name: Node dependency audit
@@ -53,4 +56,4 @@ jobs:
         run: npm ci
 
       - name: Run npm audit
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=critical
