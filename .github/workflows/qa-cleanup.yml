@@ -1,0 +1,71 @@
+name: QA Cleanup
+
+on:
+  schedule:
+    - cron: '0 6 * * 0'  # Sunday at 6am UTC
+  workflow_dispatch:       # Allow manual trigger
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find and clean orphaned QA environments
+        uses: appleboy/ssh-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          envs: GH_TOKEN,GH_REPO
+          script: |
+            set -e
+            QA_BASE="/opt/jamjar-qa"
+            CADDY_SITES="/etc/caddy/qa-sites"
+            CADDYFILE="/etc/caddy/Caddyfile"
+            CLEANED=0
+
+            if [ ! -d "$QA_BASE" ] || [ -z "$(ls -A "$QA_BASE" 2>/dev/null)" ]; then
+              echo "No QA environments found."
+              exit 0
+            fi
+
+            for workspace in "$QA_BASE"/*/; do
+              [ -d "$workspace" ] || continue
+              BRANCH=$(basename "$workspace")
+
+              echo "Checking QA environment: $BRANCH"
+
+              # Read original branch name (saved during deploy) for accurate API lookup
+              ORIGINAL_BRANCH="$BRANCH"
+              if [ -f "${workspace}original-branch" ]; then
+                ORIGINAL_BRANCH=$(cat "${workspace}original-branch")
+              fi
+
+              # Query GitHub API for open PRs with deploy-qa label matching this branch
+              HAS_PR=$(curl -sf \
+                -H "Authorization: token $GH_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${GH_REPO}/pulls?state=open&head=${GH_REPO%%/*}:${ORIGINAL_BRANCH}" \
+                | python3 -c "
+            import json, sys
+            prs = json.load(sys.stdin)
+            has_label = any(
+                any(l['name'] == 'deploy-qa' for l in pr.get('labels', []))
+                for pr in prs
+            )
+            print('yes' if has_label else 'no')
+            " 2>/dev/null || echo "no")
+
+              if [ "$HAS_PR" = "no" ]; then
+                echo "  No matching open PR with deploy-qa label. Cleaning up..."
+                /opt/jamjar/scripts/qa-teardown.sh "$BRANCH"
+                CLEANED=$((CLEANED + 1))
+              else
+                echo "  Active PR found. Skipping."
+              fi
+            done
+
+            echo "Cleanup complete. Removed $CLEANED orphaned environment(s)."
