@@ -233,6 +233,34 @@ Rules:
 - **Storage abstraction:** Never read/write audio files directly with `Path` in API code. Use `get_storage()` so the code works with both local files and R2. The `storage.put()/get()/delete()` methods handle both backends.
 - **Relative paths in DB:** Audio paths stored in the DB are relative to `JAM_DATA_DIR`. Use `config.make_relative()` when storing and `config.resolve_path()` when reading.
 
+## Agent-Driven Workflow
+
+This project uses an agent-driven development workflow where GitHub Issues serve as the shared backlog. See `docs/superpowers/specs/2026-03-23-agent-driven-development-design.md` for the full spec.
+
+### Session Startup Protocol
+
+When beginning a work session (not just answering a quick question):
+
+1. **Read project memory** (automatic) — MEMORY.md loads with current focus, decisions, and patterns
+2. **Check GitHub state** — run `gh issue list --label in-progress` and `gh pr list` to see what's active
+3. **Summarize status** — briefly tell the user what's in flight and ask what to work on (unless they've already said)
+
+### Session End Protocol
+
+At the end of any session where work state changed:
+
+1. **Update `current-focus.md`** in project memory with current issue/PR state
+2. **Update labels** on GitHub issues to reflect current status
+
+### Issue Workflow
+
+- Issues are created with the `backlog` label using the work-item template
+- Label transitions: `backlog` → `in-progress` → `review` → merged
+- Claude owns all label transitions; user gates merges via PR approval
+- Priority: oldest `backlog` issue first, unless `priority-high` label is present
+- Feature branches: `feature/<short-description>`
+- Production deploys require explicit user approval
+
 ## System Dependencies
 
 - **Python 3.12** — installed via `brew install python@3.12`, venv at `.venv/`
