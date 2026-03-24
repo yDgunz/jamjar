@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Interaction Modes
+
+The user prefixes messages to signal how much autonomy to give:
+
+- **`discuss:`** — Back-and-forth mode. Check in at decision points, present options, ask for input before acting.
+- **`go:`** — Autonomous mode. Make reasonable assumptions and execute. Only stop for genuinely ambiguous or risky decisions.
+- **No prefix** — defaults to `discuss:` mode.
+
 ## General Behavior
 
 - When asked to implement something, start coding immediately. Do not spend excessive time on codebase exploration, task creation, or planning unless explicitly asked to plan. Bias toward action.
