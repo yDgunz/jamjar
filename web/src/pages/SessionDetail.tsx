@@ -418,6 +418,7 @@ export default function SessionDetail() {
             <TrackRow
               track={t}
               trackCount={tracks.length}
+              sessionDuration={session?.duration_sec ?? null}
               songs={songs}
               onUpdate={refresh}
               onTracksChanged={handleTracksChanged}

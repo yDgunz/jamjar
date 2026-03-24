@@ -16,13 +16,14 @@ function formatTime(sec: number): string {
 interface Props {
   track: Track;
   trackCount: number;
+  sessionDuration: number | null;
   songs: Song[];
   onUpdate: () => void;
   onTracksChanged: (tracks: Track[]) => void;
   onError: (msg: string) => void;
 }
 
-export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksChanged, onError }: Props) {
+export default function TrackRow({ track, trackCount, sessionDuration, songs, onUpdate, onTracksChanged, onError }: Props) {
   const { user } = useAuth();
   const [tagging, setTagging] = useState(false);
   const [tagInput, setTagInput] = useState(track.song_name ?? "");
@@ -33,6 +34,7 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
   const [operationLoading, setOperationLoading] = useState(false);
   const [confirmingSplit, setConfirmingSplit] = useState(false);
   const [confirmingTrim, setConfirmingTrim] = useState<"start" | "end" | null>(null);
+  const [confirmingExtend, setConfirmingExtend] = useState<{ direction: "start" | "end"; seconds: number } | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shared, setShared] = useState(false);
 
@@ -72,6 +74,29 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
       setOperationLoading(false);
     }
   };
+
+  const handleExtend = async () => {
+    if (!confirmingExtend) return;
+    const { direction, seconds } = confirmingExtend;
+    setConfirmingExtend(null);
+    setOperationLoading(true);
+    try {
+      if (direction === "start") {
+        await api.trimTrack(track.id, -seconds);
+      } else {
+        await api.trimTrack(track.id, undefined, seconds);
+      }
+      onUpdate();
+    } catch (err) {
+      onError(`Extend failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setOperationLoading(false);
+    }
+  };
+
+  const canExtendStart = track.start_sec > 0;
+  const canExtendEnd = sessionDuration != null && track.end_sec < sessionDuration;
+  const extendAmounts = [5, 10, 30];
 
   const handleSplit = async () => {
     setConfirmingSplit(false);
@@ -283,6 +308,32 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
               Split here ({formatTime(playerTime)})
             </button>
           )}
+          {canExtendStart && extendAmounts.filter((s) => s <= track.start_sec).map((s) => (
+            <button
+              key={`ext-start-${s}`}
+              onClick={() => setConfirmingExtend({ direction: "start", seconds: s })}
+              disabled={operationLoading}
+              className="flex items-center gap-1.5 rounded bg-gray-800 px-3 py-2 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
+            >
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+              +{s}s before
+            </button>
+          ))}
+          {canExtendEnd && extendAmounts.filter((s) => sessionDuration != null && track.end_sec + s <= sessionDuration).map((s) => (
+            <button
+              key={`ext-end-${s}`}
+              onClick={() => setConfirmingExtend({ direction: "end", seconds: s })}
+              disabled={operationLoading}
+              className="flex items-center gap-1.5 rounded bg-gray-800 px-3 py-2 text-xs text-gray-400 transition hover:bg-gray-700 hover:text-white disabled:opacity-50"
+            >
+              +{s}s after
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          ))}
         </div>
       )}
       <Modal
@@ -296,6 +347,18 @@ export default function TrackRow({ track, trackCount, songs, onUpdate, onTracksC
         confirmLabel="Trim"
         onConfirm={handleTrim}
         onCancel={() => setConfirmingTrim(null)}
+      />
+      <Modal
+        open={confirmingExtend !== null}
+        title={confirmingExtend?.direction === "start" ? "Extend start" : "Extend end"}
+        message={
+          confirmingExtend?.direction === "start"
+            ? `Add ${confirmingExtend.seconds}s from the full recording before this track?`
+            : `Add ${confirmingExtend?.seconds}s from the full recording after this track?`
+        }
+        confirmLabel="Extend"
+        onConfirm={handleExtend}
+        onCancel={() => setConfirmingExtend(null)}
       />
       <Modal
         open={confirmingSplit}
