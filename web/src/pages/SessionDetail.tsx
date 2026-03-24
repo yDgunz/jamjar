@@ -89,6 +89,7 @@ export default function SessionDetail() {
   const [reprocessOpen, setReprocessOpen] = useState(false);
   const [singleSong, setSingleSong] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [pendingGroupId, setPendingGroupId] = useState<number | null>(null);
   const [processingProgress, setProcessingProgress] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -239,15 +240,7 @@ export default function SessionDetail() {
           canAdmin(user) ? (
             <select
               value={session.group_id}
-              onChange={async (e) => {
-                try {
-                  const updated = await api.updateSessionGroup(sessionId, Number(e.target.value));
-                  setSession(updated);
-                  api.listSongs(updated.group_id).then(setSongs);
-                } catch (err) {
-                  showError(`Move failed: ${err instanceof Error ? err.message : err}`);
-                }
-              }}
+              onChange={(e) => setPendingGroupId(Number(e.target.value))}
               className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:border-gray-600 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
             >
               {user!.groups.map((g) => (
@@ -485,6 +478,24 @@ export default function SessionDetail() {
         </div>
         )}
       </FormModal>
+      <Modal
+        open={pendingGroupId !== null}
+        title="Move recording"
+        message={`Move this recording to "${user?.groups.find(g => g.id === pendingGroupId)?.name}"? Tagged tracks will be relinked to matching songs in the new group (or new songs will be created).`}
+        confirmLabel="Move"
+        onConfirm={async () => {
+          const gid = pendingGroupId!;
+          setPendingGroupId(null);
+          try {
+            const updated = await api.updateSessionGroup(sessionId, gid);
+            setSession(updated);
+            api.listSongs(updated.group_id).then(setSongs);
+          } catch (err) {
+            showError(`Move failed: ${err instanceof Error ? err.message : err}`);
+          }
+        }}
+        onCancel={() => setPendingGroupId(null)}
+      />
       <Modal
         open={confirmDelete}
         title="Delete recording"

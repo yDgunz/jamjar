@@ -123,6 +123,7 @@ export default function SongHistory() {
   const [nameInput, setNameInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
+  const [pendingGroupId, setPendingGroupId] = useState<number | null>(null);
 
   const [editingArtist, setEditingArtist] = useState(false);
   const [artistInput, setArtistInput] = useState("");
@@ -277,14 +278,7 @@ export default function SongHistory() {
           canAdmin(user) ? (
             <select
               value={song.group_id}
-              onChange={async (e) => {
-                try {
-                  const updated = await api.updateSongGroup(songId, Number(e.target.value));
-                  setSong(updated);
-                } catch (err) {
-                  setErrorMsg(`Move failed: ${err instanceof Error ? err.message : err}`);
-                }
-              }}
+              onChange={(e) => setPendingGroupId(Number(e.target.value))}
               className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:border-gray-600 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
             >
               {user!.groups.map((g) => (
@@ -493,6 +487,23 @@ export default function SongHistory() {
         confirmLabel="Append"
         onConfirm={doFetchLyrics}
         onCancel={() => setShowFetchConfirm(false)}
+      />
+      <Modal
+        open={pendingGroupId !== null}
+        title="Move song"
+        message={`Move "${song?.name}" to "${user?.groups.find(g => g.id === pendingGroupId)?.name}"? Tracks in existing sessions will stay in their current group.`}
+        confirmLabel="Move"
+        onConfirm={async () => {
+          const gid = pendingGroupId!;
+          setPendingGroupId(null);
+          try {
+            const updated = await api.updateSongGroup(songId, gid);
+            setSong(updated);
+          } catch (err) {
+            setErrorMsg(`Move failed: ${err instanceof Error ? err.message : err}`);
+          }
+        }}
+        onCancel={() => setPendingGroupId(null)}
       />
       <Modal
         open={showDelete}
