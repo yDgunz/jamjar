@@ -332,6 +332,25 @@ export default function SessionList() {
                       })()}
                     </div>
                   )}
+                  {s.track_count > 0 && !s.active_job_id && (
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <div className="h-1 flex-1 overflow-hidden rounded-full bg-gray-800">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            s.tagged_count === s.track_count
+                              ? "bg-green-500"
+                              : s.tagged_count > 0
+                                ? "bg-accent-500"
+                                : "bg-gray-700"
+                          }`}
+                          style={{ width: `${Math.round((s.tagged_count / s.track_count) * 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-gray-600 sm:hidden">
+                        {s.tagged_count}/{s.track_count}
+                      </span>
+                    </div>
+                  )}
                 </ListItemCard>
               ))}
             </div>
