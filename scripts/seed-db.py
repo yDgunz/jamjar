@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Reset the database and populate it with realistic test data.
+# QA workflow test - no functional changes
 
 Usage:
     python scripts/seed-db.py              # uses default DB path from config
