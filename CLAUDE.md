@@ -247,6 +247,28 @@ The app runs in Docker via `docker compose`. CI/CD is via GitHub Actions (`.gith
 
 **SQLite backups:** `scripts/backup-db.sh` uses `sqlite3 .backup` for safe copies. Add a cron job in the container or host to run it periodically.
 
+## QA Deployments
+
+Feature branches can be deployed to `<branch>.jam-jar.app` for testing on any device.
+
+**How it works:**
+1. Create a PR from your feature branch
+2. Add the `deploy-qa` label to the PR
+3. GitHub Actions builds and deploys a QA environment with seeded test data
+4. A comment appears on the PR with the QA URL
+5. Log in with any seeded user (e.g., `test`) using the QA password from `JAM_QA_PASSWORD`
+6. Removing the label or closing/merging the PR tears down the environment
+
+**Constraints:** Max 3 concurrent QA environments. Each gets 512MB RAM, 1 CPU.
+
+**Infrastructure:** Caddy (systemd on VPS) reverse-proxies subdomains to per-branch Docker Compose projects. QA config files live in `/etc/caddy/qa-sites/`. Workspaces live in `/opt/jamjar-qa/<branch>/`.
+
+**Scripts:**
+- `scripts/qa-deploy.sh <branch> <repo-url> <git-ref>` — deploy a QA environment
+- `scripts/qa-teardown.sh <branch>` — tear down a QA environment
+
+**Environment:** QA environments use local-only storage (no R2), no SMTP, and a unique JWT secret. The seeded database uses `JAM_QA_PASSWORD` for all user passwords.
+
 ## Environment Variables
 
 All configuration is via `JAM_*` environment variables. Defaults match pre-config behavior — nothing breaks without a `.env` file.
