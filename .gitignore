@@ -12,6 +12,9 @@ output/
 references/
 tracks/
 recordings/
+*.m4a
+*.wav
+*.mp3
 
 # IDE / OS
 .DS_Store
