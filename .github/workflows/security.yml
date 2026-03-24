@@ -1,0 +1,57 @@
+name: Dependency Security Scan
+
+on:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - "web/package.json"
+      - "web/package-lock.json"
+      - ".github/workflows/security.yml"
+  schedule:
+    - cron: "0 9 * * 1" # Every Monday at 9:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    name: Python dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+          pip install -e .
+
+      - name: Run pip-audit
+        run: pip-audit --desc --fix --dry-run --strict
+
+  npm-audit:
+    name: Node dependency audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
