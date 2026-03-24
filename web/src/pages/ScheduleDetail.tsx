@@ -11,6 +11,7 @@ import {
   canAdmin,
 } from "../api";
 import type { Event, EventMemberResponse } from "../api";
+import Breadcrumb from "../components/Breadcrumb";
 import EditableField from "../components/EditableField";
 import Modal, { Toast } from "../components/Modal";
 import { useAuth } from "../context/AuthContext";
@@ -251,6 +252,10 @@ export default function ScheduleDetail() {
 
   return (
     <div>
+      <Breadcrumb items={[
+        { label: "Schedule", to: "/schedule" },
+        { label: event.name },
+      ]} />
       {errorMsg && (
         <Toast
           message={errorMsg}

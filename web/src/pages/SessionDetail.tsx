@@ -8,6 +8,7 @@ import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
 import Spinner from "../components/Spinner";
+import Breadcrumb from "../components/Breadcrumb";
 import TrackRow from "../components/TrackRow";
 import { useAuth } from "../context/AuthContext";
 
@@ -229,6 +230,10 @@ export default function SessionDetail() {
 
   return (
     <div>
+      <Breadcrumb items={[
+        { label: "Recordings", to: "/sessions" },
+        { label: session.name || `Session ${session.id}` },
+      ]} />
       <div>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
@@ -275,7 +280,7 @@ export default function SessionDetail() {
                 ) : null}
               </h1>
             )}
-            <p className="mt-0.5 text-sm text-gray-400">
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-400">
               {editingDate && canEdit(user) ? (
                 <input
                   type="date"
@@ -300,17 +305,17 @@ export default function SessionDetail() {
               ) : (
                 <span>{formatDate(session.date)}</span>
               )}
-              {" "}&middot; {session.track_count} track{session.track_count !== 1 ? "s" : ""} &middot;{" "}
-              {session.tagged_count} tagged
-            </p>
-            {(session.created_by_name || session.updated_by_name) && (
-              <p className="mt-1.5 text-xs text-gray-500">
-                {session.created_by_name && <>Added by {session.created_by_name}</>}
-                {session.updated_by_name && (
-                  <>{session.created_by_name ? " · " : ""}Last edited by {session.updated_by_name}{session.updated_at ? ` ${formatDateTime(session.updated_at)}` : ""}</>
-                )}
-              </p>
-            )}
+              <span className="text-gray-600">&middot;</span>
+              <span>{session.track_count} track{session.track_count !== 1 ? "s" : ""}</span>
+              <span className="text-gray-600">&middot;</span>
+              <span>{session.tagged_count} tagged</span>
+              {session.created_by_name && (
+                <>
+                  <span className="text-gray-600">&middot;</span>
+                  <span className="text-gray-500">Added by {session.created_by_name}</span>
+                </>
+              )}
+            </div>
           </div>
           {canAdmin(user) && (
             <div className="flex items-center gap-3">

@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "react-router";
 import { api, formatDate, formatDateTime, canEdit, canAdmin } from "../api";
 import type { Song, SongTrack } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
+import Breadcrumb from "../components/Breadcrumb";
 import EditableField from "../components/EditableField";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
@@ -267,6 +268,10 @@ export default function SongHistory() {
 
   return (
     <div>
+      <Breadcrumb items={[
+        { label: "Songs", to: "/songs" },
+        { label: song?.name ?? "Unknown Song" },
+      ]} />
       <div>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
@@ -340,25 +345,25 @@ export default function SongHistory() {
                 + add artist
               </button>
             ) : null}
-            <p className="mt-0.5 text-sm text-gray-400">
-              {takes.length} track{takes.length !== 1 ? "s" : ""}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-400">
+              <span>{takes.length} take{takes.length !== 1 ? "s" : ""}</span>
               {song?.first_date && song?.last_date && (
-                <span>
-                  {" "}&middot;{" "}
-                  {song.first_date === song.last_date
-                    ? formatDate(song.first_date)
-                    : `${formatDate(song.first_date)} — ${formatDate(song.last_date)}`}
-                </span>
+                <>
+                  <span className="text-gray-600">&middot;</span>
+                  <span>
+                    {song.first_date === song.last_date
+                      ? formatDate(song.first_date)
+                      : `${formatDate(song.first_date)} — ${formatDate(song.last_date)}`}
+                  </span>
+                </>
               )}
-            </p>
-            {(song?.created_by_name || song?.updated_by_name) && (
-              <p className="mt-1.5 text-xs text-gray-500">
-                {song?.created_by_name && <>Added by {song.created_by_name}</>}
-                {song?.updated_by_name && (
-                  <>{song?.created_by_name ? " · " : ""}Last edited by {song.updated_by_name}{song?.updated_at ? ` ${formatDateTime(song.updated_at)}` : ""}</>
-                )}
-              </p>
-            )}
+              {song?.created_by_name && (
+                <>
+                  <span className="text-gray-600">&middot;</span>
+                  <span className="text-gray-500">Added by {song.created_by_name}</span>
+                </>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-1">
             {song?.sheet && (

@@ -19,6 +19,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { api, formatDate, formatDateTime, canEdit, canAdmin } from "../api";
 import type { Setlist, SetlistSong, Song } from "../api";
+import Breadcrumb from "../components/Breadcrumb";
 import EditableField from "../components/EditableField";
 import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
@@ -299,6 +300,10 @@ export default function SetlistDetail() {
 
   return (
     <div>
+      <Breadcrumb items={[
+        { label: "Setlists", to: "/setlists" },
+        { label: setlist?.name ?? "Unknown Setlist" },
+      ]} />
       <div>
         <div>
           <div className="flex items-start justify-between gap-4">
@@ -327,7 +332,7 @@ export default function SetlistDetail() {
                   )}
                 </h1>
               )}
-              <p className="mt-0.5 text-sm text-gray-400">
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-400">
                 {editingDate && canEdit(user) ? (
                   <input
                     autoFocus
@@ -361,16 +366,15 @@ export default function SetlistDetail() {
                     + add date
                   </button>
                 ) : null}
-                {" "}&middot; {songs.length} song{songs.length !== 1 ? "s" : ""}
-              </p>
-              {(setlist?.created_by_name || setlist?.updated_by_name) && (
-                <p className="mt-1.5 text-xs text-gray-500">
-                  {setlist?.created_by_name && <>Added by {setlist.created_by_name}</>}
-                  {setlist?.updated_by_name && (
-                    <>{setlist?.created_by_name ? " · " : ""}Last edited by {setlist.updated_by_name}{setlist?.updated_at ? ` ${formatDateTime(setlist.updated_at)}` : ""}</>
-                  )}
-                </p>
-              )}
+                <span className="text-gray-600">&middot;</span>
+                <span>{songs.length} song{songs.length !== 1 ? "s" : ""}</span>
+                {setlist?.created_by_name && (
+                  <>
+                    <span className="text-gray-600">&middot;</span>
+                    <span className="text-gray-500">Added by {setlist.created_by_name}</span>
+                  </>
+                )}
+              </div>
             </div>
             <div className="hidden items-center gap-1 sm:flex">
               {hasSheets && songs.length > 0 && (
