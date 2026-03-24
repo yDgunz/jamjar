@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { api, formatDate, formatDateTime, canEdit, canAdmin } from "../api";
+import { api, formatDate, canEdit, canAdmin } from "../api";
 import type { Setlist, SetlistSong, Song } from "../api";
 import Breadcrumb from "../components/Breadcrumb";
 import EditableField from "../components/EditableField";

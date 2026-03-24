@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router";
-import { api, formatDate, formatDateTime, canEdit, canAdmin } from "../api";
+import { api, formatDate, canEdit, canAdmin } from "../api";
 import type { Session, Track, Song } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
 import type { Segment } from "../components/AudioPlayer";
