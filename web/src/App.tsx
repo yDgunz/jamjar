@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+const typeError: number = "this is not a number";  // intentional type error
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { api, isSuperAdmin, hasFeature, ApiError } from "./api";
