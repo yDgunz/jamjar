@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router";
 import { api, formatDate, formatTime, utcToLocal, localToUtc, canEdit } from "../api";
 import type { Event } from "../api";
+import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
 
 import { useAuth } from "../context/AuthContext";
+import { useFetch } from "../hooks/useFetch";
 
 type TypeFilter = "all" | "rehearsal" | "gig";
 
@@ -118,8 +120,14 @@ function ResponseSummary({
 export default function ScheduleList() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [events, setEvents] = useState<Event[]>([]);
-  const [loading, setLoading] = useState(true);
+  const fetchEvents = useCallback(
+    () => api.listEvents(typeFilter === "all" ? undefined : typeFilter, showPast),
+    [typeFilter, showPast],
+  );
+  const { data: events, loading, error: fetchError, refresh: refreshEvents } = useFetch(
+    fetchEvents,
+    [typeFilter, showPast],
+  );
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [showPast, setShowPast] = useState(false);
   const [groupFilter, setGroupFilter] = useState<number | null>(() => {
@@ -139,23 +147,12 @@ export default function ScheduleList() {
   const [newGroupId, setNewGroupId] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const fetchEvents = () => {
-    const typeParam = typeFilter === "all" ? undefined : typeFilter;
-    api.listEvents(typeParam, showPast).then((data) => {
-      setEvents(data);
-      setLoading(false);
-    });
-  };
-
-  useEffect(() => {
-    setLoading(true);
-    fetchEvents();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeFilter, showPast]);
+  // events are fetched by useFetch above
 
   const filtered = useMemo(() => {
-    if (groupFilter === null) return events;
-    return events.filter((e) => e.group_id === groupFilter);
+    const all = events ?? [];
+    if (groupFilter === null) return all;
+    return all.filter((e) => e.group_id === groupFilter);
   }, [events, groupFilter]);
 
   // Group events by month
@@ -214,13 +211,13 @@ export default function ScheduleList() {
   };
 
   const handleRsvp = async (eventId: number, status: string) => {
-    const event = events.find((e) => e.id === eventId);
+    const event = (events ?? []).find((e) => e.id === eventId);
     if (event?.my_response?.status === status) {
       await api.clearEventResponse(eventId);
     } else {
       await api.respondToEvent(eventId, status);
     }
-    fetchEvents();
+    refreshEvents();
   };
 
   const formatMonth = (ym: string) => {
@@ -233,6 +230,7 @@ export default function ScheduleList() {
   };
 
   if (loading) return <ListSkeleton cards={4} />;
+  if (fetchError) return <FetchError error={fetchError} onRetry={refreshEvents} />;
 
   return (
     <div>

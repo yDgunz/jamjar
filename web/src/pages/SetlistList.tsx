@@ -2,19 +2,23 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { api, formatDate, canEdit } from "../api";
 import type { Setlist } from "../api";
+import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
 import ListItemCard from "../components/ListItemCard";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
+import { useFetch } from "../hooks/useFetch";
 
 type SortKey = "name" | "date";
 
 export default function SetlistList() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [setlists, setSetlists] = useState<Setlist[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: setlists, loading, error: fetchError, refresh: refreshSetlists } = useFetch(
+    () => api.listSetlists(),
+    [],
+  );
   const [sortBy, setSortBy] = useState<SortKey>(() => {
     const stored = localStorage.getItem("setlist-sort");
     if (stored === "name" || stored === "date") return stored;
@@ -37,17 +41,13 @@ export default function SetlistList() {
     else localStorage.removeItem("group-filter");
   }, [groupFilter]);
 
-  useEffect(() => {
-    api.listSetlists().then((data) => {
-      setSetlists(data);
-      setLoading(false);
-    });
-  }, []);
+  // setlists are fetched by useFetch above
 
   const sorted = useMemo(() => {
+    const all = setlists ?? [];
     const filtered = groupFilter !== null
-      ? setlists.filter((s) => s.group_id === groupFilter)
-      : setlists;
+      ? all.filter((s) => s.group_id === groupFilter)
+      : all;
     const copy = [...filtered];
     switch (sortBy) {
       case "name":
@@ -88,6 +88,7 @@ export default function SetlistList() {
       rightSide="one-line"
     />
   );
+  if (fetchError) return <FetchError error={fetchError} onRetry={refreshSetlists} />;
 
   const sortOptions: { key: SortKey; label: string }[] = [
     { key: "date", label: "Date" },

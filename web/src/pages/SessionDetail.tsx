@@ -4,6 +4,7 @@ import { api, formatDate, canEdit, canAdmin } from "../api";
 import type { Session, Track, Song } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
 import type { Segment } from "../components/AudioPlayer";
+import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
@@ -77,6 +78,7 @@ export default function SessionDetail() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [editingDate, setEditingDate] = useState(false);
@@ -98,7 +100,9 @@ export default function SessionDetail() {
   const sessionId = Number(id);
   const showError = useCallback((msg: string) => setErrorMsg(msg), []);
 
-  useEffect(() => {
+  const loadSession = useCallback(() => {
+    setLoading(true);
+    setFetchError(null);
     Promise.all([
       api.getSession(sessionId),
       api.getSessionTracks(sessionId),
@@ -110,8 +114,13 @@ export default function SessionDetail() {
       setNotesInput(s?.notes ?? "");
       setLoading(false);
       api.listSongs(s?.group_id).then(setSongs);
+    }).catch((err) => {
+      setFetchError(err instanceof Error ? err.message : String(err));
+      setLoading(false);
     });
   }, [sessionId]);
+
+  useEffect(() => { loadSession(); }, [loadSession]);
 
   // Poll a background job until tracks are ready.
   // Triggered by ?job= URL param (after upload) or session.active_job_id (navigating back).
@@ -227,6 +236,7 @@ export default function SessionDetail() {
   };
 
   if (loading) return <DetailSkeleton showDivider />;
+  if (fetchError) return <FetchError error={fetchError} onRetry={loadSession} />;
   if (!session) return <p className="text-red-400">Recording not found.</p>;
 
   return (

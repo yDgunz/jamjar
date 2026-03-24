@@ -1,7 +1,9 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useParams, Link } from "react-router";
 import { api } from "../api";
 import type { Setlist, SetlistSong } from "../api";
+import FetchError from "../components/FetchError";
+import { useFetch } from "../hooks/useFetch";
 import { transposeChartText } from "../utils/chordUtils";
 import { isChordPro, transposeChordPro } from "../utils/chordpro";
 import ChordSheet from "../components/ChordSheet";
@@ -11,21 +13,14 @@ import { usePerformMode } from "../hooks/usePerformMode";
 export default function SetlistPerformMode() {
   const { id } = useParams<{ id: string }>();
   const setlistId = Number(id);
-  const [setlist, setSetlist] = useState<Setlist | null>(null);
-  const [songs, setSongs] = useState<SetlistSong[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: fetchedData, loading, error: fetchError, refresh } = useFetch(
+    () => Promise.all([api.getSetlist(setlistId), api.getSetlistSongs(setlistId)]),
+    [setlistId],
+  );
+  const setlist = fetchedData?.[0] ?? null;
+  const songs = fetchedData?.[1] ?? [];
   const [currentIdx, setCurrentIdx] = useState(0);
   const perform = usePerformMode();
-
-  useEffect(() => {
-    Promise.all([api.getSetlist(setlistId), api.getSetlistSongs(setlistId)]).then(
-      ([sl, slSongs]) => {
-        setSetlist(sl);
-        setSongs(slSongs);
-        setLoading(false);
-      },
-    );
-  }, [setlistId]);
 
   // Navigate to song — reset scroll and transpose
   const goToSong = useCallback((idx: number) => {
@@ -46,6 +41,7 @@ export default function SetlistPerformMode() {
       </div>
     </div>
   );
+  if (fetchError) return <div className="min-h-screen bg-gray-950 p-4"><FetchError error={fetchError} onRetry={refresh} /></div>;
   if (!setlist || songs.length === 0) return (
     <div className="min-h-screen bg-gray-950 p-4 text-gray-400">
       No songs in this setlist.{" "}

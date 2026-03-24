@@ -2,19 +2,23 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, formatDate, canEdit } from "../api";
 import type { Song } from "../api";
+import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
 import ListItemCard from "../components/ListItemCard";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
+import { useFetch } from "../hooks/useFetch";
 
 type SortKey = "name" | "artist" | "last_played" | "takes";
 
 export default function SongCatalog() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [songs, setSongs] = useState<Song[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: songs, loading, error: fetchError, refresh: refreshSongs } = useFetch(
+    () => api.listSongs(),
+    [],
+  );
   const [sortBy, setSortBy] = useState<SortKey>(() => {
     const stored = localStorage.getItem("song-catalog-sort");
     if (stored === "name" || stored === "artist" || stored === "last_played" || stored === "takes") return stored;
@@ -37,17 +41,13 @@ export default function SongCatalog() {
     else localStorage.removeItem("group-filter");
   }, [groupFilter]);
 
-  useEffect(() => {
-    api.listSongs().then((data) => {
-      setSongs(data);
-      setLoading(false);
-    });
-  }, []);
+  // songs are fetched by useFetch above
 
   const sorted = useMemo(() => {
+    const all = songs ?? [];
     const filtered = groupFilter !== null
-      ? songs.filter((s) => s.group_id === groupFilter)
-      : songs;
+      ? all.filter((s) => s.group_id === groupFilter)
+      : all;
     const copy = [...filtered];
     switch (sortBy) {
       case "name":
@@ -91,6 +91,7 @@ export default function SongCatalog() {
       rightSide="one-line"
     />
   );
+  if (fetchError) return <FetchError error={fetchError} onRetry={refreshSongs} />;
 
   const sortOptions: { key: SortKey; label: string }[] = [
     { key: "name", label: "Name" },
