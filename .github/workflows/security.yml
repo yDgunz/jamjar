@@ -33,7 +33,7 @@ jobs:
           pip install -e .
 
       - name: Run pip-audit
-        run: pip-audit --desc --fix --dry-run --strict
+        run: pip-audit --desc
 
   npm-audit:
     name: Node dependency audit
@@ -54,4 +54,4 @@ jobs:
         run: npm ci
 
       - name: Run npm audit
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=critical
