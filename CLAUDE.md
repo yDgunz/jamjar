@@ -214,7 +214,7 @@ cd web && npm run dev
 
 - **Always run `pytest` after every code change** to catch regressions early
 - **Always run `ruff check src/ tests/`** before committing to catch lint errors
-- **Always run `cd web && npx tsc --noEmit`** before pushing to catch TypeScript errors across the entire frontend, not just in files you changed
+- **Always run `cd web && npm run build`** before pushing to catch TypeScript and build errors across the entire frontend, not just in files you changed. This runs `tsc -b` (build mode, which enforces project references and stricter checks like `verbatimModuleSyntax`) followed by `vite build`.
 - Test fixtures generate synthetic audio (sine tones + silence) so tests run fast with no real audio files needed
 - Commit each phase/feature independently
 - **Keep docs up to date** — when changing behavior (new/modified endpoints, CLI commands, env vars, schema changes, defaults), update `CLAUDE.md` and `docs/pipeline.md` in the same commit
@@ -226,7 +226,7 @@ When making UI/CSS changes, follow this workflow for **each** change:
 1. Read the current component code
 2. Make the CSS/JSX change (prefer minimal CSS changes over restructuring HTML)
 3. Run `npx playwright screenshot http://localhost:5173/[path] /tmp/screenshot.png --color-scheme dark` to capture the result (note: authenticated pages will show the login screen unless `--load-storage` is used with a saved auth state)
-4. Verify the build compiles with no errors (`cd web && npx tsc --noEmit`)
+4. Verify the build compiles with no errors (`cd web && npm run build`)
 5. If positioning/layout change, check computed styles for mobile (375px) and desktop (1280px) viewports
 
 Rules:

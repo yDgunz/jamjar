@@ -1,7 +1,6 @@
 import { useState, useCallback } from "react";
 import { useParams, Link } from "react-router";
 import { api } from "../api";
-import type { Setlist, SetlistSong } from "../api";
 import FetchError from "../components/FetchError";
 import { useFetch } from "../hooks/useFetch";
 import { transposeChartText } from "../utils/chordUtils";

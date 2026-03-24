@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { api, formatDate, canEdit } from "../api";
-import type { Setlist } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
@@ -164,7 +163,7 @@ export default function SetlistList() {
         )}
       </FormModal>
 
-      {setlists.length === 0 && !creating ? (
+      {(setlists ?? []).length === 0 && !creating ? (
         <p className="text-gray-400">
           No setlists yet. Create one to start organizing songs for gigs.
         </p>

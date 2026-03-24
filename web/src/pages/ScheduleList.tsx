@@ -120,6 +120,8 @@ function ResponseSummary({
 export default function ScheduleList() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [showPast, setShowPast] = useState(false);
   const fetchEvents = useCallback(
     () => api.listEvents(typeFilter === "all" ? undefined : typeFilter, showPast),
     [typeFilter, showPast],
@@ -128,8 +130,6 @@ export default function ScheduleList() {
     fetchEvents,
     [typeFilter, showPast],
   );
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [showPast, setShowPast] = useState(false);
   const [groupFilter, setGroupFilter] = useState<number | null>(() => {
     const stored = localStorage.getItem("group-filter");
     if (stored) {

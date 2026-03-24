@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, formatDate, canEdit } from "../api";
-import type { Song } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
@@ -169,7 +168,7 @@ export default function SongCatalog() {
         )}
       </FormModal>
 
-      {songs.length === 0 && !creating ? (
+      {(songs ?? []).length === 0 && !creating ? (
         <p className="text-gray-400">
           No songs yet. Create one or tag tracks from a{" "}
           <Link to="/" className="text-accent-400 hover:text-accent-300">recording</Link>.
