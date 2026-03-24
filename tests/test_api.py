@@ -1893,3 +1893,153 @@ def test_access_request_smtp_not_configured(client):
         "message": "Hi",
     })
     assert resp.status_code == 200
+
+
+# --- Server health endpoint tests ---
+
+
+def test_server_health_requires_superadmin(client, tmp_path):
+    """Non-superadmin roles cannot access server health."""
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "admin@test.com", role="admin", group_id=gid)
+
+    resp = client.get("/api/admin/server-health")
+    assert resp.status_code == 403
+
+
+def test_server_health_unauthenticated(client):
+    """Unauthenticated requests get 401."""
+    resp = client.get("/api/admin/server-health")
+    assert resp.status_code == 401
+
+
+def test_server_health_returns_all_sections(client, tmp_path):
+    """Superadmin gets a full health response with all expected sections."""
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "super@test.com", role="superadmin", group_id=gid)
+
+    resp = client.get("/api/admin/server-health")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # Verify all top-level sections exist
+    assert "system" in data
+    assert "app" in data
+    assert "memory" in data
+    assert "disk" in data
+    assert "uptime" in data
+    assert "database" in data
+    assert "storage" in data
+
+
+def test_server_health_system_fields(client, tmp_path):
+    """System section has expected fields."""
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "super@test.com", role="superadmin", group_id=gid)
+
+    data = client.get("/api/admin/server-health").json()
+    system = data["system"]
+    assert isinstance(system["hostname"], str)
+    assert len(system["hostname"]) > 0
+    assert isinstance(system["platform"], str)
+    assert isinstance(system["python_version"], str)
+    assert isinstance(system["time"], str)
+
+
+def test_server_health_app_uptime(client, tmp_path):
+    """App uptime is a non-negative integer."""
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "super@test.com", role="superadmin", group_id=gid)
+
+    data = client.get("/api/admin/server-health").json()
+    assert data["app"]["uptime_seconds"] >= 0
+    assert isinstance(data["app"]["port"], int)
+    assert isinstance(data["app"]["data_dir"], str)
+
+
+def test_server_health_memory_fields(client, tmp_path):
+    """Memory section has numeric fields."""
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "super@test.com", role="superadmin", group_id=gid)
+
+    data = client.get("/api/admin/server-health").json()
+    mem = data["memory"]
+    assert isinstance(mem["total_mb"], int)
+    assert isinstance(mem["used_mb"], int)
+    assert isinstance(mem["percent"], int)
+    assert 0 <= mem["percent"] <= 100
+
+
+def test_server_health_disk_fields(client, tmp_path):
+    """Disk section is a list of disk entries with expected fields."""
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "super@test.com", role="superadmin", group_id=gid)
+
+    data = client.get("/api/admin/server-health").json()
+    disk = data["disk"]
+    assert isinstance(disk, list)
+    assert len(disk) >= 1
+    for entry in disk:
+        assert "mount" in entry
+        assert "total_gb" in entry
+        assert "used_gb" in entry
+        assert "percent" in entry
+        assert 0 <= entry["percent"] <= 100
+
+
+def test_server_health_database_counts(client, tmp_path):
+    """Database section includes counts for known tables."""
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "super@test.com", role="superadmin", group_id=gid)
+
+    # Create some data to verify counts reflect reality
+    db.create_session("test.m4a", gid, date="2026-01-01")
+
+    data = client.get("/api/admin/server-health").json()
+    db_info = data["database"]
+    assert isinstance(db_info["size_mb"], (int, float))
+    counts = db_info["counts"]
+    assert counts["groups"] >= 1  # We created one
+    assert counts["users"] >= 1   # We logged in as one
+    assert counts["sessions"] >= 1  # We created one
+    assert "tracks" in counts
+    assert "songs" in counts
+    assert "setlists" in counts
+    assert "events" in counts
+
+
+def test_server_health_storage_backend(client, tmp_path):
+    """Storage backend reports 'local' when R2 is not configured."""
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "super@test.com", role="superadmin", group_id=gid)
+
+    data = client.get("/api/admin/server-health").json()
+    assert data["storage"]["backend"] == "local"
+
+
+def test_server_health_editor_forbidden(client, tmp_path):
+    """Editor role cannot access server health."""
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "editor@test.com", role="editor", group_id=gid)
+
+    resp = client.get("/api/admin/server-health")
+    assert resp.status_code == 403
+
+
+def test_server_health_readonly_forbidden(client, tmp_path):
+    """Readonly role cannot access server health."""
+    db = api._db
+    gid = db.create_group("Band")
+    _login_as(client, db, "reader@test.com", role="readonly", group_id=gid)
+
+    resp = client.get("/api/admin/server-health")
+    assert resp.status_code == 403

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, isSuperAdmin } from "../api";
-import type { AdminUser, AdminGroup, Role, UsageStats } from "../api";
+import type { AdminUser, AdminGroup, Role, UsageStats, ServerHealth } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
@@ -8,7 +8,7 @@ import { AdminSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
 
 const ROLES: Role[] = ["readonly", "editor", "admin", "superadmin"];
-type Tab = "users" | "groups" | "usage";
+type Tab = "users" | "groups" | "usage" | "health";
 
 const EVENT_LABELS: Record<string, string> = {
   login: "Logins",
@@ -65,6 +65,38 @@ function eventAction(type: string): string {
   return actions[type] ?? type;
 }
 
+function formatDuration(totalSeconds: number): string {
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h ${mins}m`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
+function HealthBar({ percent }: { percent: number }) {
+  const color = percent > 90 ? "bg-red-500" : percent > 75 ? "bg-yellow-500" : "bg-green-500";
+  return (
+    <div className="h-2 w-full rounded-full bg-gray-800">
+      <div className={`h-2 rounded-full ${color}`} style={{ width: `${Math.min(percent, 100)}%` }} />
+    </div>
+  );
+}
+
+function HealthBadge({ percent }: { percent: number }) {
+  const color = percent > 90 ? "text-red-400" : percent > 75 ? "text-yellow-400" : "text-green-400";
+  return <span className={`text-sm font-medium ${color}`}>{percent}%</span>;
+}
+
+function HealthItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <span className="text-xs text-gray-500">{label}</span>
+      <span className="text-sm text-gray-200">{value}</span>
+    </div>
+  );
+}
+
 export default function Admin() {
   const { user: currentUser } = useAuth();
 
@@ -87,6 +119,11 @@ export default function Admin() {
   // Usage stats
   const [stats, setStats] = useState<UsageStats | null>(null);
   const [statsError, setStatsError] = useState("");
+
+  // Server health
+  const [health, setHealth] = useState<ServerHealth | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthError, setHealthError] = useState("");
 
   // Add user modal
   const [addUserOpen, setAddUserOpen] = useState(false);
@@ -128,6 +165,15 @@ export default function Admin() {
     api.adminGetUsageStats().then(setStats).catch((e) => setStatsError(e.message));
   };
 
+  const loadHealth = () => {
+    setHealthLoading(true);
+    setHealthError("");
+    api.adminGetServerHealth()
+      .then(setHealth)
+      .catch((e) => setHealthError(e.message))
+      .finally(() => setHealthLoading(false));
+  };
+
   const loadAll = () => {
     setLoading(true);
     setFetchError(null);
@@ -141,6 +187,11 @@ export default function Admin() {
   };
 
   useEffect(() => { loadAll(); }, []);
+
+  // Load health data when tab is selected
+  useEffect(() => {
+    if (tab === "health" && !health && !healthLoading) loadHealth();
+  }, [tab]);
 
   // --- Add user ---
   const openAddUser = () => {
@@ -279,6 +330,7 @@ export default function Admin() {
     { key: "users", label: "Users" },
     { key: "groups", label: "Groups" },
     { key: "usage", label: "Usage" },
+    { key: "health", label: "Server Health" },
   ];
 
   return (
@@ -512,6 +564,96 @@ export default function Admin() {
                     ))}
                   </div>
                 )}
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {/* === Server Health Tab === */}
+      {tab === "health" && (
+        <section className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-300">Server Health</h2>
+            <button
+              onClick={loadHealth}
+              disabled={healthLoading}
+              className="rounded bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:bg-gray-700 disabled:opacity-50"
+            >
+              {healthLoading ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+          {healthError && <p className="text-sm text-red-400">{healthError}</p>}
+          {healthLoading && !health && <p className="text-sm text-gray-500">Loading...</p>}
+          {health && (
+            <>
+              {/* System Info */}
+              <div className="rounded-lg border border-gray-800 p-4">
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">System</h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <HealthItem label="Hostname" value={health.system.hostname} />
+                  <HealthItem label="Platform" value={health.system.platform} />
+                  <HealthItem label="Python" value={health.system.python_version} />
+                  <HealthItem label="Server Time" value={health.system.time} />
+                  <HealthItem label="System Uptime" value={formatDuration(health.uptime.seconds)} />
+                  <HealthItem label="App Uptime" value={formatDuration(health.app.uptime_seconds)} />
+                </div>
+              </div>
+
+              {/* Memory */}
+              <div className="rounded-lg border border-gray-800 p-4">
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Memory</h3>
+                <div className="mb-2 flex items-baseline gap-2">
+                  <span className="text-lg font-semibold text-white">{health.memory.used_mb} MB</span>
+                  <span className="text-sm text-gray-400">/ {health.memory.total_mb} MB</span>
+                  <HealthBadge percent={health.memory.percent} />
+                </div>
+                <HealthBar percent={health.memory.percent} />
+              </div>
+
+              {/* Disk */}
+              {health.disk.length > 0 && (
+                <div className="rounded-lg border border-gray-800 p-4">
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Disk</h3>
+                  <div className="space-y-3">
+                    {health.disk.map((d) => (
+                      <div key={d.mount}>
+                        <div className="mb-1 flex items-baseline gap-2">
+                          <span className="text-sm font-medium text-white">{d.mount}</span>
+                          <span className="text-sm text-gray-400">{d.used_gb} GB / {d.total_gb} GB</span>
+                          <HealthBadge percent={d.percent} />
+                        </div>
+                        <HealthBar percent={d.percent} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Database */}
+              <div className="rounded-lg border border-gray-800 p-4">
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Database</h3>
+                <div className="mb-3">
+                  <HealthItem label="Size" value={`${health.database.size_mb} MB`} />
+                  <HealthItem label="Storage" value={health.storage.backend === "r2" ? "Cloudflare R2" : "Local filesystem"} />
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {Object.entries(health.database.counts).map(([table, count]) => (
+                    <div key={table} className="rounded bg-gray-900 px-3 py-2 text-center">
+                      <div className="text-lg font-semibold text-white">{count}</div>
+                      <div className="text-xs text-gray-500">{table}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* App Config */}
+              <div className="rounded-lg border border-gray-800 p-4">
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">App Config</h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <HealthItem label="Port" value={String(health.app.port)} />
+                  <HealthItem label="Data Dir" value={health.app.data_dir} />
+                </div>
               </div>
             </>
           )}

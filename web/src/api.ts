@@ -280,6 +280,55 @@ export interface UsageStats {
   totals: { sessions: number; songs: number; setlists: number };
 }
 
+export interface ServerHealthSystem {
+  hostname: string;
+  platform: string;
+  python_version: string;
+  time: string;
+}
+
+export interface ServerHealthApp {
+  uptime_seconds: number;
+  port: number;
+  data_dir: string;
+}
+
+export interface ServerHealthMemory {
+  total_mb: number;
+  used_mb: number;
+  percent: number;
+}
+
+export interface ServerHealthDisk {
+  mount: string;
+  total_gb: number;
+  used_gb: number;
+  percent: number;
+}
+
+export interface ServerHealthUptime {
+  seconds: number;
+}
+
+export interface ServerHealthDB {
+  size_mb: number;
+  counts: Record<string, number>;
+}
+
+export interface ServerHealthStorage {
+  backend: string;
+}
+
+export interface ServerHealth {
+  system: ServerHealthSystem;
+  app: ServerHealthApp;
+  memory: ServerHealthMemory;
+  disk: ServerHealthDisk[];
+  uptime: ServerHealthUptime;
+  database: ServerHealthDB;
+  storage: ServerHealthStorage;
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -830,6 +879,8 @@ export const api = {
     ),
 
   adminGetUsageStats: () => fetchJson<UsageStats>(`${BASE}/admin/stats`),
+
+  adminGetServerHealth: () => fetchJson<ServerHealth>(`${BASE}/admin/server-health`),
 
   // Invite (public)
   validateInvite: (token: string) =>
