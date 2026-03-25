@@ -73,6 +73,12 @@ export default function Tuner() {
               >
                 Metronome
               </Link>
+              <Link
+                to="/practice"
+                className="rounded-md px-4 py-1.5 text-gray-400 transition hover:text-gray-200"
+              >
+                Practice
+              </Link>
             </div>
           </div>
           <div className="w-10 shrink-0" />

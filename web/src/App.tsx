@@ -15,6 +15,7 @@ import SetlistDetail from "./pages/SetlistDetail";
 import SetlistPerformMode from "./pages/SetlistPerformMode";
 import Tuner from "./pages/Tuner";
 import Metronome from "./pages/Metronome";
+import Practice from "./pages/Practice";
 import Admin from "./pages/Admin";
 import ScheduleList from "./pages/ScheduleList";
 import ScheduleDetail from "./pages/ScheduleDetail";
@@ -222,7 +223,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             <div className="relative" ref={desktopToolsRef}>
               <button
                 onClick={() => { setToolsOpen(!toolsOpen); setMenuOpen(false); }}
-                className={`py-2 px-3 ${location.pathname === "/tuner" || location.pathname === "/metronome" ? "text-accent-400" : "text-gray-400 hover:text-gray-200"}`}
+                className={`py-2 px-3 ${["/tuner", "/metronome", "/practice"].includes(location.pathname) ? "text-accent-400" : "text-gray-400 hover:text-gray-200"}`}
               >
                 Tools
               </button>
@@ -243,6 +244,14 @@ function Layout({ children }: { children: React.ReactNode }) {
                     }
                   >
                     Metronome
+                  </NavLink>
+                  <NavLink
+                    to="/practice"
+                    className={({ isActive }) =>
+                      `block px-3 py-2 text-sm ${isActive ? "text-accent-400" : "text-gray-300 hover:bg-gray-700"}`
+                    }
+                  >
+                    Practice
                   </NavLink>
                 </div>
               )}
@@ -336,7 +345,7 @@ function Layout({ children }: { children: React.ReactNode }) {
           <div className="relative flex flex-1 flex-col items-center" ref={mobileToolsRef}>
             <button
               onClick={() => { setToolsOpen(!toolsOpen); setMenuOpen(false); }}
-              className={`flex flex-col items-center gap-0.5 py-2 ${location.pathname === "/tuner" || location.pathname === "/metronome" ? "text-accent-400" : "text-gray-500"}`}
+              className={`flex flex-col items-center gap-0.5 py-2 ${["/tuner", "/metronome", "/practice"].includes(location.pathname) ? "text-accent-400" : "text-gray-500"}`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
                 <path d="M15.5 2A1.5 1.5 0 0014 3.5v13a1.5 1.5 0 003 0v-13A1.5 1.5 0 0015.5 2zM10 6a1.5 1.5 0 00-1.5 1.5v5a1.5 1.5 0 003 0v-5A1.5 1.5 0 0010 6zM4.5 9A1.5 1.5 0 003 10.5v2a1.5 1.5 0 003 0v-2A1.5 1.5 0 004.5 9z" />
@@ -360,6 +369,14 @@ function Layout({ children }: { children: React.ReactNode }) {
                   }
                 >
                   Metronome
+                </NavLink>
+                <NavLink
+                  to="/practice"
+                  className={({ isActive }) =>
+                    `block px-3 py-2 text-sm ${isActive ? "text-accent-400" : "text-gray-300 hover:bg-gray-700"}`
+                  }
+                >
+                  Practice
                 </NavLink>
               </div>
             )}
@@ -424,6 +441,7 @@ function AuthenticatedApp() {
         <Route path="/setlists/:id/perform" element={<SetlistPerformMode />} />
         <Route path="/tuner" element={<Tuner />} />
         <Route path="/metronome" element={<Metronome />} />
+        <Route path="/practice" element={<Practice />} />
 
         {/* Normal layout routes */}
         <Route path="*" element={
