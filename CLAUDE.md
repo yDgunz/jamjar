@@ -355,4 +355,3 @@ Path values stored in the DB are relative to `JAM_DATA_DIR`. The `config.resolve
 
 - [`docs/pipeline.md`](docs/pipeline.md) — processing pipeline data flow
 - [`docs/operations.md`](docs/operations.md) — server reset and bulk upload procedures
-- [`docs/roadmap.md`](docs/roadmap.md) — current, next, and future work items
