@@ -9,7 +9,7 @@ jobs:
     name: Python Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v6
         with:
@@ -23,7 +23,7 @@ jobs:
     name: Python Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
@@ -40,7 +40,7 @@ jobs:
     name: Frontend Type Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
@@ -58,7 +58,7 @@ jobs:
     name: Frontend Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
@@ -76,6 +76,6 @@ jobs:
     name: Docker Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - run: docker build .
