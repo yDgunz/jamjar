@@ -282,23 +282,7 @@ export default function SongHistory() {
       <Breadcrumb
         items={[
           { label: "Songs", to: "/songs" },
-          { label: song?.name ?? "Unknown Song" },
         ]}
-        right={song?.group_name && user && user.groups.length > 1 ? (
-          canAdmin(user) ? (
-            <select
-              value={song.group_id}
-              onChange={(e) => setPendingGroupId(Number(e.target.value))}
-              className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:border-gray-600 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
-            >
-              {user!.groups.map((g) => (
-                <option key={g.id} value={g.id}>{g.name}</option>
-              ))}
-            </select>
-          ) : (
-            <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{song.group_name}</span>
-          )
-        ) : undefined}
       />
       <div>
         <div className="flex items-start justify-between gap-4">
@@ -356,6 +340,21 @@ export default function SongHistory() {
               <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-300">{takes.length} take{takes.length !== 1 ? "s" : ""}</span>
               {song?.created_by_name && (
                 <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">by {song.created_by_name}</span>
+              )}
+              {song?.group_name && user && user.groups.length > 1 && (
+                canAdmin(user) ? (
+                  <select
+                    value={song.group_id}
+                    onChange={(e) => setPendingGroupId(Number(e.target.value))}
+                    className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500 border-none focus:outline-none focus:ring-1 focus:ring-accent-500"
+                  >
+                    {user!.groups.map((g) => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">{song.group_name}</span>
+                )
               )}
             </div>
           </div>

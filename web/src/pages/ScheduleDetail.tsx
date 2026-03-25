@@ -260,11 +260,7 @@ export default function ScheduleDetail() {
       <Breadcrumb
         items={[
           { label: "Schedule", to: "/schedule" },
-          { label: event.name },
         ]}
-        right={event.group_name && user && user.groups.length > 1 ? (
-          <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{event.group_name}</span>
-        ) : undefined}
       />
       {errorMsg && (
         <Toast
@@ -302,6 +298,9 @@ export default function ScheduleDetail() {
           >
             {capitalize(event.status)}
           </span>
+        )}
+        {event.group_name && user && user.groups.length > 1 && (
+          <span className="rounded-full bg-gray-800/50 px-2.5 py-0.5 text-xs text-gray-500">{event.group_name}</span>
         )}
       </div>
 

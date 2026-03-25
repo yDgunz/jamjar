@@ -244,23 +244,7 @@ export default function SessionDetail() {
       <Breadcrumb
         items={[
           { label: "Recordings", to: "/sessions" },
-          { label: session.name || `Session ${session.id}` },
         ]}
-        right={session.group_name && user && user.groups.length > 1 ? (
-          canAdmin(user) ? (
-            <select
-              value={session.group_id}
-              onChange={(e) => setPendingGroupId(Number(e.target.value))}
-              className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:border-gray-600 hover:text-gray-300 focus:border-accent-500 focus:outline-none"
-            >
-              {user!.groups.map((g) => (
-                <option key={g.id} value={g.id}>{g.name}</option>
-              ))}
-            </select>
-          ) : (
-            <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{session.group_name}</span>
-          )
-        ) : undefined}
       />
       <div>
         <div className="flex items-start justify-between gap-4">
@@ -313,6 +297,21 @@ export default function SessionDetail() {
               )}
               {session.created_by_name && (
                 <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">by {session.created_by_name}</span>
+              )}
+              {session.group_name && user && user.groups.length > 1 && (
+                canAdmin(user) ? (
+                  <select
+                    value={session.group_id}
+                    onChange={(e) => setPendingGroupId(Number(e.target.value))}
+                    className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500 border-none focus:outline-none focus:ring-1 focus:ring-accent-500"
+                  >
+                    {user!.groups.map((g) => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">{session.group_name}</span>
+                )
               )}
             </div>
           </div>

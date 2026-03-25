@@ -313,11 +313,7 @@ export default function SetlistDetail() {
       <Breadcrumb
         items={[
           { label: "Setlists", to: "/setlists" },
-          { label: setlist?.name ?? "Unknown Setlist" },
         ]}
-        right={setlist?.group_name && user && user.groups.length > 1 ? (
-          <span className="inline-block rounded-full border border-gray-700 bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-400">{setlist.group_name}</span>
-        ) : undefined}
       />
       <div>
         <div>
@@ -380,6 +376,9 @@ export default function SetlistDetail() {
                 ) : null}
                 {setlist?.created_by_name && (
                   <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">by {setlist.created_by_name}</span>
+                )}
+                {setlist?.group_name && user && user.groups.length > 1 && (
+                  <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">{setlist.group_name}</span>
                 )}
               </div>
             </div>
