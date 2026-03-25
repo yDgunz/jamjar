@@ -37,3 +37,6 @@ web/dist/
 # Test / cache
 .pytest_cache/
 .ruff_cache/
+
+# Plugins
+.superpowers/
