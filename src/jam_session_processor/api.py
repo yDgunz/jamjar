@@ -769,6 +769,8 @@ def _process_reprocess(
     db = get_db()
     cfg = get_config()
     storage = get_storage()
+    exported = []
+    source = None
 
     try:
         session = db.get_session(session_id)
@@ -830,15 +832,16 @@ def _process_reprocess(
                 if storage.is_remote:
                     storage.put(rel_path, audio_path.resolve())
 
-            if storage.is_remote:
-                for audio_path in exported:
-                    audio_path.resolve().unlink(missing_ok=True)
-                source.unlink(missing_ok=True)
-
         db.complete_job(job_id, session_id)
     except Exception as e:
         logger.exception("Reprocess failed")
         db.fail_job(job_id, str(e))
+    finally:
+        if storage.is_remote:
+            for audio_path in exported:
+                audio_path.resolve().unlink(missing_ok=True)
+            if source:
+                source.unlink(missing_ok=True)
 
 
 @app.post(
@@ -926,6 +929,7 @@ def _process_upload(
     db = get_db()
     cfg = get_config()
     storage = get_storage()
+    exported = []
 
     try:
         # If file was uploaded directly to R2, download it locally first
@@ -1004,16 +1008,16 @@ def _process_upload(
                 )
                 if storage.is_remote:
                     storage.put(rel_path, audio_path.resolve())
-            if storage.is_remote:
-                # Clean up local files after successful R2 upload
-                for audio_path in exported:
-                    audio_path.resolve().unlink(missing_ok=True)
-                source.unlink(missing_ok=True)
 
         db.complete_job(job_id, session_id)
     except Exception as e:
         logger.exception("Background upload processing failed")
         db.fail_job(job_id, str(e))
+    finally:
+        if storage.is_remote:
+            for audio_path in exported:
+                audio_path.resolve().unlink(missing_ok=True)
+            source.unlink(missing_ok=True)
 
 
 def _resolve_upload_group(request: Request, group_id_param: int | None) -> int:

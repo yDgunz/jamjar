@@ -95,6 +95,26 @@ jam-session upload "path/to/recording.m4a" -s https://jam-jar.app -g <group-name
 - The server processes each file in the background (song detection + track export). On a VPS this can take a few minutes per file.
 - Duplicate filenames within the same group are rejected (409 error).
 
+## Cleaning up stale local recordings
+
+When R2 storage is enabled, source recordings are uploaded to R2 during processing and the local copies should be deleted automatically. If local copies accumulate (e.g., from a bug or interrupted processing), you can reclaim disk space with the cleanup script.
+
+### Check disk usage
+
+```bash
+docker compose exec app du -h --max-depth=1 /data/recordings/
+```
+
+### Run the cleanup
+
+```bash
+docker compose exec app /app/scripts/cleanup-local-recordings.sh
+```
+
+The script only deletes files when `JAM_R2_BUCKET` is set. It reports how many files and how much space was reclaimed.
+
+**Caution:** This does not verify that each file exists in R2 before deleting it. If a recording failed to upload to R2 but exists locally, it will be lost. Check the processing job status for any failed jobs before running.
+
 ## Viewing logs
 
 ### Live logs (follow)
