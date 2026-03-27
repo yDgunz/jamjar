@@ -91,6 +91,27 @@ function parseSheetToSections(sheet: string): Section[] | null {
   return null;
 }
 
+// --- Auto-capitalize chord input ---
+
+/** Auto-capitalize chord tokens as the user types: e -> E, f#m -> F#m, bb7 -> Bb7 */
+function autoCapitalizeChords(input: string): string {
+  // Split on spaces, preserving trailing space
+  const trailing = input.endsWith(" ") ? " " : "";
+  const tokens = input.split(/\s+/).filter(Boolean);
+  const fixed = tokens.map((token) => {
+    // Match a chord-like pattern: letter optionally followed by # or b, then quality
+    const m = token.match(/^([a-gA-G])([#b]?)(.*)$/);
+    if (!m) return token;
+    const [, root, accidental, rest] = m;
+    return root.toUpperCase() + accidental + rest;
+  });
+  return fixed.join(" ") + trailing;
+}
+
+// --- Modifier buttons ---
+
+const MODIFIERS = ["m", "7", "m7", "maj7", "sus4", "sus2", "dim", "aug", "add9", "/"] as const;
+
 // --- Component ---
 
 interface QuickChordEditorProps {
@@ -155,6 +176,39 @@ export default function QuickChordEditor({ onSave, onCancel, initialSheet }: Qui
     onSave(toSheet());
   };
 
+  // Apply a modifier (m, 7, sus4, etc.) to the last chord in the focused section
+  const applyModifier = (modifier: string) => {
+    if (!focusedSection) return;
+    setSections((prev) =>
+      prev.map((s) => {
+        if (s.id !== focusedSection) return s;
+        const trimmed = s.chords.trimEnd();
+        if (!trimmed) return s;
+        // If modifier is "/", append it so user types the bass note next
+        if (modifier === "/") {
+          return { ...s, chords: trimmed + "/" };
+        }
+        // Find the last token and append the modifier
+        const lastSpace = trimmed.lastIndexOf(" ");
+        const lastChord = trimmed.slice(lastSpace + 1);
+        // Extract just the root+accidental to avoid double-modifiers
+        const rootMatch = lastChord.match(/^([A-G][#b]?)/);
+        if (!rootMatch) return s;
+        const newChord = rootMatch[1] + modifier;
+        const prefix = lastSpace >= 0 ? trimmed.slice(0, lastSpace + 1) : "";
+        return { ...s, chords: prefix + newChord + " " };
+      }),
+    );
+    // Re-focus the input
+    setTimeout(() => {
+      const input = inputRefs.current.get(focusedSection);
+      if (input) {
+        input.focus();
+        input.selectionStart = input.selectionEnd = input.value.length + 10;
+      }
+    }, 0);
+  };
+
   // Insert a suggested chord at the focused section
   const insertChord = (chord: string) => {
     if (!focusedSection) return;
@@ -215,7 +269,7 @@ export default function QuickChordEditor({ onSave, onCancel, initialSheet }: Qui
               else inputRefs.current.delete(section.id);
             }}
             value={section.chords}
-            onChange={(e) => updateSection(section.id, { chords: e.target.value })}
+            onChange={(e) => updateSection(section.id, { chords: autoCapitalizeChords(e.target.value) })}
             onFocus={() => setFocusedSection(section.id)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
@@ -347,6 +401,25 @@ export default function QuickChordEditor({ onSave, onCancel, initialSheet }: Qui
               }`}
             >
               {chord}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Modifier buttons */}
+      {focusedSection && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-gray-600">Modify:</span>
+          {MODIFIERS.map((mod) => (
+            <button
+              key={mod}
+              onMouseDown={(e) => {
+                e.preventDefault(); // prevent blur
+                applyModifier(mod);
+              }}
+              className="rounded border border-gray-700 px-2.5 py-1 sm:px-2 sm:py-0.5 text-sm sm:text-xs font-mono text-gray-400 hover:border-gray-600 hover:text-gray-300 active:bg-gray-800 active:scale-95 transition"
+            >
+              {mod}
             </button>
           ))}
         </div>
