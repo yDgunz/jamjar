@@ -50,7 +50,12 @@ struct JobResponse: Codable, Sendable {
 // MARK: - API Client
 
 struct APIClient {
+    static let defaultBaseURL = URL(string: "https://jam-jar.app")!
     let baseURL: URL
+
+    init(baseURL: URL = APIClient.defaultBaseURL) {
+        self.baseURL = baseURL
+    }
 
     // MARK: Request Builders
 
@@ -153,7 +158,8 @@ struct APIClient {
     // MARK: Private
 
     private func makeRequest(path: String, method: String) -> URLRequest {
-        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        let url = URL(string: path, relativeTo: baseURL)?.absoluteURL ?? baseURL.appendingPathComponent(path)
+        var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         return request

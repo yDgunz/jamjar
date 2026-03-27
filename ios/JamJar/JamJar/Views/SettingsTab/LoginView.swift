@@ -46,17 +46,30 @@ struct LoginView: View {
         errorMessage = nil
         Task {
             do {
+                let url = apiClient.baseURL.absoluteString
+                print("[Login] Attempting login to \(url) with email: \(email)")
                 let (user, jwt) = try await apiClient.login(email: email, password: password)
+                print("[Login] Success! User: \(user.name), JWT length: \(jwt.count)")
                 try keychain.save(jwt, service: keychainService, account: "jwt")
                 await MainActor.run { onLogin(user, jwt) }
             } catch APIError.httpError(let code) {
                 await MainActor.run {
-                    errorMessage = code == 401 ? "Invalid email or password." : "Server error (\(code))."
+                    errorMessage = "HTTP \(code) from \(apiClient.baseURL.absoluteString)/api/auth/login"
+                    isLoading = false
+                }
+            } catch APIError.missingCookie {
+                await MainActor.run {
+                    errorMessage = "Login succeeded but no JWT cookie in response. Server: \(apiClient.baseURL.absoluteString)"
+                    isLoading = false
+                }
+            } catch let urlError as URLError {
+                await MainActor.run {
+                    errorMessage = "URLError \(urlError.code.rawValue): \(urlError.localizedDescription)\nURL: \(apiClient.baseURL.absoluteString)/api/auth/login"
                     isLoading = false
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage = "Connection failed. Check your server URL."
+                    errorMessage = "\(type(of: error)): \(error)\nURL: \(apiClient.baseURL.absoluteString)/api/auth/login"
                     isLoading = false
                 }
             }

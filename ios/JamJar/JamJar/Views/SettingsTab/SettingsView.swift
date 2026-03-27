@@ -4,25 +4,16 @@ struct SettingsView: View {
     let apiClient: APIClient
     let keychain: KeychainHelper
     let keychainService: String
-    @Binding var serverURL: String
     @Binding var user: UserResponse?
     @Binding var jwt: String?
     @Binding var wifiOnly: Bool
     let store: RecordingStore
 
     @State private var showingLogin = false
-    @State private var editingURL: String = ""
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Server") {
-                    TextField("Server URL", text: $editingURL)
-                        .autocapitalization(.none)
-                        .keyboardType(.URL)
-                        .onSubmit { serverURL = editingURL.trimmingCharacters(in: .whitespacesAndNewlines) }
-                        .onAppear { editingURL = serverURL }
-                }
 
                 Section("Account") {
                     if let user {

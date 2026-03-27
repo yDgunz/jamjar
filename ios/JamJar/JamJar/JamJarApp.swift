@@ -1,11 +1,10 @@
 import SwiftUI
-import UserNotifications
 
 @main
 struct JamJarApp: App {
     static let keychainService = "com.jamjar.app"
+    private let apiClient = APIClient()
 
-    @State private var serverURL: String = UserDefaults.standard.string(forKey: "serverURL") ?? ""
     @State private var wifiOnly: Bool = UserDefaults.standard.object(forKey: "wifiOnly") as? Bool ?? true
     @State private var user: UserResponse?
     @State private var jwt: String?
@@ -45,15 +44,14 @@ struct JamJarApp: App {
                 .tabItem {
                     Label("Record", systemImage: "record.circle")
                 }
-                BrowseView(serverURL: serverURL, jwt: jwt)
+                BrowseView(serverURL: APIClient.defaultBaseURL.absoluteString, jwt: jwt)
                     .tabItem {
                         Label("Browse", systemImage: "globe")
                     }
                 SettingsView(
-                    apiClient: makeAPIClient(),
+                    apiClient: apiClient,
                     keychain: keychain,
                     keychainService: Self.keychainService,
-                    serverURL: $serverURL,
                     user: $user,
                     jwt: $jwt,
                     wifiOnly: $wifiOnly,
@@ -62,9 +60,6 @@ struct JamJarApp: App {
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
                 }
-            }
-            .onChange(of: serverURL) { _, newValue in
-                UserDefaults.standard.set(newValue, forKey: "serverURL")
             }
             .onChange(of: wifiOnly) { _, newValue in
                 UserDefaults.standard.set(newValue, forKey: "wifiOnly")
@@ -83,16 +78,9 @@ struct JamJarApp: App {
         }
     }
 
-    private func makeAPIClient() -> APIClient {
-        let url = URL(string: serverURL) ?? URL(string: "http://localhost")!
-        return APIClient(baseURL: url)
-    }
-
     private func restoreSession() async {
-        guard let savedJWT = try? keychain.read(service: Self.keychainService, account: "jwt"),
-              !serverURL.isEmpty else { return }
-        let client = makeAPIClient()
-        if let me = try? await client.getMe(jwt: savedJWT) {
+        guard let savedJWT = try? keychain.read(service: Self.keychainService, account: "jwt") else { return }
+        if let me = try? await apiClient.getMe(jwt: savedJWT) {
             jwt = savedJWT
             user = me
         } else {
@@ -114,7 +102,7 @@ struct JamJarApp: App {
     private func getOrCreateUploadManager() -> UploadManager {
         if let existing = uploadManager { return existing }
         let manager = UploadManager(
-            apiClient: makeAPIClient(),
+            apiClient: apiClient,
             store: store,
             keychain: keychain,
             keychainService: Self.keychainService
