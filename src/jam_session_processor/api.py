@@ -1245,13 +1245,14 @@ async def upload_session(request: Request, file: UploadFile):
             detail=f"File too large. Maximum upload size is {cfg.max_upload_mb} MB.",
         )
 
-    # Save to input directory
+    # Save to input directory (strip directory components to prevent path traversal)
+    safe_filename = Path(file.filename).name if file.filename else "upload"
     cfg.input_dir.mkdir(parents=True, exist_ok=True)
-    dest = cfg.input_dir / file.filename
+    dest = cfg.input_dir / safe_filename
     if dest.exists():
         raise HTTPException(
             status_code=409,
-            detail=f"File '{file.filename}' already exists in input/",
+            detail=f"File '{safe_filename}' already exists in input/",
         )
 
     # Stream file to disk in chunks, enforcing size limit
@@ -1294,7 +1295,7 @@ async def upload_session(request: Request, file: UploadFile):
     if existing:
         raise HTTPException(
             status_code=409,
-            detail=f"A session with the filename '{file.filename}' already exists",
+            detail=f"A session with the filename '{safe_filename}' already exists",
         )
 
     # Duration-based duplicate detection
@@ -1328,7 +1329,7 @@ async def upload_session(request: Request, file: UploadFile):
     job = db.create_job(job_id, group_id, session_id=session_id)
 
     if request.state.user:
-        db.log_activity(request.state.user.id, group_id, "upload", file.filename)
+        db.log_activity(request.state.user.id, group_id, "upload", safe_filename)
 
     loop = asyncio.get_event_loop()
     loop.run_in_executor(
