@@ -46,6 +46,7 @@ struct WebViewRepresentable: UIViewRepresentable {
             .domain: url.host ?? "",
             .path: "/",
             .secure: serverURL.hasPrefix("https") ? "TRUE" : "FALSE",
+            .init(rawValue: "HttpOnly"): "TRUE",
         ]) {
             webView.configuration.websiteDataStore.httpCookieStore.setCookie(cookie) {
                 webView.load(URLRequest(url: url))

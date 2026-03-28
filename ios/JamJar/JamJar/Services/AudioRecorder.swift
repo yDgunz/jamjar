@@ -152,7 +152,9 @@ class AudioRecorder {
         let commandCenter = MPRemoteCommandCenter.shared()
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ in
-            self?.stop()
+            if let result = self?.stop() {
+                self?.onInterruptionStopped?(result)
+            }
             return .success
         }
     }

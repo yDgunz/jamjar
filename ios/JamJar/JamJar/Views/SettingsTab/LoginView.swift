@@ -46,30 +46,33 @@ struct LoginView: View {
         errorMessage = nil
         Task {
             do {
-                let url = apiClient.baseURL.absoluteString
-                print("[Login] Attempting login to \(url) with email: \(email)")
                 let (user, jwt) = try await apiClient.login(email: email, password: password)
-                print("[Login] Success! User: \(user.name), JWT length: \(jwt.count)")
                 try keychain.save(jwt, service: keychainService, account: "jwt")
                 await MainActor.run { onLogin(user, jwt) }
             } catch APIError.httpError(let code) {
                 await MainActor.run {
-                    errorMessage = "HTTP \(code) from \(apiClient.baseURL.absoluteString)/api/auth/login"
+                    switch code {
+                    case 401: errorMessage = "Invalid email or password."
+                    case 403: errorMessage = "Account is not authorized."
+                    case 429: errorMessage = "Too many attempts. Please wait and try again."
+                    case 500...599: errorMessage = "Server error. Please try again later."
+                    default: errorMessage = "Login failed (HTTP \(code))."
+                    }
                     isLoading = false
                 }
             } catch APIError.missingCookie {
                 await MainActor.run {
-                    errorMessage = "Login succeeded but no JWT cookie in response. Server: \(apiClient.baseURL.absoluteString)"
+                    errorMessage = "Login failed — unexpected server response."
                     isLoading = false
                 }
-            } catch let urlError as URLError {
+            } catch is URLError {
                 await MainActor.run {
-                    errorMessage = "URLError \(urlError.code.rawValue): \(urlError.localizedDescription)\nURL: \(apiClient.baseURL.absoluteString)/api/auth/login"
+                    errorMessage = "Unable to reach server. Check your internet connection."
                     isLoading = false
                 }
             } catch {
                 await MainActor.run {
-                    errorMessage = "\(type(of: error)): \(error)\nURL: \(apiClient.baseURL.absoluteString)/api/auth/login"
+                    errorMessage = "Login failed. Please try again."
                     isLoading = false
                 }
             }

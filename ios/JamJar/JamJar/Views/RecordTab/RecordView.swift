@@ -13,6 +13,7 @@ struct RecordView: View {
 
     @State private var showPermissionAlert = false
     @State private var showLowStorageAlert = false
+    @State private var showRecordingError = false
     @State private var showNamePrompt = false
     @State private var pendingRecordingId: UUID?
     @State private var recordingName: String = ""
@@ -106,12 +107,21 @@ struct RecordView: View {
                             showPermissionAlert = true
                             return
                         }
-                        try? recorder.start(to: store.directory)
+                        do {
+                            try recorder.start(to: store.directory)
+                        } catch {
+                            showRecordingError = true
+                        }
                     }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Less than 500 MB of storage remaining. Long recordings may fail if the device runs out of space.")
+            }
+            .alert("Recording Failed", isPresented: $showRecordingError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Could not start recording. Another app may be using the microphone.")
             }
         }
     }
@@ -144,7 +154,7 @@ struct RecordView: View {
             do {
                 try recorder.start(to: store.directory)
             } catch {
-                // Recording failed to start
+                showRecordingError = true
             }
         }
     }

@@ -33,7 +33,7 @@ struct JamJarApp: App {
                     user: user,
                     selectedGroupId: $selectedGroupId,
                     onRecordingStopped: {
-                        Task {
+                        Task { @MainActor in
                             let shouldUpload = wifiOnly ? networkMonitor.isConnectedViaWiFi : true
                             if shouldUpload, jwt != nil {
                                 let manager = getOrCreateUploadManager()
@@ -42,7 +42,7 @@ struct JamJarApp: App {
                         }
                     },
                     onRetryUpload: { recordingId in
-                        Task {
+                        Task { @MainActor in
                             let manager = getOrCreateUploadManager()
                             await manager.retryRecording(id: recordingId)
                         }
@@ -84,42 +84,60 @@ struct JamJarApp: App {
                 UserDefaults.standard.set(newValue, forKey: "autoClean")
                 uploadManager?.updateAutoClean(newValue)
             }
-            .onChange(of: user) { _, newUser in
+            .onChange(of: user) { oldUser, newUser in
                 if let groups = newUser?.groups, let first = groups.first {
                     selectedGroupId = first.id
                 }
-            }
-            .task {
-                await restoreSession()
-                recorder.onInterruptionStopped = { result in
-                    // Save whatever was recorded before the interruption
-                    let groupId = selectedGroupId ?? user?.groups.first?.id ?? 0
-                    let groupName = user?.groups.first(where: { $0.id == groupId })?.name ?? "Unknown"
-                    let fileBaseName = (result.url.lastPathComponent as NSString).deletingPathExtension
-                    let recording = Recording(
-                        id: UUID(),
-                        filename: result.url.lastPathComponent,
-                        groupId: groupId,
-                        groupName: groupName,
-                        createdAt: Date(),
-                        durationSec: result.duration,
-                        name: fileBaseName,
-                        uploadState: user != nil ? .pending : .failed
-                    )
-                    store.add(recording)
-                    if user != nil {
-                        Task {
-                            let shouldUpload = wifiOnly ? networkMonitor.isConnectedViaWiFi : true
-                            if shouldUpload {
-                                let manager = getOrCreateUploadManager()
-                                await manager.processQueue()
-                            }
+                // On login: sweep failed recordings for retry and clean orphaned files
+                if oldUser == nil, let newUser {
+                    let validGroupIds = Set(newUser.groups.map(\.id))
+                    store.resetFailedForRetry(validGroupIds: validGroupIds)
+                    store.cleanOrphanedFiles()
+                    Task { @MainActor in
+                        let shouldUpload = wifiOnly ? networkMonitor.isConnectedViaWiFi : true
+                        if shouldUpload, jwt != nil {
+                            let manager = getOrCreateUploadManager()
+                            await manager.processQueue()
                         }
                     }
                 }
             }
+            .task {
+                await restoreSession()
+                // Clean orphaned files on launch
+                store.cleanOrphanedFiles()
+                recorder.onInterruptionStopped = { result in
+                    saveInterruptedRecording(result: result)
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                Task { await onForeground() }
+                Task { @MainActor in await onForeground() }
+            }
+        }
+    }
+
+    private func saveInterruptedRecording(result: (url: URL, duration: TimeInterval)) {
+        let groupId = selectedGroupId ?? user?.groups.first?.id ?? 0
+        let groupName = user?.groups.first(where: { $0.id == groupId })?.name ?? "Unknown"
+        let fileBaseName = (result.url.lastPathComponent as NSString).deletingPathExtension
+        let recording = Recording(
+            id: UUID(),
+            filename: result.url.lastPathComponent,
+            groupId: groupId,
+            groupName: groupName,
+            createdAt: Date(),
+            durationSec: result.duration,
+            name: fileBaseName,
+            uploadState: user != nil ? .pending : .failed
+        )
+        store.add(recording)
+        if user != nil {
+            Task { @MainActor in
+                let shouldUpload = wifiOnly ? networkMonitor.isConnectedViaWiFi : true
+                if shouldUpload {
+                    let manager = getOrCreateUploadManager()
+                    await manager.processQueue()
+                }
             }
         }
     }
@@ -130,11 +148,24 @@ struct JamJarApp: App {
             jwt = savedJWT
             user = me
         } else {
+            // JWT is invalid or expired — clear it
             try? keychain.delete(service: Self.keychainService, account: "jwt")
         }
     }
 
+    @MainActor
     private func onForeground() async {
+        // Re-validate JWT on foreground
+        if let currentJWT = jwt {
+            if (try? await apiClient.getMe(jwt: currentJWT)) == nil {
+                // JWT expired — clear session
+                try? keychain.delete(service: Self.keychainService, account: "jwt")
+                jwt = nil
+                user = nil
+                return
+            }
+        }
+
         let shouldUpload = wifiOnly ? networkMonitor.isConnectedViaWiFi : true
         if shouldUpload, jwt != nil {
             let manager = getOrCreateUploadManager()
@@ -142,6 +173,7 @@ struct JamJarApp: App {
         }
     }
 
+    @MainActor
     private func getOrCreateUploadManager() -> UploadManager {
         if let existing = uploadManager { return existing }
         let manager = UploadManager(
