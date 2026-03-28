@@ -8,14 +8,22 @@ class UploadManager: NSObject {
     private let store: RecordingStore
     private let keychain: KeychainHelper
     private let keychainService: String
+    private let networkMonitor: NetworkMonitor
 
     @ObservationIgnored
     private var _backgroundSession: URLSession?
+    @ObservationIgnored
+    private var _wifiOnly: Bool
+    @ObservationIgnored
+    private var _autoClean: Bool
     private var backgroundSession: URLSession {
         if let session = _backgroundSession { return session }
         let config = URLSessionConfiguration.background(withIdentifier: "com.jamjar.upload")
         config.isDiscretionary = false
         config.sessionSendsLaunchEvents = true
+        config.allowsCellularAccess = !_wifiOnly
+        config.allowsExpensiveNetworkAccess = !_wifiOnly
+        config.allowsConstrainedNetworkAccess = !_wifiOnly
         let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
         _backgroundSession = session
         return session
@@ -27,12 +35,26 @@ class UploadManager: NSObject {
 
     static let maxRetries = 3
 
-    init(apiClient: APIClient, store: RecordingStore, keychain: KeychainHelper, keychainService: String) {
+    init(apiClient: APIClient, store: RecordingStore, keychain: KeychainHelper, keychainService: String, networkMonitor: NetworkMonitor, wifiOnly: Bool, autoClean: Bool) {
         self.apiClient = apiClient
         self.store = store
         self.keychain = keychain
         self.keychainService = keychainService
+        self.networkMonitor = networkMonitor
+        self._wifiOnly = wifiOnly
+        self._autoClean = autoClean
         super.init()
+    }
+
+    func updateWifiOnly(_ wifiOnly: Bool) {
+        guard wifiOnly != _wifiOnly else { return }
+        _wifiOnly = wifiOnly
+        _backgroundSession?.invalidateAndCancel()
+        _backgroundSession = nil
+    }
+
+    func updateAutoClean(_ autoClean: Bool) {
+        _autoClean = autoClean
     }
 
     // MARK: Public
@@ -48,6 +70,10 @@ class UploadManager: NSObject {
 
     func processQueue() async {
         guard !isProcessing else { return }
+
+        // Enforce WiFi-only at the queue level, not just at the call site
+        if _wifiOnly && !networkMonitor.isConnectedViaWiFi { return }
+
         isProcessing = true
         defer { isProcessing = false }
 
@@ -56,11 +82,14 @@ class UploadManager: NSObject {
         for recording in store.pendingUploads {
             guard Self.shouldRetry(recording) else { continue }
 
+            // Re-check WiFi before each upload in case connectivity changed mid-loop
+            if _wifiOnly && !networkMonitor.isConnectedViaWiFi { break }
+
             store.updateUploadState(id: recording.id, state: .uploading)
 
             do {
                 let initResponse = try await apiClient.uploadInit(
-                    filename: recording.filename, groupId: recording.groupId, jwt: jwt
+                    filename: recording.uploadFilename, groupId: recording.groupId, jwt: jwt
                 )
                 store.updateJobInfo(
                     id: recording.id,
@@ -86,17 +115,9 @@ class UploadManager: NSObject {
         }
     }
 
-    func pollJobStatuses() async {
-        guard let jwt = try? keychain.read(service: keychainService, account: "jwt") else { return }
-
-        for recording in store.recordings where recording.jobId != nil && recording.uploadState == .completed {
-            guard let jobId = recording.jobId, recording.jobStatus != "completed" && recording.jobStatus != "failed" else {
-                continue
-            }
-            if let job = try? await apiClient.getJobStatus(jobId: jobId, jwt: jwt) {
-                store.updateJobStatus(id: recording.id, status: job.status)
-            }
-        }
+    func retryRecording(id: UUID) async {
+        store.resetForRetry(id: id)
+        await processQueue()
     }
 
     // MARK: Notifications
@@ -114,6 +135,15 @@ class UploadManager: NSObject {
 // MARK: - URLSessionTaskDelegate
 
 extension UploadManager: URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        guard let recordingId = activeUploads[task.taskIdentifier],
+              totalBytesExpectedToSend > 0 else { return }
+        let progress = Double(totalBytesSent) / Double(totalBytesExpectedToSend)
+        DispatchQueue.main.async {
+            self.store.updateUploadProgress(id: recordingId, progress: progress)
+        }
+    }
+
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let recordingId = activeUploads.removeValue(forKey: task.taskIdentifier) else { return }
 
@@ -135,6 +165,9 @@ extension UploadManager: URLSessionTaskDelegate {
                 )
                 await MainActor.run {
                     self.store.updateUploadState(id: recordingId, state: .completed)
+                    if self._autoClean {
+                        self.store.deleteWithFile(id: recordingId)
+                    }
                     self.sendLocalNotification(
                         title: "Recording Uploaded",
                         body: "Your jam session recording is being processed."

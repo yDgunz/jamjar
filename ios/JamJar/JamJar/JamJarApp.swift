@@ -6,6 +6,7 @@ struct JamJarApp: App {
     private let apiClient = APIClient()
 
     @State private var wifiOnly: Bool = UserDefaults.standard.object(forKey: "wifiOnly") as? Bool ?? true
+    @State private var autoClean: Bool = UserDefaults.standard.object(forKey: "autoClean") as? Bool ?? false
     @State private var user: UserResponse?
     @State private var jwt: String?
     @State private var selectedGroupId: Int?
@@ -39,7 +40,20 @@ struct JamJarApp: App {
                                 await manager.processQueue()
                             }
                         }
-                    }
+                    },
+                    onRetryUpload: { recordingId in
+                        Task {
+                            let manager = getOrCreateUploadManager()
+                            await manager.retryRecording(id: recordingId)
+                        }
+                    },
+                    onDeleteRecording: { recordingId in
+                        store.deleteWithFile(id: recordingId)
+                    },
+                    onRenameRecording: { recordingId, newName in
+                        store.updateName(id: recordingId, name: newName)
+                    },
+                    uploadsPaused: wifiOnly && !networkMonitor.isConnectedViaWiFi && store.pendingUploads.count > 0
                 )
                 .tabItem {
                     Label("Record", systemImage: "record.circle")
@@ -55,6 +69,7 @@ struct JamJarApp: App {
                     user: $user,
                     jwt: $jwt,
                     wifiOnly: $wifiOnly,
+                    autoClean: $autoClean,
                     store: store
                 )
                 .tabItem {
@@ -63,14 +78,45 @@ struct JamJarApp: App {
             }
             .onChange(of: wifiOnly) { _, newValue in
                 UserDefaults.standard.set(newValue, forKey: "wifiOnly")
+                uploadManager?.updateWifiOnly(newValue)
+            }
+            .onChange(of: autoClean) { _, newValue in
+                UserDefaults.standard.set(newValue, forKey: "autoClean")
+                uploadManager?.updateAutoClean(newValue)
             }
             .onChange(of: user) { _, newUser in
-                if let groups = newUser?.groups, groups.count == 1 {
-                    selectedGroupId = groups[0].id
+                if let groups = newUser?.groups, let first = groups.first {
+                    selectedGroupId = first.id
                 }
             }
             .task {
                 await restoreSession()
+                recorder.onInterruptionStopped = { result in
+                    // Save whatever was recorded before the interruption
+                    let groupId = selectedGroupId ?? user?.groups.first?.id ?? 0
+                    let groupName = user?.groups.first(where: { $0.id == groupId })?.name ?? "Unknown"
+                    let fileBaseName = (result.url.lastPathComponent as NSString).deletingPathExtension
+                    let recording = Recording(
+                        id: UUID(),
+                        filename: result.url.lastPathComponent,
+                        groupId: groupId,
+                        groupName: groupName,
+                        createdAt: Date(),
+                        durationSec: result.duration,
+                        name: fileBaseName,
+                        uploadState: user != nil ? .pending : .failed
+                    )
+                    store.add(recording)
+                    if user != nil {
+                        Task {
+                            let shouldUpload = wifiOnly ? networkMonitor.isConnectedViaWiFi : true
+                            if shouldUpload {
+                                let manager = getOrCreateUploadManager()
+                                await manager.processQueue()
+                            }
+                        }
+                    }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
                 Task { await onForeground() }
@@ -94,9 +140,6 @@ struct JamJarApp: App {
             let manager = getOrCreateUploadManager()
             await manager.processQueue()
         }
-        if let manager = uploadManager {
-            await manager.pollJobStatuses()
-        }
     }
 
     private func getOrCreateUploadManager() -> UploadManager {
@@ -105,7 +148,10 @@ struct JamJarApp: App {
             apiClient: apiClient,
             store: store,
             keychain: keychain,
-            keychainService: Self.keychainService
+            keychainService: Self.keychainService,
+            networkMonitor: networkMonitor,
+            wifiOnly: wifiOnly,
+            autoClean: autoClean
         )
         uploadManager = manager
         return manager

@@ -35,6 +35,12 @@ class RecordingStore {
         save()
     }
 
+    func updateName(id: UUID, name: String) {
+        guard let index = recordings.firstIndex(where: { $0.id == id }) else { return }
+        recordings[index].name = name
+        save()
+    }
+
     func updateUploadState(id: UUID, state: UploadState) {
         guard let index = recordings.firstIndex(where: { $0.id == id }) else { return }
         recordings[index].uploadState = state
@@ -57,6 +63,30 @@ class RecordingStore {
     func incrementRetry(id: UUID) {
         guard let index = recordings.firstIndex(where: { $0.id == id }) else { return }
         recordings[index].retryCount += 1
+        save()
+    }
+
+    func updateUploadProgress(id: UUID, progress: Double) {
+        guard let index = recordings.firstIndex(where: { $0.id == id }) else { return }
+        recordings[index].uploadProgress = progress
+        // Don't save() here — progress is transient and updates frequently
+    }
+
+    func deleteWithFile(id: UUID) {
+        guard let recording = recordings.first(where: { $0.id == id }) else { return }
+        let fileURL = directory.appendingPathComponent(recording.filename)
+        try? FileManager.default.removeItem(at: fileURL)
+        recordings.removeAll { $0.id == id }
+        save()
+    }
+
+    func resetForRetry(id: UUID) {
+        guard let index = recordings.firstIndex(where: { $0.id == id }) else { return }
+        recordings[index].uploadState = .pending
+        recordings[index].retryCount = 0
+        recordings[index].jobId = nil
+        recordings[index].sessionId = nil
+        recordings[index].jobStatus = nil
         save()
     }
 

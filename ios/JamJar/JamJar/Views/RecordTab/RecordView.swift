@@ -6,8 +6,16 @@ struct RecordView: View {
     let user: UserResponse?
     @Binding var selectedGroupId: Int?
     var onRecordingStopped: (() -> Void)?
+    var onRetryUpload: ((UUID) -> Void)?
+    var onDeleteRecording: ((UUID) -> Void)?
+    var onRenameRecording: ((UUID, String) -> Void)?
+    var uploadsPaused: Bool = false
 
     @State private var showPermissionAlert = false
+    @State private var showLowStorageAlert = false
+    @State private var showNamePrompt = false
+    @State private var pendingRecordingId: UUID?
+    @State private var recordingName: String = ""
 
     var groups: [UserGroup] { user?.groups ?? [] }
 
@@ -42,10 +50,9 @@ struct RecordView: View {
                                 .animation(.easeInOut(duration: 0.2), value: recorder.isRecording)
                         }
                     }
-                    .disabled(user == nil)
 
-                    if user == nil {
-                        Text("Log in from Settings to start recording")
+                    if user == nil && !recorder.isRecording {
+                        Text("Log in from Settings to upload recordings")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -53,7 +60,17 @@ struct RecordView: View {
 
                 Spacer()
 
-                UploadQueueView(recordings: store.recordings.reversed())
+                if uploadsPaused {
+                    Label("Uploads paused — waiting for WiFi", systemImage: "wifi.slash")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 12)
+                        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                        .padding(.horizontal)
+                }
+
+                UploadQueueView(recordings: store.recordings.reversed(), recordingsDirectory: store.directory, onRetry: onRetryUpload, onDelete: onDeleteRecording, onRename: onRenameRecording, isRecording: recorder.isRecording)
                     .frame(maxHeight: 300)
             }
             .navigationTitle("Record")
@@ -67,6 +84,35 @@ struct RecordView: View {
             } message: {
                 Text("Jam Jar needs microphone access to record your jam sessions. Enable it in Settings.")
             }
+            .alert("Name Recording", isPresented: $showNamePrompt) {
+                TextField("Name", text: $recordingName)
+                Button("Save") {
+                    if let id = pendingRecordingId, !recordingName.isEmpty {
+                        onRenameRecording?(id, recordingName)
+                    }
+                    if user != nil {
+                        onRecordingStopped?()
+                    }
+                    pendingRecordingId = nil
+                }
+            } message: {
+                Text("This name will be used as the session name on the server.")
+            }
+            .alert("Low Storage", isPresented: $showLowStorageAlert) {
+                Button("Record Anyway") {
+                    Task {
+                        let granted = await recorder.requestPermission()
+                        guard granted else {
+                            showPermissionAlert = true
+                            return
+                        }
+                        try? recorder.start(to: store.directory)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Less than 500 MB of storage remaining. Long recordings may fail if the device runs out of space.")
+            }
         }
     }
 
@@ -78,7 +124,17 @@ struct RecordView: View {
         }
     }
 
+    private static let minFreeBytes: Int64 = 500 * 1024 * 1024 // 500 MB
+
     private func startRecording() {
+        if let freeSpace = try? URL(fileURLWithPath: NSHomeDirectory())
+            .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+            .volumeAvailableCapacityForImportantUsage,
+           freeSpace < Self.minFreeBytes {
+            showLowStorageAlert = true
+            return
+        }
+
         Task {
             let granted = await recorder.requestPermission()
             guard granted else {
@@ -96,7 +152,8 @@ struct RecordView: View {
     private func stopRecording() {
         guard let result = recorder.stop() else { return }
         let groupId = selectedGroupId ?? groups.first?.id ?? 0
-        let groupName = groups.first(where: { $0.id == groupId })?.name ?? "Unknown"
+        let groupName = groups.first(where: { $0.id == groupId })?.name ?? "Not logged in"
+        let fileBaseName = (result.url.lastPathComponent as NSString).deletingPathExtension
         let recording = Recording(
             id: UUID(),
             filename: result.url.lastPathComponent,
@@ -104,10 +161,13 @@ struct RecordView: View {
             groupName: groupName,
             createdAt: Date(),
             durationSec: result.duration,
-            uploadState: .pending
+            name: fileBaseName,
+            uploadState: user != nil ? .pending : .failed
         )
         store.add(recording)
-        onRecordingStopped?()
+        recordingName = fileBaseName
+        pendingRecordingId = recording.id
+        showNamePrompt = true
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {

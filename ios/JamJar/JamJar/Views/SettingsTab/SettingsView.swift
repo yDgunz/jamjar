@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Binding var user: UserResponse?
     @Binding var jwt: String?
     @Binding var wifiOnly: Bool
+    @Binding var autoClean: Bool
     let store: RecordingStore
 
     @State private var showingLogin = false
@@ -28,6 +29,7 @@ struct SettingsView: View {
 
                 Section("Uploads") {
                     Toggle("WiFi Only", isOn: $wifiOnly)
+                    Toggle("Auto-Delete After Upload", isOn: $autoClean)
                 }
 
                 Section("Storage") {

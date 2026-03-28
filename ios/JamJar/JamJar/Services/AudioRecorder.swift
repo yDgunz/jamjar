@@ -15,6 +15,8 @@ class AudioRecorder {
 
     private var startTime: Date?
     private var durationTimer: Timer?
+    private var interruptionObserver: Any?
+    var onInterruptionStopped: ((_ result: (url: URL, duration: TimeInterval)) -> Void)?
 
     enum RecorderError: Error {
         case microphonePermissionDenied
@@ -67,6 +69,7 @@ class AudioRecorder {
 
         startDurationTimer()
         setupNowPlaying()
+        observeInterruptions()
     }
 
     func stop() -> (url: URL, duration: TimeInterval)? {
@@ -80,6 +83,11 @@ class AudioRecorder {
 
         durationTimer?.invalidate()
         durationTimer = nil
+
+        if let observer = interruptionObserver {
+            NotificationCenter.default.removeObserver(observer)
+            interruptionObserver = nil
+        }
 
         isRecording = false
         currentLevel = 0
@@ -112,6 +120,26 @@ class AudioRecorder {
         durationTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self, let start = self.startTime else { return }
             self.duration = Date().timeIntervalSince(start)
+        }
+    }
+
+    private func observeInterruptions() {
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            guard let self, self.isRecording else { return }
+            guard let info = notification.userInfo,
+                  let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+
+            if type == .began {
+                // Phone call, Siri, etc. — stop and save what we have
+                if let result = self.stop() {
+                    self.onInterruptionStopped?(result)
+                }
+            }
         }
     }
 

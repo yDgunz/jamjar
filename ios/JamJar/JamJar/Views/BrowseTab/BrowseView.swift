@@ -6,11 +6,8 @@ struct BrowseView: View {
     let jwt: String?
 
     var body: some View {
-        NavigationStack {
-            WebViewRepresentable(serverURL: serverURL, jwt: jwt)
-                .navigationTitle("Browse")
-                .navigationBarTitleDisplayMode(.inline)
-        }
+        WebViewRepresentable(serverURL: serverURL, jwt: jwt)
+            .ignoresSafeArea()
     }
 }
 
