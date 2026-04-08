@@ -9,6 +9,7 @@ import FetchError from "../components/FetchError";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
+import QuickChordEditor from "../components/QuickChordEditor";
 import { isChordPro, toChordPro } from "../utils/chordpro";
 
 
@@ -132,6 +133,7 @@ export default function SongHistory() {
   const [fetchingLyrics, setFetchingLyrics] = useState(false);
   const [editingSheet, setEditingSheet] = useState(false);
   const [sheetInput, setSheetInput] = useState("");
+  const [quickChordMode, setQuickChordMode] = useState(false);
 
   const loadSong = useCallback(() => {
     setLoading(true);
@@ -387,7 +389,23 @@ export default function SongHistory() {
         <div>
           <div className="flex items-center gap-3 mb-1">
             <label className="mr-1 text-xs font-medium text-gray-500 uppercase tracking-wide">Sheet</label>
-            {canEdit(user) && (
+            {canEdit(user) && (editingSheet || quickChordMode) && (
+              <div className="flex rounded-md border border-gray-700 overflow-hidden">
+                <button
+                  onClick={() => { setQuickChordMode(false); if (!editingSheet) setEditingSheet(true); }}
+                  className={`px-2 py-0.5 text-xs ${!quickChordMode ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-300"}`}
+                >
+                  Full
+                </button>
+                <button
+                  onClick={() => { setQuickChordMode(true); setEditingSheet(false); }}
+                  className={`px-2 py-0.5 text-xs ${quickChordMode ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-300"}`}
+                >
+                  Quick
+                </button>
+              </div>
+            )}
+            {canEdit(user) && !quickChordMode && (
               <button
                 onClick={handleFetchLyrics}
                 disabled={!song?.artist || fetchingLyrics}
@@ -401,7 +419,7 @@ export default function SongHistory() {
                 {fetchingLyrics ? "Fetching..." : "Fetch lyrics"}
               </button>
             )}
-            {canEdit(user) && (editingSheet ? sheetInput : song?.sheet) && !isChordPro(editingSheet ? sheetInput : song?.sheet ?? "") && (
+            {canEdit(user) && !quickChordMode && (editingSheet ? sheetInput : song?.sheet) && !isChordPro(editingSheet ? sheetInput : song?.sheet ?? "") && (
               <button
                 onClick={handleConvertToChordPro}
                 title="Convert chords-above-lyrics to ChordPro format"
@@ -411,7 +429,19 @@ export default function SongHistory() {
               </button>
             )}
           </div>
-          {editingSheet && canEdit(user) ? (
+          {quickChordMode && canEdit(user) ? (
+            <QuickChordEditor
+              initialSheet={song?.sheet ?? ""}
+              onSave={async (sheet) => {
+                setQuickChordMode(false);
+                await handleSaveField("sheet", sheet);
+                setSheetInput(sheet);
+              }}
+              onCancel={() => {
+                setQuickChordMode(false);
+              }}
+            />
+          ) : editingSheet && canEdit(user) ? (
             <div>
               <textarea
                 autoFocus
@@ -457,12 +487,20 @@ export default function SongHistory() {
               </div>
             )
           ) : canEdit(user) ? (
-            <button
-              onClick={() => setEditingSheet(true)}
-              className="text-sm text-gray-600 hover:text-gray-400"
-            >
-              + add sheet (chords, lyrics, tabs...)
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setEditingSheet(true)}
+                className="text-sm text-gray-600 hover:text-gray-400"
+              >
+                + add sheet
+              </button>
+              <button
+                onClick={() => setQuickChordMode(true)}
+                className="text-sm text-accent-600 hover:text-accent-400"
+              >
+                + quick chords
+              </button>
+            </div>
           ) : null}
         </div>
         <EditableField
