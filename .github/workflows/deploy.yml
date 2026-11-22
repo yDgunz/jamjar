@@ -31,7 +31,9 @@ jobs:
             set -e
             cd /opt/jamjar
             git pull
-            docker compose up --build -d
+            # --pull refreshes base images so OS packages (OpenSSL, ffmpeg) get security updates
+            docker compose build --pull
+            docker compose up -d
             docker image prune -f
 
       - name: Set up daily backup cron job
