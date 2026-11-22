@@ -1,5 +1,6 @@
 import re
 import sqlite3
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -304,10 +305,41 @@ class Database:
 
             db_path = get_config().db_path
         self.db_path = db_path
-        self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        self.conn.execute("PRAGMA foreign_keys = ON")
-        self.conn.row_factory = sqlite3.Row
+        # One connection per thread: FastAPI runs sync endpoints in a thread pool,
+        # and a single shared sqlite3 connection breaks under concurrent requests
+        # ("bad parameter or other API misuse"). SQLite (WAL) handles the
+        # concurrency across connections.
+        self._local = threading.local()
+        self._all_conns: list[sqlite3.Connection] = []
+        self._conns_lock = threading.Lock()
+        self._closed = False
         self._init_schema()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=30)
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        """This thread's connection (created on first use)."""
+        if self._closed:
+            raise sqlite3.ProgrammingError("Cannot operate on a closed database.")
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = self._connect()
+            self._local.conn = conn
+            with self._conns_lock:
+                self._all_conns.append(conn)
+        return conn
+
+    @conn.setter
+    def conn(self, value: sqlite3.Connection):
+        self._closed = False
+        self._local.conn = value
+        with self._conns_lock:
+            self._all_conns.append(value)
 
     def ping(self) -> None:
         """Run a trivial query against the schema; raises if the DB is unusable."""
@@ -383,7 +415,16 @@ class Database:
         self.conn.commit()
 
     def close(self):
-        self.conn.close()
+        """Close every thread's connection."""
+        with self._conns_lock:
+            conns, self._all_conns = self._all_conns, []
+        for conn in conns:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        self._local = threading.local()
+        self._closed = True
 
     def reset(self):
         """Drop all tables and recreate the schema."""
