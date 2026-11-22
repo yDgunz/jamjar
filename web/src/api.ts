@@ -13,6 +13,21 @@ export function formatDateTime(dateStr: string | null | undefined): string {
   });
 }
 
+/** Compact date for lists: "Feb 11" (this year) or "Feb 11, 2025". */
+export function formatShortDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  const parts = dateStr.substring(0, 10).split("-");
+  if (parts.length !== 3) return dateStr;
+  const [y, m, d] = parts.map(Number);
+  const date = new Date(y, m - 1, d);
+  const sameYear = y === new Date().getFullYear();
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
+
 export function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "Unknown date";
   const parts = dateStr.split("-");

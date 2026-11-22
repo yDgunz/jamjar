@@ -13,14 +13,14 @@ export function ListSkeleton({ toolbar, cards = 4, rightSide }: {
   return (
     <div>
       {toolbar ?? (
-        <div className="mb-3 flex items-center gap-2">
-          <Bone className="h-8 w-44" />
-          <Bone className="ml-auto h-8 w-24" />
+        <div className="mb-3 space-y-3 pt-1">
+          <Bone className="h-8 w-36" />
+          <Bone className="h-11 w-full rounded-xl" />
         </div>
       )}
-      <div className="space-y-3">
+      <div className="divide-y divide-white/[0.07]">
         {Array.from({ length: cards }, (_, i) => (
-          <div key={i} className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-5 py-4">
+          <div key={i} className="flex items-center justify-between py-3.5">
             <div className="space-y-2">
               <Bone className="h-5 w-48" />
               <Bone className="h-4 w-32" />

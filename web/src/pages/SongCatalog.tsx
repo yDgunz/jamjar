@@ -1,15 +1,33 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { api, formatDate, canEdit } from "../api";
+import { api, formatShortDate, canEdit } from "../api";
+import type { Song } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
-import ListItemCard from "../components/ListItemCard";
+import ListItemCard, { ListRows } from "../components/ListItemCard";
+import PageHeader, { HeaderIconButton, PlusIcon } from "../components/PageHeader";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
+import SearchInput from "../components/SearchInput";
 import { useAuth } from "../context/AuthContext";
 import { useFetch } from "../hooks/useFetch";
 
 type SortKey = "name" | "artist" | "last_played" | "takes";
+
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: "name", label: "A–Z" },
+  { key: "artist", label: "Artist" },
+  { key: "last_played", label: "Recently played" },
+  { key: "takes", label: "Most played" },
+];
+
+function matches(song: Song, q: string): "name" | "lyrics" | null {
+  if (song.name.toLowerCase().includes(q) || (song.artist ?? "").toLowerCase().includes(q)) {
+    return "name";
+  }
+  if ((song.sheet ?? "").toLowerCase().includes(q)) return "lyrics";
+  return null;
+}
 
 export default function SongCatalog() {
   const { user } = useAuth();
@@ -18,6 +36,7 @@ export default function SongCatalog() {
     () => api.listSongs(),
     [],
   );
+  const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortKey>(() => {
     const stored = localStorage.getItem("song-catalog-sort");
     if (stored === "name" || stored === "artist" || stored === "last_played" || stored === "takes") return stored;
@@ -33,6 +52,7 @@ export default function SongCatalog() {
   const [newArtist, setNewArtist] = useState("");
   const [newGroupId, setNewGroupId] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const multiGroup = user != null && user.groups.length > 1;
 
   useEffect(() => { localStorage.setItem("song-catalog-sort", sortBy); }, [sortBy]);
   useEffect(() => {
@@ -40,27 +60,33 @@ export default function SongCatalog() {
     else localStorage.removeItem("group-filter");
   }, [groupFilter]);
 
-  // songs are fetched by useFetch above
+  const q = query.trim().toLowerCase();
 
-  const sorted = useMemo(() => {
-    const all = songs ?? [];
-    const filtered = groupFilter !== null
-      ? all.filter((s) => s.group_id === groupFilter)
-      : all;
-    const copy = [...filtered];
-    switch (sortBy) {
-      case "name":
-        return copy.sort((a, b) => a.name.localeCompare(b.name));
-      case "artist":
-        return copy.sort((a, b) => (a.artist ?? "").localeCompare(b.artist ?? "") || a.name.localeCompare(b.name));
-      case "last_played":
-        return copy.sort((a, b) => (b.last_date ?? "").localeCompare(a.last_date ?? ""));
-      case "takes":
-        return copy.sort((a, b) => b.take_count - a.take_count);
-    }
-  }, [songs, sortBy, groupFilter]);
+  const results = useMemo(() => {
+    let list = (songs ?? []).map((s) => ({ song: s, hit: q ? matches(s, q) : ("name" as const) }));
+    if (groupFilter !== null) list = list.filter((r) => r.song.group_id === groupFilter);
+    if (q) list = list.filter((r) => r.hit !== null);
+    const cmp: Record<SortKey, (a: Song, b: Song) => number> = {
+      name: (a, b) => a.name.localeCompare(b.name),
+      artist: (a, b) => (a.artist ?? "").localeCompare(b.artist ?? "") || a.name.localeCompare(b.name),
+      last_played: (a, b) => (b.last_date ?? "").localeCompare(a.last_date ?? ""),
+      takes: (a, b) => b.take_count - a.take_count,
+    };
+    // When searching, title/artist matches come before lyric-only matches
+    return list.sort((a, b) =>
+      (q ? Number(a.hit === "lyrics") - Number(b.hit === "lyrics") : 0) || cmp[sortBy](a.song, b.song),
+    );
+  }, [songs, sortBy, groupFilter, q]);
 
   const defaultGroupId = user && user.groups.length === 1 ? user.groups[0].id : null;
+
+  const openCreate = (name = "") => {
+    setCreating(true);
+    setNewName(name);
+    setNewArtist("");
+    setNewGroupId(groupFilter);
+    setErrorMsg(null);
+  };
 
   const handleCreate = async () => {
     const name = newName.trim();
@@ -75,62 +101,45 @@ export default function SongCatalog() {
     }
   };
 
-  if (loading) return (
-    <ListSkeleton
-      toolbar={
-        <div className="mb-4 flex items-center justify-between">
-          <div className="h-8 w-40 animate-pulse rounded bg-gray-800" />
-          <div className="flex gap-1">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-8 w-20 animate-pulse rounded bg-gray-800" />
-            ))}
-          </div>
-        </div>
-      }
-      rightSide="one-line"
-    />
-  );
+  if (loading) return <ListSkeleton rightSide="one-line" cards={8} />;
   if (fetchError) return <FetchError error={fetchError} onRetry={refreshSongs} />;
-
-  const sortOptions: { key: SortKey; label: string }[] = [
-    { key: "name", label: "Name" },
-    { key: "artist", label: "Artist" },
-    { key: "last_played", label: "Last recorded" },
-    { key: "takes", label: "Most tracks" },
-  ];
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-2">
-        <GroupSelector
-          groups={user?.groups ?? []}
-          value={groupFilter}
-          onChange={setGroupFilter}
-          allLabel="All groups"
-        />
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as SortKey)}
-          className="min-w-0 truncate rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
-        >
-          {sortOptions.map((opt) => (
-            <option key={opt.key} value={opt.key}>{opt.label}</option>
-          ))}
-        </select>
-        {canEdit(user) && (
-          <div className="ml-auto shrink-0">
-            <button
-              onClick={() => { setCreating(true); setNewName(""); setNewArtist(""); setNewGroupId(groupFilter); setErrorMsg(null); }}
-              className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500"
-              title="New Song"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 sm:hidden">
-                <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
-              </svg>
-              <span className="hidden sm:inline">New Song</span>
-            </button>
-          </div>
+      <PageHeader
+        title="Songs"
+        actions={canEdit(user) && (
+          <HeaderIconButton label="New song" onClick={() => openCreate()}>
+            <PlusIcon />
+          </HeaderIconButton>
         )}
+      />
+
+      <SearchInput value={query} onChange={setQuery} placeholder="Search songs, artists, lyrics" />
+
+      <div className="mt-2 flex items-center justify-between gap-2 text-sm text-gray-400">
+        <span>
+          {results.length} song{results.length !== 1 ? "s" : ""}
+        </span>
+        <div className="flex min-w-0 items-center gap-1">
+          <GroupSelector
+            groups={user?.groups ?? []}
+            value={groupFilter}
+            onChange={setGroupFilter}
+            allLabel="All bands"
+            variant="subtle"
+          />
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortKey)}
+            aria-label="Sort songs"
+            className="min-w-0 truncate rounded bg-transparent py-1 text-right text-sm text-gray-400 focus:outline-none"
+          >
+            {SORT_OPTIONS.map((opt) => (
+              <option key={opt.key} value={opt.key}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <FormModal
@@ -154,49 +163,64 @@ export default function SongCatalog() {
           placeholder="Artist (optional)"
           className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
         />
-        {user && user.groups.length > 1 && (
+        {multiGroup && (
           <select
             value={newGroupId ?? defaultGroupId ?? ""}
             onChange={(e) => setNewGroupId(Number(e.target.value))}
             className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
           >
-            <option value="" disabled>Group</option>
-            {user.groups.map((g) => (
+            <option value="" disabled>Band</option>
+            {user!.groups.map((g) => (
               <option key={g.id} value={g.id}>{g.name}</option>
             ))}
           </select>
         )}
       </FormModal>
 
-      {(songs ?? []).length === 0 && !creating ? (
-        <p className="text-gray-400">
-          No songs yet. Create one or tag tracks from a{" "}
-          <Link to="/" className="text-accent-400 hover:text-accent-300">recording</Link>.
+      {(songs ?? []).length === 0 && !q ? (
+        <p className="mt-6 text-gray-400">
+          No songs yet. Add one with <span className="text-white">+</span>, or tag tracks from a{" "}
+          <Link to="/sessions" className="text-accent-400 hover:text-accent-300">recording</Link>.
         </p>
-      ) : (
-        <div className="space-y-3">
-          {sorted.map((song) => (
-            <ListItemCard
-              key={song.id}
-              to={`/songs/${song.id}`}
-              title={<>
-                {song.name}
-                {user && user.groups.length > 1 && !groupFilter && song.group_name && (
-                  <span className="ml-2 text-xs font-normal text-gray-500">{song.group_name}</span>
-                )}
-              </>}
-              right={<>{song.take_count} recording{song.take_count !== 1 ? "s" : ""}</>}
+      ) : results.length === 0 ? (
+        <div className="mt-8 text-center">
+          <p className="text-gray-400">No songs match “{query.trim()}”.</p>
+          {canEdit(user) && (
+            <button
+              onClick={() => openCreate(query.trim())}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500"
             >
-              {song.artist && (
-                <div className="text-sm text-gray-500">{song.artist}</div>
-              )}
-              <div className="mt-1 text-sm text-gray-400">
-                {song.last_date
-                  ? `Last recorded ${formatDate(song.last_date)}`
-                  : "No date info"}
-              </div>
-            </ListItemCard>
-          ))}
+              <PlusIcon /> Add “{query.trim()}”
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="mt-1">
+          <ListRows>
+            {results.map(({ song, hit }) => {
+              const meta = [
+                song.artist,
+                song.last_date ? `played ${formatShortDate(song.last_date)}` : null,
+                multiGroup && !groupFilter ? song.group_name : null,
+              ].filter(Boolean).join(" · ");
+              return (
+                <ListItemCard
+                  key={song.id}
+                  to={`/songs/${song.id}`}
+                  title={song.name}
+                  right={song.take_count > 0 ? <span className="text-gray-500">{song.take_count}</span> : null}
+                >
+                  {(meta || hit === "lyrics") && (
+                    <div className="mt-0.5 truncate text-sm text-gray-400">
+                      {hit === "lyrics" && q ? <span className="text-accent-400">lyrics match</span> : null}
+                      {hit === "lyrics" && q && meta ? " · " : null}
+                      {meta}
+                    </div>
+                  )}
+                </ListItemCard>
+              );
+            })}
+          </ListRows>
         </div>
       )}
     </div>

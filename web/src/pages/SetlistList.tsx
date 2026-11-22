@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { api, formatDate, canEdit } from "../api";
+import { api, formatShortDate, canEdit } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
-import ListItemCard from "../components/ListItemCard";
+import ListItemCard, { ListRows } from "../components/ListItemCard";
+import PageHeader, { HeaderIconButton, PlusIcon } from "../components/PageHeader";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
 import { useFetch } from "../hooks/useFetch";
@@ -96,36 +97,35 @@ export default function SetlistList() {
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-2">
+      <PageHeader
+        title="Setlists"
+        actions={canEdit(user) && (
+          <HeaderIconButton
+            label="New setlist"
+            onClick={() => { setCreating(true); setNewName(""); setNewDate(""); setNewGroupId(groupFilter); setErrorMsg(null); }}
+          >
+            <PlusIcon />
+          </HeaderIconButton>
+        )}
+      />
+      <div className="mb-1 flex items-center justify-end gap-1 text-sm text-gray-400">
         <GroupSelector
           groups={user?.groups ?? []}
           value={groupFilter}
           onChange={setGroupFilter}
-          allLabel="All groups"
+          allLabel="All bands"
+          variant="subtle"
         />
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortKey)}
-          className="min-w-0 truncate rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
+          aria-label="Sort setlists"
+          className="min-w-0 truncate rounded bg-transparent py-1 text-right text-sm text-gray-400 focus:outline-none"
         >
           {sortOptions.map((opt) => (
             <option key={opt.key} value={opt.key}>{opt.label}</option>
           ))}
         </select>
-        {canEdit(user) && (
-          <div className="ml-auto shrink-0">
-            <button
-              onClick={() => { setCreating(true); setNewName(""); setNewDate(""); setNewGroupId(groupFilter); setErrorMsg(null); }}
-              className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500"
-              title="New Setlist"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 sm:hidden">
-                <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
-              </svg>
-              <span className="hidden sm:inline">New Setlist</span>
-            </button>
-          </div>
-        )}
       </div>
 
       <FormModal
@@ -168,7 +168,7 @@ export default function SetlistList() {
           No setlists yet. Create one to start organizing songs for gigs.
         </p>
       ) : (
-        <div className="space-y-3">
+        <ListRows>
           {sorted.map((sl) => (
             <ListItemCard
               key={sl.id}
@@ -176,17 +176,17 @@ export default function SetlistList() {
               title={<>
                 {sl.name}
                 {user && user.groups.length > 1 && !groupFilter && sl.group_name && (
-                  <span className="ml-2 text-xs font-normal text-gray-500">{sl.group_name}</span>
+                  <span className="ml-2 text-sm font-normal text-gray-500">{sl.group_name}</span>
                 )}
               </>}
-              right={<>{sl.song_count} song{sl.song_count !== 1 ? "s" : ""}</>}
+              right={<span className="text-gray-500">{sl.date ? formatShortDate(sl.date) : ""}</span>}
             >
-              <div className="mt-1 text-sm text-gray-400">
-                {sl.date ? formatDate(sl.date) : "No date set"}
+              <div className="mt-0.5 text-sm text-gray-400">
+                {sl.song_count} song{sl.song_count !== 1 ? "s" : ""}
               </div>
             </ListItemCard>
           ))}
-        </div>
+        </ListRows>
       )}
     </div>
   );
