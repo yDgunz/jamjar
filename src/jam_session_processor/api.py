@@ -1,19 +1,27 @@
 import asyncio
+import hmac
 import html
 import logging
 import os as _os
 import re as _re
 import time
 from pathlib import Path
+from typing import Annotated
 from uuid import uuid4
 
 import requests as http_requests
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from jam_session_processor.auth import create_jwt, decode_jwt, hash_password, verify_password
+from jam_session_processor.auth import (
+    burn_password_check,
+    create_jwt,
+    decode_jwt,
+    hash_password,
+    verify_password,
+)
 from jam_session_processor.config import get_config
 from jam_session_processor.db import Database
 from jam_session_processor.email import send_access_request_email as _send_access_request_email
@@ -22,10 +30,28 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Jam Session Processor", version="0.1.0")
 
+# --- Request field length limits ---
+# Applied to every string field in request models so oversized input is rejected
+# with a 422 before it reaches the database.
+ShortStr = Annotated[str, Field(max_length=64)]  # enums, dates, times, ids
+NameStr = Annotated[str, Field(max_length=200)]
+EmailStr_ = Annotated[str, Field(max_length=254)]
+PasswordStr = Annotated[str, Field(max_length=128)]
+TokenStr = Annotated[str, Field(max_length=256)]
+FilenameStr = Annotated[str, Field(max_length=255)]
+TextStr = Annotated[str, Field(max_length=5_000)]
+NotesStr = Annotated[str, Field(max_length=20_000)]
+SheetStr = Annotated[str, Field(max_length=100_000)]
+
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    try:
+        get_db().ping()
+    except Exception:
+        logger.exception("Health check: database unreachable")
+        return JSONResponse(status_code=503, content={"status": "error", "db": "unreachable"})
+    return {"status": "ok", "db": "ok"}
 
 
 cfg = get_config()
@@ -62,6 +88,9 @@ def _get_client_ip(request: Request) -> str:
 class RateLimiter:
     """In-memory per-IP rate limiter with sliding window."""
 
+    # Sweep stale keys once the table grows past this many entries
+    _SWEEP_THRESHOLD = 10_000
+
     def __init__(self, max_attempts: int, window_seconds: int):
         self.max_attempts = max_attempts
         self.window = window_seconds
@@ -69,15 +98,27 @@ class RateLimiter:
 
     def is_blocked(self, key: str) -> bool:
         now = time.monotonic()
-        attempts = self._attempts.get(key, [])
-        # Prune old attempts
-        attempts = [t for t in attempts if now - t < self.window]
-        self._attempts[key] = attempts
+        attempts = [t for t in self._attempts.get(key, []) if now - t < self.window]
+        if attempts:
+            self._attempts[key] = attempts
+        else:
+            self._attempts.pop(key, None)
         return len(attempts) >= self.max_attempts
 
     def record(self, key: str):
         now = time.monotonic()
+        if len(self._attempts) > self._SWEEP_THRESHOLD:
+            self._attempts = {
+                k: v for k, v in self._attempts.items() if v and now - v[-1] < self.window
+            }
         self._attempts.setdefault(key, []).append(now)
+
+    def hit(self, key: str) -> bool:
+        """Record an attempt and return True if the caller is over the limit."""
+        if self.is_blocked(key):
+            return True
+        self.record(key)
+        return False
 
     def reset(self, key: str):
         self._attempts.pop(key, None)
@@ -85,6 +126,17 @@ class RateLimiter:
 
 _login_limiter = RateLimiter(max_attempts=5, window_seconds=60)
 _access_request_limiter = RateLimiter(max_attempts=3, window_seconds=3600)
+# Unauthenticated endpoints that send email or accept secret tokens
+_forgot_password_limiter = RateLimiter(max_attempts=5, window_seconds=3600)
+_token_limiter = RateLimiter(max_attempts=20, window_seconds=600)
+
+
+def _enforce_rate_limit(limiter: RateLimiter, key: str, detail: str) -> None:
+    if limiter.hit(key):
+        raise HTTPException(status_code=429, detail=detail)
+
+
+_TOO_MANY = "Too many requests. Please try again later."
 
 
 # --- Auth middleware ---
@@ -126,7 +178,7 @@ async def auth_middleware(request: Request, call_next):
     if api_key:
         if not cfg.api_key:
             return JSONResponse(status_code=401, content={"detail": "API key auth not configured"})
-        if api_key != cfg.api_key:
+        if not hmac.compare_digest(api_key.encode(), cfg.api_key.encode()):
             return JSONResponse(status_code=401, content={"detail": "Invalid API key"})
         request.state.auth_type = "api_key"
         request.state.user = None
@@ -192,8 +244,8 @@ def _require_role(request: Request, min_role: str):
 
 
 class LoginRequest(BaseModel):
-    email: str
-    password: str
+    email: EmailStr_
+    password: PasswordStr
 
 
 class AuthUserGroup(BaseModel):
@@ -220,6 +272,8 @@ def login(req: LoginRequest, request: Request):
         )
     db = get_db()
     user = db.get_user_by_email(req.email)
+    if not user or not user.password_hash:
+        burn_password_check(req.password)
     if not user or not user.password_hash or not verify_password(req.password, user.password_hash):
         _login_limiter.record(ip)
         raise HTTPException(status_code=401, detail="Invalid username or password")
@@ -262,7 +316,8 @@ def get_me(request: Request):
         role=user.role,
         groups=[
             AuthUserGroup(
-                id=g.id, name=g.name,
+                id=g.id,
+                name=g.name,
                 features=[f for f in (g.features or "").split(",") if f],
             )
             for g in groups
@@ -271,8 +326,8 @@ def get_me(request: Request):
 
 
 class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str
+    current_password: PasswordStr
+    new_password: PasswordStr
 
 
 @app.put("/api/auth/password")
@@ -280,7 +335,10 @@ def change_password(req: ChangePasswordRequest, request: Request):
     user = request.state.user
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    if _login_limiter.is_blocked(f"user:{user.id}"):
+        raise HTTPException(status_code=429, detail=_TOO_MANY)
     if not verify_password(req.current_password, user.password_hash):
+        _login_limiter.record(f"user:{user.id}")
         raise HTTPException(status_code=400, detail="Current password is incorrect")
     if len(req.new_password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
@@ -297,11 +355,12 @@ def logout():
 
 
 class ForgotPasswordRequest(BaseModel):
-    email: str
+    email: EmailStr_
 
 
 @app.post("/api/auth/forgot-password")
-def forgot_password(req: ForgotPasswordRequest):
+def forgot_password(req: ForgotPasswordRequest, request: Request):
+    _enforce_rate_limit(_forgot_password_limiter, _get_client_ip(request), _TOO_MANY)
     from jam_session_processor.email import send_password_reset_email
 
     db = get_db()
@@ -314,11 +373,12 @@ def forgot_password(req: ForgotPasswordRequest):
 
 
 class ResetPasswordValidateRequest(BaseModel):
-    token: str
+    token: TokenStr
 
 
 @app.post("/api/auth/reset-password/validate")
-def reset_password_validate(req: ResetPasswordValidateRequest):
+def reset_password_validate(req: ResetPasswordValidateRequest, request: Request):
+    _enforce_rate_limit(_token_limiter, _get_client_ip(request), _TOO_MANY)
     from datetime import datetime, timezone
 
     db = get_db()
@@ -327,9 +387,7 @@ def reset_password_validate(req: ResetPasswordValidateRequest):
         raise HTTPException(status_code=404, detail="Invalid reset link")
     if row.used_at is not None:
         raise HTTPException(status_code=410, detail="This reset link has already been used")
-    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(
-        tzinfo=timezone.utc
-    )
+    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) > expires_at:
         raise HTTPException(status_code=410, detail="This reset link has expired")
     user = db.get_user(row.user_id)
@@ -339,12 +397,13 @@ def reset_password_validate(req: ResetPasswordValidateRequest):
 
 
 class ResetPasswordRequest(BaseModel):
-    token: str
-    password: str
+    token: TokenStr
+    password: PasswordStr
 
 
 @app.post("/api/auth/reset-password")
-def reset_password(req: ResetPasswordRequest):
+def reset_password(req: ResetPasswordRequest, request: Request):
+    _enforce_rate_limit(_token_limiter, _get_client_ip(request), _TOO_MANY)
     from datetime import datetime, timezone
 
     if not req.password or len(req.password) < 8:
@@ -355,9 +414,7 @@ def reset_password(req: ResetPasswordRequest):
         raise HTTPException(status_code=404, detail="Invalid reset link")
     if row.used_at is not None:
         raise HTTPException(status_code=410, detail="This reset link has already been used")
-    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(
-        tzinfo=timezone.utc
-    )
+    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) > expires_at:
         raise HTTPException(status_code=410, detail="This reset link has expired")
     user = db.get_user(row.user_id)
@@ -392,9 +449,9 @@ def reset_password(req: ResetPasswordRequest):
 
 
 class AccessRequest(BaseModel):
-    email: str
-    band_name: str
-    message: str
+    email: EmailStr_
+    band_name: NameStr
+    message: TextStr
 
 
 @app.post("/api/access-request")
@@ -410,7 +467,7 @@ async def request_access(body: AccessRequest, request: Request):
     if not re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
         raise HTTPException(422, "Invalid email address")
 
-    ip = request.client.host if request.client else "unknown"
+    ip = _get_client_ip(request)
     if _access_request_limiter.is_blocked(ip):
         raise HTTPException(429, "Too many requests. Please try again later.")
     _access_request_limiter.record(ip)
@@ -493,15 +550,15 @@ class SongTrackResponse(BaseModel):
 
 
 class TagRequest(BaseModel):
-    song_name: str
+    song_name: NameStr
 
 
 class NotesRequest(BaseModel):
-    notes: str
+    notes: NotesStr
 
 
 class NameRequest(BaseModel):
-    name: str
+    name: NameStr
 
 
 class MergeRequest(BaseModel):
@@ -518,13 +575,13 @@ class TrimRequest(BaseModel):
 
 
 class SongDetailsRequest(BaseModel):
-    artist: str = ""
-    sheet: str = ""
-    notes: str = ""
+    artist: NameStr = ""
+    sheet: SheetStr = ""
+    notes: NotesStr = ""
 
 
 class DateRequest(BaseModel):
-    date: str | None
+    date: ShortStr | None
 
 
 class GroupRequest(BaseModel):
@@ -548,7 +605,7 @@ class ReprocessRequest(BaseModel):
 
 
 class UploadInitRequest(BaseModel):
-    filename: str
+    filename: FilenameStr
     group_id: int | None = None
     threshold: float | None = None
     single: bool = False
@@ -563,7 +620,7 @@ class UploadInitResponse(BaseModel):
 
 
 class UploadCompleteRequest(BaseModel):
-    job_id: str
+    job_id: ShortStr
     session_id: int
     threshold: float | None = None
     single: bool = False
@@ -1774,9 +1831,9 @@ def list_songs(request: Request, group_id: int | None = None):
 
 
 class CreateSongRequest(BaseModel):
-    name: str
+    name: NameStr
     group_id: int
-    artist: str = ""
+    artist: NameStr = ""
 
 
 @app.post("/api/songs", response_model=SongResponse)
@@ -1933,14 +1990,14 @@ class SetlistSongResponse(BaseModel):
 
 
 class CreateSetlistRequest(BaseModel):
-    name: str
+    name: NameStr
     group_id: int
-    date: str | None = None
-    notes: str = ""
+    date: ShortStr | None = None
+    notes: NotesStr = ""
 
 
 class SetlistSongsRequest(BaseModel):
-    song_ids: list[int]
+    song_ids: list[int] = Field(max_length=1000)
 
 
 class AddSetlistSongRequest(BaseModel):
@@ -2151,28 +2208,28 @@ class EventMemberResponse(BaseModel):
 
 class CreateEventRequest(BaseModel):
     group_id: int
-    type: str
-    name: str
-    date: str
-    time: str | None = None
-    location: str | None = None
-    status: str = "tentative"
-    notes: str = ""
+    type: ShortStr
+    name: NameStr
+    date: ShortStr
+    time: ShortStr | None = None
+    location: TextStr | None = None
+    status: ShortStr = "tentative"
+    notes: NotesStr = ""
 
 
 class UpdateEventRequest(BaseModel):
-    name: str | None = None
-    type: str | None = None
-    date: str | None = None
-    time: str | None = None
-    location: str | None = None
-    status: str | None = None
-    notes: str | None = None
+    name: NameStr | None = None
+    type: ShortStr | None = None
+    date: ShortStr | None = None
+    time: ShortStr | None = None
+    location: TextStr | None = None
+    status: ShortStr | None = None
+    notes: NotesStr | None = None
 
 
 class EventRSVPRequest(BaseModel):
-    status: str
-    comment: str | None = None
+    status: ShortStr
+    comment: TextStr | None = None
 
 
 def _validate_event_fields(
@@ -2202,10 +2259,7 @@ def _event_response(event, request=None) -> EventResponse:
     d["updated_by_name"] = db.get_user_name(d.pop("updated_by", None))
     d["response_summary"] = db.get_event_response_summary(event.id, event.group_id)
     responses = db.get_event_responses(event.id)
-    d["responses"] = [
-        {"user_name": r.user_name, "status": r.status}
-        for r in responses
-    ]
+    d["responses"] = [{"user_name": r.user_name, "status": r.status} for r in responses]
     d["my_response"] = None
     if request and request.state.user:
         my = next((r for r in responses if r.user_id == request.state.user.id), None)
@@ -2227,7 +2281,8 @@ def list_events(request: Request, type: str | None = None, include_past: bool = 
     db = get_db()
     group_ids = _get_group_ids(request)
     events = db.list_events(
-        group_ids, event_type=type,
+        group_ids,
+        event_type=type,
         upcoming_only=not include_past,
     )
     # Only return events for groups with scheduling feature enabled
@@ -2246,14 +2301,22 @@ def create_event(req: CreateEventRequest, request: Request):
     if not name:
         raise HTTPException(status_code=400, detail="Event name cannot be empty")
     _validate_event_fields(
-        type=req.type, date=req.date, time=req.time,
+        type=req.type,
+        date=req.date,
+        time=req.time,
         status=req.status,
     )
     user_id = request.state.user.id if request.state.user else None
     eid = db.create_event(
-        group_id=req.group_id, type=req.type, name=name, date=req.date,
-        time=req.time, location=req.location,
-        status=req.status, notes=req.notes, created_by=user_id,
+        group_id=req.group_id,
+        type=req.type,
+        name=name,
+        date=req.date,
+        time=req.time,
+        location=req.location,
+        status=req.status,
+        notes=req.notes,
+        created_by=user_id,
     )
     if request.state.user:
         db.log_activity(request.state.user.id, req.group_id, "event_created", name)
@@ -2340,16 +2403,26 @@ def get_event_responses(event_id: int, request: Request):
     members = db.get_users_for_group(event.group_id)
     result = []
     for r in responses:
-        result.append(EventMemberResponse(
-            user_id=r.user_id, user_name=r.user_name,
-            status=r.status, comment=r.comment, responded_at=r.responded_at,
-        ))
+        result.append(
+            EventMemberResponse(
+                user_id=r.user_id,
+                user_name=r.user_name,
+                status=r.status,
+                comment=r.comment,
+                responded_at=r.responded_at,
+            )
+        )
     for m in members:
         if m.id not in responded_ids:
-            result.append(EventMemberResponse(
-                user_id=m.id, user_name=m.name or m.email,
-                status="pending", comment=None, responded_at=None,
-            ))
+            result.append(
+                EventMemberResponse(
+                    user_id=m.id,
+                    user_name=m.name or m.email,
+                    status="pending",
+                    comment=None,
+                    responded_at=None,
+                )
+            )
     return result
 
 
@@ -2357,12 +2430,12 @@ def get_event_responses(event_id: int, request: Request):
 
 
 class InviteValidateRequest(BaseModel):
-    token: str
+    token: TokenStr
 
 
 class InviteAcceptRequest(BaseModel):
-    token: str
-    password: str
+    token: TokenStr
+    password: PasswordStr
 
 
 def _validate_invite_token(db, token: str):
@@ -2374,9 +2447,7 @@ def _validate_invite_token(db, token: str):
         raise HTTPException(status_code=404, detail="Invalid invite link")
     if row.used_at is not None:
         raise HTTPException(status_code=410, detail="This invite has already been used")
-    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(
-        tzinfo=timezone.utc
-    )
+    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) > expires_at:
         raise HTTPException(status_code=410, detail="This invite has expired")
     user = db.get_user(row.user_id)
@@ -2386,14 +2457,16 @@ def _validate_invite_token(db, token: str):
 
 
 @app.post("/api/invite/validate")
-def invite_validate(req: InviteValidateRequest):
+def invite_validate(req: InviteValidateRequest, request: Request):
+    _enforce_rate_limit(_token_limiter, _get_client_ip(request), _TOO_MANY)
     db = get_db()
     _row, user = _validate_invite_token(db, req.token)
     return {"email": user.email, "name": user.name}
 
 
 @app.post("/api/invite/accept")
-def invite_accept(req: InviteAcceptRequest):
+def invite_accept(req: InviteAcceptRequest, request: Request):
+    _enforce_rate_limit(_token_limiter, _get_client_ip(request), _TOO_MANY)
     if not req.password or len(req.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     db = get_db()
@@ -2448,15 +2521,15 @@ class AdminGroupResponse(BaseModel):
 
 
 class CreateUserRequest(BaseModel):
-    email: str
-    password: str = ""
-    name: str = ""
-    role: str = "editor"
-    group_ids: list[int] = []
+    email: EmailStr_
+    password: PasswordStr = ""
+    name: NameStr = ""
+    role: ShortStr = "editor"
+    group_ids: list[int] = Field(default=[], max_length=100)
 
 
 class PasswordRequest(BaseModel):
-    password: str
+    password: PasswordStr
 
 
 class AssignGroupRequest(BaseModel):
@@ -2478,7 +2551,10 @@ def _admin_group_response(db, group) -> AdminGroupResponse:
     count = db.get_group_member_count(group.id)
     features = [f for f in (group.features or "").split(",") if f]
     return AdminGroupResponse(
-        id=group.id, name=group.name, member_count=count, features=features,
+        id=group.id,
+        name=group.name,
+        member_count=count,
+        features=features,
     )
 
 
@@ -2572,7 +2648,7 @@ def admin_update_name(user_id: int, req: NameRequest, request: Request):
 
 
 class RoleRequest(BaseModel):
-    role: str
+    role: ShortStr
 
 
 @app.put("/api/admin/users/{user_id}/role", response_model=AdminUserResponse)
@@ -2648,16 +2724,14 @@ def admin_delete_group(group_id: int, request: Request):
 
 
 class UpdateGroupFeaturesRequest(BaseModel):
-    features: list[str]
+    features: list[ShortStr] = Field(max_length=50)
 
 
 @app.put(
     "/api/admin/groups/{group_id}/features",
     response_model=AdminGroupResponse,
 )
-def admin_update_group_features(
-    group_id: int, req: UpdateGroupFeaturesRequest, request: Request
-):
+def admin_update_group_features(group_id: int, req: UpdateGroupFeaturesRequest, request: Request):
     _require_role(request, "superadmin")
     db = get_db()
     group = db.get_group(group_id)

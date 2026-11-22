@@ -14,8 +14,8 @@ The user prefixes messages to signal how much autonomy to give:
 
 - When asked to implement something, start coding immediately. Do not spend excessive time on codebase exploration, task creation, or planning unless explicitly asked to plan. Bias toward action.
 - After committing and pushing, stop. Do not automatically start new tasks, brainstorming, or invoke skills unless the user explicitly asks for the next thing.
-- Never commit anything without an explicit approval from the user. 
-- Never push anything to GitHub without an explicit directive from the user.
+- Claude owns day-to-day development and maintenance. Commit and push to non-`main` branches (feature branches, `claude/*` branches) without asking; open PRs when work is ready for review.
+- Land changes on `main` via PR, never by pushing directly. Claude may merge its own PRs (and Dependabot PRs) once CI is green — merging deploys to production, so only merge work that is tested, non-breaking, and reversible. Ask the user first for anything risky: data migrations, auth changes that could lock users out, infra/deploy changes that can't be easily rolled back.
 - Never introduce breaking changes (schema migrations that lose data, removed/renamed API fields, changed defaults) without an explicit plan for migration of the deployed application.
 
 ## Project Overview
@@ -165,7 +165,7 @@ All `/api` endpoints require authentication (JWT cookie or API key header). Role
 **Setlists:** `GET /api/setlists` | `POST /api/setlists` (editor) | `GET /api/setlists/{id}` | `GET /api/setlists/{id}/songs` | `PUT /api/setlists/{id}/name` (editor) | `PUT /api/setlists/{id}/date` (editor) | `PUT /api/setlists/{id}/notes` (editor) | `PUT /api/setlists/{id}/songs` (editor, replace order) | `POST /api/setlists/{id}/songs` (editor, add song) | `DELETE /api/setlists/{id}/songs/{position}` (editor) | `DELETE /api/setlists/{id}` (admin)
 **Admin:** `GET/POST /api/admin/users` | `DELETE /api/admin/users/{id}` | `POST .../resend-invite` | `PUT .../password` | `PUT .../role` | `PUT .../name` | `POST/DELETE .../groups/{id}` | `GET/POST /api/admin/groups` | `DELETE /api/admin/groups/{id}` | `GET /api/admin/stats` (all superadmin)
 **Public:** `GET /` (landing page) | `POST /api/access-request`
-**Health:** `GET /health`
+**Health:** `GET /health` — runs a query against SQLite; returns 503 if the DB is unusable (used by the Docker `HEALTHCHECK`)
 
 ## Build & Development Commands
 
@@ -264,10 +264,10 @@ At the end of any session where work state changed:
 
 - Issues are created with the `backlog` label using the work-item template
 - Label transitions: `backlog` → `in-progress` → `review` → merged
-- Claude owns all label transitions; user gates merges via PR approval
+- Claude owns all label transitions and merges (see General Behavior for when to ask first)
 - Priority: oldest `backlog` issue first, unless `priority-high` label is present
 - Feature branches: `feature/<short-description>`
-- Production deploys require explicit user approval
+- Merging to `main` deploys to production; check the deploy succeeded (`/health`) after merging
 
 ## System Dependencies
 
@@ -277,7 +277,7 @@ At the end of any session where work state changed:
 
 ## Deployment
 
-The app runs in Docker via `docker compose`. CI/CD is via GitHub Actions (`.github/workflows/deploy.yml`): push to `main` triggers SSH deploy to the VPS.
+The app runs in Docker via `docker compose`. CI/CD is via GitHub Actions (`.github/workflows/deploy.yml`): push to `main` triggers SSH deploy to the VPS. The deploy rebuilds with `--pull` (fresh base images), then polls `/health` for up to ~60s; if the new version never becomes healthy it resets to the previous commit, rebuilds, and fails the workflow.
 
 **Required GitHub Secrets:** `SSH_HOST`, `SSH_USER`, `SSH_KEY`, `SSH_PASSPHRASE`
 

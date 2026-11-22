@@ -11,14 +11,37 @@ _ALGORITHM = "HS256"
 _TOKEN_EXPIRY_DAYS = 7
 
 
+# bcrypt only uses the first 72 bytes of a password. bcrypt<5 truncated silently;
+# bcrypt>=5 raises ValueError instead. Truncate explicitly so long passwords work
+# and hashes created under the old silent truncation still verify.
+_BCRYPT_MAX_BYTES = 72
+
+
+def _pw_bytes(password: str) -> bytes:
+    return password.encode()[:_BCRYPT_MAX_BYTES]
+
+
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt."""
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(_pw_bytes(password), bcrypt.gensalt()).decode()
 
 
 def verify_password(password: str, password_hash: str) -> bool:
     """Verify a password against a bcrypt hash."""
-    return bcrypt.checkpw(password.encode(), password_hash.encode())
+    try:
+        return bcrypt.checkpw(_pw_bytes(password), password_hash.encode())
+    except ValueError:
+        # Malformed hash
+        return False
+
+
+# Used to spend equivalent bcrypt time when a login targets an unknown user,
+# so response timing doesn't reveal which emails have accounts.
+_DUMMY_HASH = bcrypt.hashpw(b"timing-equalizer", bcrypt.gensalt()).decode()
+
+
+def burn_password_check(password: str) -> None:
+    verify_password(password, _DUMMY_HASH)
 
 
 def create_jwt(user_id: int, email: str) -> str:

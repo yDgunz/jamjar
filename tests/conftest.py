@@ -33,3 +33,18 @@ def silence_only_file(tmp_path):
     path = tmp_path / "silence.wav"
     silence.export(str(path), format="wav")
     return path
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters():
+    """Rate limiters are module-level state; clear them so tests don't interfere."""
+    from jam_session_processor import api
+
+    for limiter in (
+        api._login_limiter,
+        api._access_request_limiter,
+        api._forgot_password_limiter,
+        api._token_limiter,
+    ):
+        limiter._attempts.clear()
+    yield
