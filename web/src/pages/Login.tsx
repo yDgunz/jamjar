@@ -14,7 +14,7 @@ export default function Login() {
     setLoading(true);
     try {
       await api.login(email, password);
-      window.location.href = "/sessions";
+      window.location.href = "/songs";
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

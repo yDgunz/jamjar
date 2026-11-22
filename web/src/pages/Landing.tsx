@@ -10,7 +10,7 @@ export default function Landing() {
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" }).then((resp) => {
       if (resp.ok) {
-        navigate("/sessions", { replace: true });
+        navigate("/songs", { replace: true });
       } else {
         setAuthChecked(true);
       }

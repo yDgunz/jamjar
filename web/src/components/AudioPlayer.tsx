@@ -7,8 +7,9 @@ function formatTime(sec: number): string {
 }
 
 // Global coordination: when one player starts, all others pause
-const playingAudios = new Set<HTMLAudioElement>();
-const pauseAllExcept = (active: HTMLAudioElement) => {
+// (shared with the app-wide mini-player in PlayerContext)
+export const playingAudios = new Set<HTMLAudioElement>();
+export const pauseAllExcept = (active: HTMLAudioElement) => {
   for (const audio of playingAudios) {
     if (audio !== active) audio.pause();
   }

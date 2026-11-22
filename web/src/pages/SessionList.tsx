@@ -1,11 +1,13 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { api, ApiError, formatDate, canAdmin } from "../api";
+import { api, ApiError, formatShortDate, canAdmin } from "../api";
 import type { Session } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
-import ListItemCard from "../components/ListItemCard";
+import ListItemCard, { ListRows } from "../components/ListItemCard";
+import PageHeader, { HeaderIconButton } from "../components/PageHeader";
+import SearchInput from "../components/SearchInput";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import Spinner from "../components/Spinner";
 import { useAuth } from "../context/AuthContext";
@@ -53,8 +55,6 @@ export default function SessionList() {
     [],
   );
   const [filter, setFilter] = useState("");
-  const [filterOpen, setFilterOpen] = useState(false);
-  const filterInputRef = useRef<HTMLInputElement>(null);
   const [groupFilter, setGroupFilter] = useState<number | null>(() => {
     const stored = localStorage.getItem("group-filter");
     if (stored) { const n = Number(stored); if (!isNaN(n)) return n; }
@@ -219,123 +219,85 @@ export default function SessionList() {
           </div>
         </div>
       )}
-      <div className="mb-3 flex items-center gap-2">
-        {filterOpen ? (
-          <input
-            ref={filterInputRef}
-            autoFocus
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            onBlur={() => { if (!filter) setFilterOpen(false); }}
-            onKeyDown={(e) => { if (e.key === "Escape") { setFilter(""); setFilterOpen(false); } }}
-            placeholder="Filter..."
-            className="w-36 rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:w-44 sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
-          />
-        ) : (
-          <button
-            onClick={() => setFilterOpen(true)}
-            className="rounded p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white"
-            title="Filter sessions"
-          >
+      <PageHeader
+        title="Recordings"
+        actions={canAdmin(user) && (
+          <HeaderIconButton label="Upload recording" onClick={openUploadModal} disabled={uploading}>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-              <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clipRule="evenodd" />
+              <path d="M9.25 13.25a.75.75 0 0 0 1.5 0V4.636l2.955 3.129a.75.75 0 0 0 1.09-1.03l-4.25-4.5a.75.75 0 0 0-1.09 0l-4.25 4.5a.75.75 0 1 0 1.09 1.03L9.25 4.636v8.614Z" />
+              <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
             </svg>
-          </button>
+          </HeaderIconButton>
         )}
+      />
+      <SearchInput value={filter} onChange={setFilter} placeholder="Search recordings or songs" />
+      <div className="mt-2 flex items-center justify-end gap-1 text-sm text-gray-400">
         <GroupSelector
           groups={user?.groups ?? []}
           value={groupFilter}
           onChange={setGroupFilter}
-          allLabel="All groups"
+          allLabel="All bands"
+          variant="subtle"
         />
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortBy)}
-          className="min-w-0 truncate rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
+          aria-label="Sort recordings"
+          className="min-w-0 truncate rounded bg-transparent py-1 text-right text-sm text-gray-400 focus:outline-none"
         >
-          <option value="date">By date</option>
-          <option value="uploaded">By upload</option>
+          <option value="date">By date played</option>
+          <option value="uploaded">By date added</option>
         </select>
-        {canAdmin(user) && (
-          <div className="ml-auto shrink-0">
-            <button
-              onClick={openUploadModal}
-              disabled={uploading}
-              className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500 disabled:opacity-50"
-              title="Upload"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 sm:hidden">
-                <path d="M9.25 13.25a.75.75 0 0 0 1.5 0V4.636l2.955 3.129a.75.75 0 0 0 1.09-1.03l-4.25-4.5a.75.75 0 0 0-1.09 0l-4.25 4.5a.75.75 0 1 0 1.09 1.03L9.25 4.636v8.614Z" />
-                <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
-              </svg>
-              <span className="hidden sm:inline">Upload</span>
-            </button>
-          </div>
-        )}
       </div>
       {(sessions ?? []).length === 0 && (
-        <p className="text-gray-400">
-          No recordings yet. Upload a recording to get started.
+        <p className="mt-6 text-gray-400">
+          No recordings yet.{canAdmin(user) ? " Upload one with the button above." : ""}
         </p>
       )}
-      <div className="space-y-6">
+      {(sessions ?? []).length > 0 && filtered.length === 0 && (
+        <p className="mt-8 text-center text-gray-400">No recordings match “{filter.trim()}”.</p>
+      )}
+      <div className="space-y-5">
         {monthGroups.map(([month, group]) => (
-          <div key={month}>
-            <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-gray-500">
+          <section key={month}>
+            <h2 className="sticky top-0 z-10 -mx-4 bg-gray-950/95 px-4 py-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500 backdrop-blur sm:mx-0 sm:px-0">
               {formatMonthHeader(month)}
             </h2>
-            <div className="space-y-3">
-              {group.map((s) => (
-                <ListItemCard
-                  key={s.id}
-                  to={`/sessions/${s.id}`}
-                  title={<>
-                    {s.name || `Session ${s.id}`}
-                    {multiGroup && !groupFilter && s.group_name && (
-                      <span className="ml-2 text-xs font-normal text-gray-500">{s.group_name}</span>
-                    )}
-                  </>}
-                  right={
-                    s.active_job_id ? (
-                      <div className="flex items-center gap-2 text-accent-400">
-                        <Spinner size="sm" />
-                        Processing
-                      </div>
-                    ) : (
-                      <>
-                        <div>{s.track_count} track{s.track_count !== 1 ? "s" : ""}</div>
-                        <div>
-                          {s.tagged_count}/{s.track_count} tagged
+            <ListRows>
+              {group.map((s) => {
+                const names = s.song_names ? s.song_names.split(",") : [];
+                const untagged = s.track_count - s.tagged_count;
+                let songs = names.slice(0, 3).join(", ");
+                if (names.length > 3) songs += ` +${names.length - 3}`;
+                if (untagged > 0) songs += (songs ? " · " : "") + `${untagged} untagged`;
+                const shownDate = sortBy === "uploaded" ? s.created_at : s.date;
+                return (
+                  <ListItemCard
+                    key={s.id}
+                    to={`/sessions/${s.id}`}
+                    title={<>
+                      {s.name || `Session ${s.id}`}
+                      {multiGroup && !groupFilter && s.group_name && (
+                        <span className="ml-2 text-sm font-normal text-gray-500">{s.group_name}</span>
+                      )}
+                    </>}
+                    right={
+                      s.active_job_id ? (
+                        <div className="flex items-center gap-1.5 text-accent-400">
+                          <Spinner size="sm" />
+                          Processing
                         </div>
-                      </>
-                    )
-                  }
-                  rightClassName="hidden shrink-0 text-right text-sm text-gray-400 sm:block"
-                >
-                  <div className="mt-1 text-sm text-gray-400">
-                    {formatDate(s.date)}
-                    {s.created_at && (
-                      <span className="text-gray-600"> · uploaded {formatDate(s.created_at.substring(0, 10))}</span>
-                    )}
-                  </div>
-                  {(s.song_names || s.track_count - s.tagged_count > 0) && (
-                    <div className="mt-0.5 text-sm text-gray-500">
-                      {(() => {
-                        const names = s.song_names ? s.song_names.split(",") : [];
-                        const untagged = s.track_count - s.tagged_count;
-                        const shown = names.slice(0, 3);
-                        const extra = names.length - 3;
-                        let text = shown.join(", ");
-                        if (extra > 0) text += `, +${extra + untagged} more`;
-                        else if (untagged > 0) text += (text ? ", " : "") + `${untagged} untagged`;
-                        return text;
-                      })()}
-                    </div>
-                  )}
-                </ListItemCard>
-              ))}
-            </div>
-          </div>
+                      ) : (
+                        <span className="text-gray-500">{formatShortDate(shownDate)}</span>
+                      )
+                    }
+                  >
+                    {songs && <div className="mt-0.5 truncate text-sm text-gray-400">{songs}</div>}
+                  </ListItemCard>
+                );
+              })}
+            </ListRows>
+          </section>
         ))}
       </div>
       <FormModal
