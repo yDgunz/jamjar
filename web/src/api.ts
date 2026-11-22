@@ -555,6 +555,14 @@ export const api = {
       body: JSON.stringify({ threshold, min_duration: minDuration, ...(single ? { single: true } : {}) }),
     }),
 
+  /** Replace a recording's tracks with hand-marked [start, end] songs (seconds). */
+  splitSessionManually: (sessionId: number, segments: [number, number][]) =>
+    fetchJson<Job>(`${BASE}/sessions/${sessionId}/reprocess`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ segments }),
+    }),
+
   deleteSession: (id: number, deleteFiles = false) =>
     fetchJson<{ ok: boolean }>(`${BASE}/sessions/${id}`, {
       method: "DELETE",
