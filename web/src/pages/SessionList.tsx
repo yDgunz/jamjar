@@ -5,6 +5,7 @@ import type { Session } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
+import InlineSelect from "../components/InlineSelect";
 import ListItemCard, { ListRows } from "../components/ListItemCard";
 import PageHeader, { HeaderIconButton } from "../components/PageHeader";
 import SearchInput from "../components/SearchInput";
@@ -231,7 +232,7 @@ export default function SessionList() {
         )}
       />
       <SearchInput value={filter} onChange={setFilter} placeholder="Search recordings or songs" />
-      <div className="mt-2 flex items-center justify-end gap-1 text-sm text-gray-400">
+      <div className="mt-2 flex items-center justify-end gap-4 text-sm text-gray-400">
         <GroupSelector
           groups={user?.groups ?? []}
           value={groupFilter}
@@ -239,15 +240,12 @@ export default function SessionList() {
           allLabel="All bands"
           variant="subtle"
         />
-        <select
+        <InlineSelect
           value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as SortBy)}
-          aria-label="Sort recordings"
-          className="min-w-0 truncate rounded bg-transparent py-1 text-right text-sm text-gray-400 focus:outline-none"
-        >
-          <option value="date">By date played</option>
-          <option value="uploaded">By date added</option>
-        </select>
+          options={[{ value: "date", label: "By date played" }, { value: "uploaded", label: "By date added" }] as { value: SortBy; label: string }[]}
+          onChange={setSortBy}
+          ariaLabel="Sort recordings"
+        />
       </div>
       {(sessions ?? []).length === 0 && (
         <p className="mt-6 text-gray-400">

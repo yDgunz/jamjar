@@ -4,6 +4,7 @@ import { api, formatShortDate, canEdit } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
+import InlineSelect from "../components/InlineSelect";
 import ListItemCard, { ListRows } from "../components/ListItemCard";
 import PageHeader, { HeaderIconButton, PlusIcon } from "../components/PageHeader";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
@@ -108,7 +109,7 @@ export default function SetlistList() {
           </HeaderIconButton>
         )}
       />
-      <div className="mb-1 flex items-center justify-end gap-1 text-sm text-gray-400">
+      <div className="mb-1 flex items-center justify-end gap-4 text-sm text-gray-400">
         <GroupSelector
           groups={user?.groups ?? []}
           value={groupFilter}
@@ -116,16 +117,12 @@ export default function SetlistList() {
           allLabel="All bands"
           variant="subtle"
         />
-        <select
+        <InlineSelect
           value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as SortKey)}
-          aria-label="Sort setlists"
-          className="min-w-0 truncate rounded bg-transparent py-1 text-right text-sm text-gray-400 focus:outline-none"
-        >
-          {sortOptions.map((opt) => (
-            <option key={opt.key} value={opt.key}>{opt.label}</option>
-          ))}
-        </select>
+          options={sortOptions.map((o) => ({ value: o.key, label: o.label }))}
+          onChange={setSortBy}
+          ariaLabel="Sort setlists"
+        />
       </div>
 
       <FormModal

@@ -5,6 +5,7 @@ import type { Song } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
+import InlineSelect from "../components/InlineSelect";
 import ListItemCard, { ListRows } from "../components/ListItemCard";
 import PageHeader, { HeaderIconButton, PlusIcon } from "../components/PageHeader";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
@@ -147,7 +148,7 @@ export default function SongCatalog() {
         <span>
           {results.length} song{results.length !== 1 ? "s" : ""}
         </span>
-        <div className="flex min-w-0 items-center gap-1">
+        <div className="flex min-w-0 items-center gap-4">
           <GroupSelector
             groups={user?.groups ?? []}
             value={groupFilter}
@@ -155,16 +156,12 @@ export default function SongCatalog() {
             allLabel="All bands"
             variant="subtle"
           />
-          <select
+          <InlineSelect
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as SortKey)}
-            aria-label="Sort songs"
-            className="min-w-0 truncate rounded bg-transparent py-1 text-right text-sm text-gray-400 focus:outline-none"
-          >
-            {SORT_OPTIONS.map((opt) => (
-              <option key={opt.key} value={opt.key}>{opt.label}</option>
-            ))}
-          </select>
+            options={SORT_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
+            onChange={setSortBy}
+            ariaLabel="Sort songs"
+          />
         </div>
       </div>
 
