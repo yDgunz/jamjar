@@ -12,6 +12,16 @@ html {
   background-color: theme(--color-gray-950);
 }
 
+/* Tailwind v4 dropped the pointer cursor from buttons; restore it for anything clickable */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  label[for],
+  summary {
+    cursor: pointer;
+  }
+}
+
 @keyframes eq {
   0%, 100% { height: 30%; }
   50% { height: 100%; }
