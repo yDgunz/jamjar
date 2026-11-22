@@ -198,3 +198,22 @@ def test_health_returns_503_when_db_closed(client):  # noqa: F811
     assert resp.status_code == 503
     # Reopen so fixture teardown can close cleanly
     api._db.conn = sqlite3.connect(":memory:")
+
+
+def test_rate_limit_ignores_spoofed_client_headers(client):  # noqa: F811
+    """Client-supplied CF-Connecting-IP and leading X-Forwarded-For entries can't
+    be used to rotate identities; only the proxy-appended last hop counts."""
+    _create_user_and_group(api._db)
+    bad = {"email": "test@example.com", "password": "no"}
+    for i in range(5):
+        client.post(
+            "/api/auth/login",
+            json=bad,
+            headers={"cf-connecting-ip": f"9.9.9.{i}", "x-forwarded-for": f"8.8.8.{i}, 1.1.1.1"},
+        )
+    resp = client.post(
+        "/api/auth/login",
+        json=bad,
+        headers={"cf-connecting-ip": "9.9.9.99", "x-forwarded-for": "8.8.8.99, 1.1.1.1"},
+    )
+    assert resp.status_code == 429

@@ -211,39 +211,6 @@ export interface SetlistSong {
   added_by_name: string | null;
 }
 
-export interface Event {
-  id: number;
-  group_id: number;
-  group_name: string;
-  type: "rehearsal" | "gig";
-  name: string;
-  date: string;
-  time: string | null;
-  location: string | null;
-  status: "tentative" | "confirmed" | "cancelled";
-  notes: string;
-  created_by_name: string | null;
-  created_at: string;
-  updated_by_name: string | null;
-  updated_at: string | null;
-  response_summary: {
-    yes: number;
-    no: number;
-    maybe: number;
-    pending: number;
-  } | null;
-  responses: { user_name: string; status: string }[];
-  my_response: { status: string; comment: string | null } | null;
-}
-
-export interface EventMemberResponse {
-  user_id: number;
-  user_name: string;
-  status: string;
-  comment: string | null;
-  responded_at: string | null;
-}
-
 export interface AdminUser {
   id: number;
   email: string;
@@ -739,58 +706,6 @@ export const api = {
 
   deleteSetlist: (id: number) =>
     fetchJson<{ ok: boolean }>(`${BASE}/setlists/${id}`, { method: "DELETE" }),
-
-  // Events
-  listEvents: (type?: string, includePast?: boolean) => {
-    const params = new URLSearchParams();
-    if (type) params.set("type", type);
-    if (includePast) params.set("include_past", "true");
-    const qs = params.toString();
-    return fetchJson<Event[]>(`${BASE}/events${qs ? `?${qs}` : ""}`);
-  },
-
-  createEvent: (data: {
-    group_id: number;
-    type: string;
-    name: string;
-    date: string;
-    time?: string;
-    location?: string;
-    status?: string;
-    notes?: string;
-  }) =>
-    fetchJson<Event>(`${BASE}/events`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    }),
-
-  getEvent: (id: number) => fetchJson<Event>(`${BASE}/events/${id}`),
-
-  updateEvent: (id: number, fields: Record<string, unknown>) =>
-    fetchJson<Event>(`${BASE}/events/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(fields),
-    }),
-
-  deleteEvent: (id: number) =>
-    fetchJson<{ ok: boolean }>(`${BASE}/events/${id}`, { method: "DELETE" }),
-
-  respondToEvent: (id: number, status: string, comment?: string) =>
-    fetchJson<{ ok: boolean }>(`${BASE}/events/${id}/respond`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, comment: comment ?? null }),
-    }),
-
-  clearEventResponse: (id: number) =>
-    fetchJson<{ ok: boolean }>(`${BASE}/events/${id}/respond`, {
-      method: "DELETE",
-    }),
-
-  getEventResponses: (id: number) =>
-    fetchJson<EventMemberResponse[]>(`${BASE}/events/${id}/responses`),
 
   // Share links
   createShareLink: (trackId: number) =>

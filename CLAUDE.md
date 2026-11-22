@@ -106,22 +106,6 @@ detail
 created_at
 (indexes: user, event_type, created_at)
 
-events                          event_responses
-──────────────                 ─────────────────
-id (PK)                        id (PK)
-group_id (FK→groups)           event_id (FK→events)
-type                           user_id (FK→users)
-name                           status
-date                           comment
-time                           responded_at
-location                       UNIQUE(event_id, user_id)
-status
-notes
-created_by (FK→users)
-updated_by (FK→users)
-updated_at
-created_at
-
 share_links                    invite_tokens
 ──────────────                ──────────────
 id (PK)                       id (PK)
@@ -134,7 +118,7 @@ created_at                    used_at (nullable)
 
 - **Multi-tenancy:** groups own sessions, songs, and setlists; users belong to groups via `user_groups`
 - **Roles:** `superadmin`, `admin`, `editor`, `readonly` — enforced in API middleware
-- `groups → sessions/songs/jobs/setlists/events`: one-to-many, CASCADE delete
+- `groups → sessions/songs/jobs/setlists`: one-to-many, CASCADE delete
 - `sessions → tracks`: one-to-many, CASCADE delete
 - `tracks → songs`: many-to-one (nullable), SET NULL on delete
 - `jobs → sessions`: many-to-one (nullable), SET NULL on delete
@@ -145,10 +129,8 @@ created_at                    used_at (nullable)
 - `share_links → users`: many-to-one (nullable), SET NULL on delete
 - `invite_tokens → users`: many-to-one, CASCADE delete
 - Songs are created on first tag and reused across sessions within a group
-- `events → event_responses`: one-to-many, CASCADE delete
-- `event_responses → users`: many-to-one, CASCADE delete
 - Setlists are group-scoped ordered collections of songs, independent of sessions
-- Events are group-scoped scheduling entries (rehearsals/gigs) with per-member RSVP responses
+- **Removed scheduling feature:** the events/RSVP feature was removed. Existing production DBs still contain orphaned `events` and `event_responses` tables (and groups may still have `scheduling` in `groups.features`); no code reads them. They are left in place deliberately (no data loss) and can be dropped later. Fresh DBs don't create them. The generic `groups.features` flag mechanism remains for future feature flags.
 
 ### REST API
 
@@ -161,7 +143,6 @@ All `/api` endpoints require authentication (JWT cookie or API key header). Role
 **Share (public):** `GET /share/{token}` | `GET /api/share/{token}/audio`
 **Invite (public):** `POST /api/invite/validate` | `POST /api/invite/accept`
 **Songs:** `GET /api/songs` | `POST /api/songs` (editor) | `GET /api/songs/{id}` | `GET /api/songs/{id}/tracks` | `PUT /api/songs/{id}/details` | `PUT /api/songs/{id}/name` | `PUT /api/songs/{id}/group` (admin) | `POST /api/songs/{id}/fetch-lyrics` (editor) | `DELETE /api/songs/{id}` (admin)
-**Events:** `GET /api/events` | `POST /api/events` (editor) | `GET /api/events/{id}` | `PUT /api/events/{id}` (editor) | `DELETE /api/events/{id}` (admin) | `POST /api/events/{id}/respond` | `DELETE /api/events/{id}/respond` | `GET /api/events/{id}/responses`
 **Setlists:** `GET /api/setlists` | `POST /api/setlists` (editor) | `GET /api/setlists/{id}` | `GET /api/setlists/{id}/songs` | `PUT /api/setlists/{id}/name` (editor) | `PUT /api/setlists/{id}/date` (editor) | `PUT /api/setlists/{id}/notes` (editor) | `PUT /api/setlists/{id}/songs` (editor, replace order) | `POST /api/setlists/{id}/songs` (editor, add song) | `DELETE /api/setlists/{id}/songs/{position}` (editor) | `DELETE /api/setlists/{id}` (admin)
 **Admin:** `GET/POST /api/admin/users` | `DELETE /api/admin/users/{id}` | `POST .../resend-invite` | `PUT .../password` | `PUT .../role` | `PUT .../name` | `POST/DELETE .../groups/{id}` | `GET/POST /api/admin/groups` | `DELETE /api/admin/groups/{id}` | `GET /api/admin/stats` (all superadmin)
 **Public:** `GET /` (landing page) | `POST /api/access-request`

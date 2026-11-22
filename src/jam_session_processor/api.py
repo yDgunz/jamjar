@@ -3,7 +3,6 @@ import hmac
 import html
 import logging
 import os as _os
-import re as _re
 import time
 from pathlib import Path
 from typing import Annotated
@@ -77,12 +76,19 @@ def get_db() -> Database:
 
 
 def _get_client_ip(request: Request) -> str:
-    """Extract client IP, preferring Cloudflare/proxy headers."""
-    return (
-        request.headers.get("cf-connecting-ip")
-        or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        or (request.client.host if request.client else "unknown")
-    )
+    """Client IP for rate limiting.
+
+    Production runs behind a single Caddy reverse proxy (Cloudflare DNS-only, not
+    proxied). Caddy appends the address it saw to X-Forwarded-For, so the *last*
+    entry is trustworthy; earlier entries and headers like CF-Connecting-IP are
+    client-controlled and would let an attacker rotate IPs to dodge rate limits.
+    If another proxy hop is ever added in front of Caddy, revisit this.
+    """
+    forwarded = request.headers.get("x-forwarded-for", "")
+    last_hop = forwarded.rsplit(",", 1)[-1].strip()
+    if last_hop:
+        return last_hop
+    return request.client.host if request.client else "unknown"
 
 
 class RateLimiter:
@@ -2169,263 +2175,6 @@ def delete_setlist(setlist_id: int, request: Request):
     return {"ok": True}
 
 
-# --- Event models, helpers, endpoints ---
-
-_TIME_RE = _re.compile(r"^\d{2}:\d{2}$")
-_DATE_RE = _re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_VALID_EVENT_TYPES = {"rehearsal", "gig"}
-_VALID_EVENT_STATUSES = {"tentative", "confirmed", "cancelled"}
-_VALID_RSVP_STATUSES = {"yes", "no", "maybe"}
-
-
-class EventResponse(BaseModel):
-    id: int
-    group_id: int
-    group_name: str = ""
-    type: str
-    name: str
-    date: str
-    time: str | None
-    location: str | None
-    status: str
-    notes: str
-    created_by_name: str | None = None
-    created_at: str = ""
-    updated_by_name: str | None = None
-    updated_at: str | None = None
-    response_summary: dict | None = None
-    responses: list[dict] | None = None
-    my_response: dict | None = None
-
-
-class EventMemberResponse(BaseModel):
-    user_id: int
-    user_name: str
-    status: str
-    comment: str | None
-    responded_at: str | None
-
-
-class CreateEventRequest(BaseModel):
-    group_id: int
-    type: ShortStr
-    name: NameStr
-    date: ShortStr
-    time: ShortStr | None = None
-    location: TextStr | None = None
-    status: ShortStr = "tentative"
-    notes: NotesStr = ""
-
-
-class UpdateEventRequest(BaseModel):
-    name: NameStr | None = None
-    type: ShortStr | None = None
-    date: ShortStr | None = None
-    time: ShortStr | None = None
-    location: TextStr | None = None
-    status: ShortStr | None = None
-    notes: NotesStr | None = None
-
-
-class EventRSVPRequest(BaseModel):
-    status: ShortStr
-    comment: TextStr | None = None
-
-
-def _validate_event_fields(
-    type: str | None = None,
-    date: str | None = None,
-    time: str | None = None,
-    status: str | None = None,
-):
-    if type is not None and type not in _VALID_EVENT_TYPES:
-        opts = ", ".join(_VALID_EVENT_TYPES)
-        raise HTTPException(status_code=422, detail=f"type must be one of: {opts}")
-    if date is not None and not _DATE_RE.match(date):
-        raise HTTPException(status_code=422, detail="date must be YYYY-MM-DD format")
-    if time is not None and time != "" and not _TIME_RE.match(time):
-        raise HTTPException(status_code=422, detail="time must be HH:MM format")
-    if status is not None and status not in _VALID_EVENT_STATUSES:
-        opts = ", ".join(_VALID_EVENT_STATUSES)
-        raise HTTPException(status_code=422, detail=f"status must be one of: {opts}")
-
-
-def _event_response(event, request=None) -> EventResponse:
-    db = get_db()
-    group = db.get_group(event.group_id)
-    d = event.__dict__.copy()
-    d["group_name"] = group.name if group else ""
-    d["created_by_name"] = db.get_user_name(d.pop("created_by", None))
-    d["updated_by_name"] = db.get_user_name(d.pop("updated_by", None))
-    d["response_summary"] = db.get_event_response_summary(event.id, event.group_id)
-    responses = db.get_event_responses(event.id)
-    d["responses"] = [{"user_name": r.user_name, "status": r.status} for r in responses]
-    d["my_response"] = None
-    if request and request.state.user:
-        my = next((r for r in responses if r.user_id == request.state.user.id), None)
-        if my:
-            d["my_response"] = {"status": my.status, "comment": my.comment}
-    return EventResponse(**d)
-
-
-def _get_event_with_access(db, event_id: int, request):
-    event = db.get_event(event_id)
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-    _require_group_access(request, event.group_id)
-    return event
-
-
-@app.get("/api/events", response_model=list[EventResponse])
-def list_events(request: Request, type: str | None = None, include_past: bool = False):
-    db = get_db()
-    group_ids = _get_group_ids(request)
-    events = db.list_events(
-        group_ids,
-        event_type=type,
-        upcoming_only=not include_past,
-    )
-    # Only return events for groups with scheduling feature enabled
-    events = [e for e in events if db.group_has_feature(e.group_id, "scheduling")]
-    return [_event_response(e, request) for e in events]
-
-
-@app.post("/api/events", response_model=EventResponse, status_code=201)
-def create_event(req: CreateEventRequest, request: Request):
-    db = get_db()
-    _require_group_access(request, req.group_id)
-    if not db.group_has_feature(req.group_id, "scheduling"):
-        raise HTTPException(status_code=403, detail="Scheduling not enabled for this group")
-    _require_role(request, "editor")
-    name = req.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Event name cannot be empty")
-    _validate_event_fields(
-        type=req.type,
-        date=req.date,
-        time=req.time,
-        status=req.status,
-    )
-    user_id = request.state.user.id if request.state.user else None
-    eid = db.create_event(
-        group_id=req.group_id,
-        type=req.type,
-        name=name,
-        date=req.date,
-        time=req.time,
-        location=req.location,
-        status=req.status,
-        notes=req.notes,
-        created_by=user_id,
-    )
-    if request.state.user:
-        db.log_activity(request.state.user.id, req.group_id, "event_created", name)
-    event = db.get_event(eid)
-    return _event_response(event, request)
-
-
-@app.get("/api/events/{event_id}", response_model=EventResponse)
-def get_event(event_id: int, request: Request):
-    db = get_db()
-    event = _get_event_with_access(db, event_id, request)
-    return _event_response(event, request)
-
-
-@app.put("/api/events/{event_id}", response_model=EventResponse)
-def update_event(event_id: int, req: UpdateEventRequest, request: Request):
-    db = get_db()
-    event = _get_event_with_access(db, event_id, request)
-    _require_role(request, "editor")
-    fields = {k: v for k, v in req.model_dump().items() if v is not None}
-    # Allow clearing time with empty string → store as None
-    for tf in ("time",):
-        raw = req.model_dump().get(tf)
-        if raw == "":
-            fields[tf] = None
-    if "name" in fields:
-        fields["name"] = fields["name"].strip()
-        if not fields["name"]:
-            raise HTTPException(status_code=400, detail="Event name cannot be empty")
-    _validate_event_fields(
-        type=fields.get("type"),
-        date=fields.get("date"),
-        time=fields.get("time", event.time),
-        status=fields.get("status"),
-    )
-    user_id = request.state.user.id if request.state.user else None
-    db.update_event(event_id, updated_by=user_id, **fields)
-    if request.state.user:
-        db.log_activity(request.state.user.id, event.group_id, "event_updated", event.name)
-    event = db.get_event(event_id)
-    return _event_response(event, request)
-
-
-@app.delete("/api/events/{event_id}")
-def delete_event(event_id: int, request: Request):
-    db = get_db()
-    event = _get_event_with_access(db, event_id, request)
-    _require_role(request, "admin")
-    if request.state.user:
-        db.log_activity(request.state.user.id, event.group_id, "event_deleted", event.name)
-    db.delete_event(event_id)
-    return {"ok": True}
-
-
-@app.post("/api/events/{event_id}/respond")
-def respond_to_event(event_id: int, req: EventRSVPRequest, request: Request):
-    db = get_db()
-    event = _get_event_with_access(db, event_id, request)
-    if req.status not in _VALID_RSVP_STATUSES:
-        opts = ", ".join(_VALID_RSVP_STATUSES)
-        raise HTTPException(status_code=422, detail=f"status must be one of: {opts}")
-    user_id = request.state.user.id
-    db.set_event_response(event_id, user_id, req.status, req.comment)
-    if request.state.user:
-        db.log_activity(user_id, event.group_id, "event_response", f"{event.name}: {req.status}")
-    return {"ok": True}
-
-
-@app.delete("/api/events/{event_id}/respond")
-def clear_event_response(event_id: int, request: Request):
-    db = get_db()
-    _get_event_with_access(db, event_id, request)
-    user_id = request.state.user.id
-    db.delete_event_response(event_id, user_id)
-    return {"ok": True}
-
-
-@app.get("/api/events/{event_id}/responses", response_model=list[EventMemberResponse])
-def get_event_responses(event_id: int, request: Request):
-    db = get_db()
-    event = _get_event_with_access(db, event_id, request)
-    responses = db.get_event_responses(event_id)
-    responded_ids = {r.user_id for r in responses}
-    members = db.get_users_for_group(event.group_id)
-    result = []
-    for r in responses:
-        result.append(
-            EventMemberResponse(
-                user_id=r.user_id,
-                user_name=r.user_name,
-                status=r.status,
-                comment=r.comment,
-                responded_at=r.responded_at,
-            )
-        )
-    for m in members:
-        if m.id not in responded_ids:
-            result.append(
-                EventMemberResponse(
-                    user_id=m.id,
-                    user_name=m.name or m.email,
-                    status="pending",
-                    comment=None,
-                    responded_at=None,
-                )
-            )
-    return result
-
-
 # --- Invite endpoints (public) ---
 
 
@@ -2837,7 +2586,7 @@ def _get_db_stats(db: Database) -> dict:
 
     # Record counts via raw queries
     counts = {}
-    for table in ["sessions", "tracks", "songs", "users", "groups", "setlists", "events"]:
+    for table in ["sessions", "tracks", "songs", "users", "groups", "setlists"]:
         try:
             row = db.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()  # noqa: S608
             counts[table] = row[0] if row else 0
