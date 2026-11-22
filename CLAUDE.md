@@ -15,7 +15,7 @@ The user prefixes messages to signal how much autonomy to give:
 - When asked to implement something, start coding immediately. Do not spend excessive time on codebase exploration, task creation, or planning unless explicitly asked to plan. Bias toward action.
 - After committing and pushing, stop. Do not automatically start new tasks, brainstorming, or invoke skills unless the user explicitly asks for the next thing.
 - Claude owns day-to-day development and maintenance. Commit and push to non-`main` branches (feature branches, `claude/*` branches) without asking; open PRs when work is ready for review.
-- Never push or merge to `main` without explicit approval from the user — a push to `main` triggers a production deploy.
+- Land changes on `main` via PR, never by pushing directly. Claude may merge its own PRs (and Dependabot PRs) once CI is green — merging deploys to production, so only merge work that is tested, non-breaking, and reversible. Ask the user first for anything risky: data migrations, auth changes that could lock users out, infra/deploy changes that can't be easily rolled back.
 - Never introduce breaking changes (schema migrations that lose data, removed/renamed API fields, changed defaults) without an explicit plan for migration of the deployed application.
 
 ## Project Overview
@@ -264,10 +264,10 @@ At the end of any session where work state changed:
 
 - Issues are created with the `backlog` label using the work-item template
 - Label transitions: `backlog` → `in-progress` → `review` → merged
-- Claude owns all label transitions; user gates merges via PR approval
+- Claude owns all label transitions and merges (see General Behavior for when to ask first)
 - Priority: oldest `backlog` issue first, unless `priority-high` label is present
 - Feature branches: `feature/<short-description>`
-- Production deploys require explicit user approval
+- Merging to `main` deploys to production; check the deploy succeeded (`/health`) after merging
 
 ## System Dependencies
 
