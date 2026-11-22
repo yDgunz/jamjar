@@ -2795,6 +2795,58 @@ def admin_get_stats(request: Request):
     return db.get_activity_stats()
 
 
+@app.get("/api/admin/users/{user_id}/song-activity")
+def admin_get_song_activity(user_id: int, request: Request):
+    """One user's per-song opened/performed timestamps, newest first (read-only)."""
+    _require_role(request, "superadmin")
+    db = get_db()
+    if not db.get_user(user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    rows = [{"song_id": sid, **a} for sid, a in db.get_song_activity(user_id).items()]
+    rows.sort(
+        key=lambda r: max(r["last_opened_at"] or "", r["last_performed_at"] or ""), reverse=True
+    )
+    return rows
+
+
+class CurationItem(BaseModel):
+    song_id: int | None = None
+    song_name: NameStr
+    action: ShortStr
+
+
+class CurationRunRequest(BaseModel):
+    summary: TextStr = ""
+    items: list[CurationItem] = Field(default_factory=list, max_length=500)
+
+
+class CurationRunResponse(BaseModel):
+    id: int
+    summary: str
+    items: list[CurationItem]
+    created_at: str
+
+
+def _curation_run_response(row: dict) -> CurationRunResponse:
+    return CurationRunResponse(**{**row, "items": json.loads(row["items"] or "[]")})
+
+
+@app.post("/api/admin/curation-runs", response_model=CurationRunResponse)
+def admin_log_curation_run(req: CurationRunRequest, request: Request):
+    """Record what one run of the library-curation routine changed."""
+    _require_role(request, "superadmin")
+    db = get_db()
+    items = json.dumps([i.model_dump() for i in req.items])
+    run_id = db.add_curation_run(req.summary, items)
+    return _curation_run_response(next(r for r in db.list_curation_runs(1) if r["id"] == run_id))
+
+
+@app.get("/api/admin/curation-runs", response_model=list[CurationRunResponse])
+def admin_list_curation_runs(request: Request, limit: int = 50):
+    _require_role(request, "superadmin")
+    return [_curation_run_response(r) for r in get_db().list_curation_runs(min(max(limit, 1), 200))]
+
+
 # --- Server health endpoint ---
 
 _app_start_time = time.time()
