@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import Artwork from "../components/Artwork";
 import { pauseAllExcept, playingAudios } from "../components/AudioPlayer";
 
 /** Something the mini-player can play: a track or a full recording. */
@@ -15,8 +14,6 @@ export interface PlayerItem {
   href?: string;
   durationSec?: number;
   trackId?: number;
-  /** Seed for the generated artwork (defaults to `key`) */
-  artSeed?: string;
 }
 
 interface PlayerState {
@@ -168,7 +165,7 @@ export function MiniPlayer() {
 
   return (
     <div className="fixed inset-x-0 bottom-[calc(3.6rem+env(safe-area-inset-bottom))] z-40 px-2 sm:bottom-4 sm:mx-auto sm:max-w-3xl sm:px-6">
-      <div className="glass overflow-hidden rounded-2xl border border-white/10 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.9)]">
+      <div className="overflow-hidden rounded-xl border border-white/10 bg-gray-800/95 shadow-2xl backdrop-blur-lg">
         {/* Seekable progress line (large invisible touch target) */}
         <div
           ref={barRef}
@@ -177,11 +174,10 @@ export function MiniPlayer() {
           onPointerMove={(e) => { if (e.buttons) seekFromEvent(e.clientX); }}
         >
           <div className="absolute inset-x-0 top-0 h-[3px] bg-white/10">
-            <div className="h-full bg-linear-to-r from-accent-400 to-accent-600" style={{ width: `${pct}%` }} />
+            <div className="h-full bg-accent-400" style={{ width: `${pct}%` }} />
           </div>
         </div>
-        <div className="-mt-1 flex items-center gap-1 pb-2 pl-2 pr-1.5">
-          <Artwork seed={item.artSeed ?? item.key} name={item.title} size="xs" className="mr-1.5" />
+        <div className="-mt-1 flex items-center gap-1 pb-2 pl-3 pr-1.5">
           <div className="min-w-0 flex-1">
             {item.href ? (
               <Link to={item.href} className="block truncate text-[15px] font-semibold text-white">{item.title}</Link>
@@ -196,7 +192,7 @@ export function MiniPlayer() {
           <button onClick={() => skip(-15)} aria-label="Back 15 seconds" className="flex h-10 w-10 items-center justify-center rounded-full text-gray-300 active:bg-white/10">
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M3 12a9 9 0 1 0 3-6.7M3 4v4h4" /><text x="12" y="15.5" fontSize="7" textAnchor="middle" fill="currentColor" stroke="none" fontWeight="600">15</text></svg>
           </button>
-          <button onClick={toggle} aria-label={playing ? "Pause" : "Play"} className="btn-primary h-11 w-11">
+          <button onClick={toggle} aria-label={playing ? "Pause" : "Play"} className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-gray-950 active:scale-95">
             {playing ? <PauseIcon /> : <PlayIcon className="ml-0.5 h-5 w-5" />}
           </button>
           <button onClick={() => skip(30)} aria-label="Forward 30 seconds" className="flex h-10 w-10 items-center justify-center rounded-full text-gray-300 active:bg-white/10">

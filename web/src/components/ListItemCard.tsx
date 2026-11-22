@@ -7,8 +7,6 @@ interface ListItemCardProps {
   children?: ReactNode;
   right?: ReactNode;
   rightClassName?: string;
-  /** Leading visual, e.g. <Artwork size="sm" /> */
-  leading?: ReactNode;
 }
 
 /**
@@ -21,16 +19,14 @@ export default function ListItemCard({
   children,
   right,
   rightClassName,
-  leading,
 }: ListItemCardProps) {
   return (
     <Link
       to={to}
-      className="-mx-4 flex items-center gap-3.5 px-4 py-2.5 transition active:bg-white/[0.04] sm:mx-0 sm:rounded-xl sm:px-3 sm:hover:bg-white/[0.04]"
+      className="-mx-4 flex items-center gap-3 px-4 py-3 transition active:bg-white/5 sm:mx-0 sm:rounded-lg sm:px-3 sm:hover:bg-white/5"
     >
-      {leading}
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[16px] font-semibold leading-snug text-white">
+        <div className="truncate text-[17px] font-medium leading-snug text-white sm:text-base">
           {title}
         </div>
         {children}
@@ -45,5 +41,5 @@ export default function ListItemCard({
 }
 
 export function ListRows({ children }: { children: ReactNode }) {
-  return <div className="divide-y divide-white/[0.05]">{children}</div>;
+  return <div className="divide-y divide-white/[0.07]">{children}</div>;
 }

@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 /** Large page title with optional trailing actions (iOS-style). */
 export default function PageHeader({ title, actions }: { title: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="mb-4 flex items-end gap-3 pt-2">
-      <h1 className="font-display min-w-0 flex-1 truncate text-[40px] leading-[1.05] text-white">
+    <div className="mb-3 flex items-center gap-3 pt-1">
+      <h1 className="min-w-0 flex-1 truncate text-[28px] font-bold leading-tight tracking-tight text-white">
         {title}
       </h1>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -30,7 +30,7 @@ export function HeaderIconButton({
       disabled={disabled}
       aria-label={label}
       title={label}
-      className="btn-primary h-10 w-10 disabled:opacity-50"
+      className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-600 text-white transition hover:bg-accent-500 active:bg-accent-700 disabled:opacity-50"
     >
       {children}
     </button>

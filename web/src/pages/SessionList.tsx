@@ -5,7 +5,6 @@ import type { Session } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
-import Artwork from "../components/Artwork";
 import ListItemCard, { ListRows } from "../components/ListItemCard";
 import PageHeader, { HeaderIconButton } from "../components/PageHeader";
 import SearchInput from "../components/SearchInput";
@@ -261,7 +260,7 @@ export default function SessionList() {
       <div className="space-y-5">
         {monthGroups.map(([month, group]) => (
           <section key={month}>
-            <h2 className="glass sticky top-0 z-10 -mx-4 px-4 py-2 text-[12px] font-bold uppercase tracking-[0.14em] text-accent-400/90 sm:top-[57px] sm:mx-0 sm:px-0">
+            <h2 className="sticky top-0 z-10 -mx-4 bg-gray-950/95 px-4 py-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500 backdrop-blur sm:mx-0 sm:px-0">
               {formatMonthHeader(month)}
             </h2>
             <ListRows>
@@ -276,13 +275,6 @@ export default function SessionList() {
                   <ListItemCard
                     key={s.id}
                     to={`/sessions/${s.id}`}
-                    leading={
-                      <Artwork seed={`session-${s.id}`} size="sm">
-                        <span className="font-display text-[22px] leading-none text-white/95">
-                          {formatShortDate(s.date).split(" ")[1]?.replace(",", "")}
-                        </span>
-                      </Artwork>
-                    }
                     title={<>
                       {s.name || `Session ${s.id}`}
                       {multiGroup && !groupFilter && s.group_name && (

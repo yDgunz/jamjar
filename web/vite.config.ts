@@ -13,8 +13,8 @@ export default defineConfig({
         name: 'JamJar',
         short_name: 'JamJar',
         description: 'Jam session catalog — charts, lyrics, and setlists',
-        theme_color: '#0d0c0b',
-        background_color: '#0d0c0b',
+        theme_color: '#059669',
+        background_color: '#030712',
         display: 'standalone',
         start_url: '/songs',
         icons: [
