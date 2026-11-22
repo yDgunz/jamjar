@@ -40,3 +40,6 @@ web/dist/
 
 # Plugins
 .superpowers/
+
+# pytest-cov
+.coverage

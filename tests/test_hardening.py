@@ -193,7 +193,7 @@ def test_health_returns_503_when_db_broken(client, monkeypatch):  # noqa: F811
 
 
 def test_health_returns_503_when_db_closed(client):  # noqa: F811
-    api._db.conn.close()
+    api._db.close()
     resp = client.get("/health")
     assert resp.status_code == 503
     # Reopen so fixture teardown can close cleanly

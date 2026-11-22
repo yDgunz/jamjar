@@ -1,5 +1,6 @@
 import re
 import sqlite3
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,6 +59,20 @@ CREATE TABLE IF NOT EXISTS group_songs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_group_songs_song ON group_songs(song_id);
+
+-- Reference videos for a song (how-to lessons, backing tracks). Shared by all
+-- bands that play the song.
+CREATE TABLE IF NOT EXISTS song_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL DEFAULT 'lesson' CHECK(kind IN ('lesson', 'backing_track', 'other')),
+    url TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_song_links_song ON song_links(song_id);
 
 CREATE TABLE IF NOT EXISTS tracks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -304,10 +319,41 @@ class Database:
 
             db_path = get_config().db_path
         self.db_path = db_path
-        self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        self.conn.execute("PRAGMA foreign_keys = ON")
-        self.conn.row_factory = sqlite3.Row
+        # One connection per thread: FastAPI runs sync endpoints in a thread pool,
+        # and a single shared sqlite3 connection breaks under concurrent requests
+        # ("bad parameter or other API misuse"). SQLite (WAL) handles the
+        # concurrency across connections.
+        self._local = threading.local()
+        self._all_conns: list[sqlite3.Connection] = []
+        self._conns_lock = threading.Lock()
+        self._closed = False
         self._init_schema()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=30)
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        """This thread's connection (created on first use)."""
+        if self._closed:
+            raise sqlite3.ProgrammingError("Cannot operate on a closed database.")
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = self._connect()
+            self._local.conn = conn
+            with self._conns_lock:
+                self._all_conns.append(conn)
+        return conn
+
+    @conn.setter
+    def conn(self, value: sqlite3.Connection):
+        self._closed = False
+        self._local.conn = value
+        with self._conns_lock:
+            self._all_conns.append(value)
 
     def ping(self) -> None:
         """Run a trivial query against the schema; raises if the DB is unusable."""
@@ -383,7 +429,16 @@ class Database:
         self.conn.commit()
 
     def close(self):
-        self.conn.close()
+        """Close every thread's connection."""
+        with self._conns_lock:
+            conns, self._all_conns = self._all_conns, []
+        for conn in conns:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        self._local = threading.local()
+        self._closed = True
 
     def reset(self):
         """Drop all tables and recreate the schema."""
@@ -392,6 +447,7 @@ class Database:
             DROP TABLE IF EXISTS events;
             DROP TABLE IF EXISTS invite_tokens;
             DROP TABLE IF EXISTS activity_log;
+            DROP TABLE IF EXISTS song_links;
             DROP TABLE IF EXISTS group_songs;
             DROP TABLE IF EXISTS setlist_songs;
             DROP TABLE IF EXISTS setlists;
@@ -1287,6 +1343,9 @@ class Database:
             self.conn.execute(
                 "UPDATE setlist_songs SET song_id = ? WHERE song_id = ?", (keep_id, merge_id)
             )
+            self.conn.execute(
+                "UPDATE song_links SET song_id = ? WHERE song_id = ?", (keep_id, merge_id)
+            )
             for link in self.conn.execute(
                 "SELECT group_id, notes FROM group_songs WHERE song_id = ?", (merge_id,)
             ).fetchall():
@@ -1311,6 +1370,36 @@ class Database:
                 (merge["artist"], merge["sheet"], keep_id),
             )
             self.conn.execute("DELETE FROM songs WHERE id = ?", (merge_id,))
+
+    # --- Song links (reference videos) ---
+
+    def add_song_link(
+        self, song_id: int, kind: str, url: str, title: str = "", created_by: int | None = None
+    ) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO song_links (song_id, kind, url, title, created_by) VALUES (?, ?, ?, ?, ?)",
+            (song_id, kind, url, title, created_by),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def list_song_links(self, song_id: int) -> list[dict]:
+        rows = self.conn.execute(
+            """SELECT id, song_id, kind, url, title, created_by, created_at
+               FROM song_links WHERE song_id = ?
+               ORDER BY CASE kind WHEN 'lesson' THEN 0 WHEN 'backing_track' THEN 1 ELSE 2 END,
+                        id""",
+            (song_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_song_link(self, link_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM song_links WHERE id = ?", (link_id,)).fetchone()
+        return dict(row) if row else None
+
+    def delete_song_link(self, link_id: int):
+        self.conn.execute("DELETE FROM song_links WHERE id = ?", (link_id,))
+        self.conn.commit()
 
     # --- Jobs ---
 

@@ -178,12 +178,24 @@ export interface SongGroup {
   notes: string;
 }
 
+export type SongLinkKind = "lesson" | "backing_track" | "other";
+
+export interface SongLink {
+  id: number;
+  kind: SongLinkKind;
+  url: string;
+  title: string;
+  created_by_name: string | null;
+}
+
 export interface Song {
   id: number;
   /** Home band (compat); `groups` lists every band of yours that plays it */
   group_id: number;
   group_name: string;
   groups: SongGroup[];
+  /** Reference videos: how-to lessons, backing tracks */
+  links: SongLink[];
   name: string;
   artist: string;
   sheet: string;
@@ -566,6 +578,16 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ notes }),
     }),
+
+  addSongLink: (songId: number, url: string, kind: SongLinkKind, title = "") =>
+    fetchJson<Song>(`${BASE}/songs/${songId}/links`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, kind, title }),
+    }),
+
+  deleteSongLink: (songId: number, linkId: number) =>
+    fetchJson<Song>(`${BASE}/songs/${songId}/links/${linkId}`, { method: "DELETE" }),
 
   deleteSong: (songId: number) =>
     fetchJson<{ ok: boolean }>(`${BASE}/songs/${songId}`, { method: "DELETE" }),

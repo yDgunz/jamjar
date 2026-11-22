@@ -281,3 +281,24 @@ def test_api_key_sees_all_songs(two_bands):
     db._get_or_create_song("B1", b)
     resp = c.get("/api/songs", headers={"x-api-key": "test-api-key"})
     assert {s["name"] for s in resp.json()} == {"A1", "B1"}
+
+
+def test_database_safe_under_concurrent_threads(tmp_path: Path):
+    """Regression: a single shared sqlite3 connection raised 'bad parameter or
+    other API misuse' when API requests ran concurrently in the thread pool."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    db = Database(tmp_path / "t.db")
+    g = db.create_group("G")
+    ids = [db._get_or_create_song(f"Song {i}", g) for i in range(20)]
+
+    def work(i):
+        sid = ids[i % len(ids)]
+        song = db.get_song(sid, [g])
+        groups = db.get_song_groups(sid)
+        songs = db.list_songs([g])
+        return song.id == sid and groups[0]["id"] == g and len(songs) == 20
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        assert all(pool.map(work, range(400)))
+    db.close()

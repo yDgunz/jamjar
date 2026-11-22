@@ -5,7 +5,8 @@ import logging
 import os as _os
 import time
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import requests as http_requests
@@ -532,6 +533,14 @@ class SongGroup(BaseModel):
     notes: str = ""
 
 
+class SongLinkResponse(BaseModel):
+    id: int
+    kind: str
+    url: str
+    title: str = ""
+    created_by_name: str | None = None
+
+
 class SongResponse(BaseModel):
     id: int
     # Home group (kept for compatibility); `groups` lists every group of the
@@ -549,6 +558,7 @@ class SongResponse(BaseModel):
     created_by_name: str | None = None
     updated_by_name: str | None = None
     updated_at: str | None = None
+    links: list[SongLinkResponse] = []
 
 
 class SongTrackResponse(BaseModel):
@@ -685,6 +695,16 @@ def _song_response(song, request: Request | None = None) -> SongResponse:
         d["group_name"] = group.name if group else ""
     d["created_by_name"] = db.get_user_name(d.pop("created_by", None))
     d["updated_by_name"] = db.get_user_name(d.pop("updated_by", None))
+    d["links"] = [
+        SongLinkResponse(
+            id=link["id"],
+            kind=link["kind"],
+            url=link["url"],
+            title=link["title"],
+            created_by_name=db.get_user_name(link["created_by"]),
+        )
+        for link in db.list_song_links(song.id)
+    ]
     return SongResponse(**d)
 
 
@@ -2047,6 +2067,60 @@ def set_song_group_notes(song_id: int, group_id: int, req: SongGroupNotesRequest
     if group_id not in {g["id"] for g in db.get_song_groups(song_id)}:
         raise HTTPException(status_code=404, detail="That group doesn't play this song")
     db.set_group_song_notes(song_id, group_id, req.notes.strip())
+    return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
+
+
+SongLinkKind = Literal["lesson", "backing_track", "other"]
+
+
+class AddSongLinkRequest(BaseModel):
+    url: Annotated[str, Field(max_length=500)]
+    kind: SongLinkKind = "lesson"
+    title: NameStr = ""
+
+
+def _youtube_title(url: str) -> str:
+    """Best-effort video title via YouTube's oEmbed endpoint ("" on any failure)."""
+    host = (urlparse(url).hostname or "").lower()
+    if not (host == "youtu.be" or host.endswith("youtube.com")):
+        return ""
+    try:
+        resp = http_requests.get(
+            "https://www.youtube.com/oembed",
+            params={"url": url, "format": "json"},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            return str(resp.json().get("title", ""))[:200]
+    except (http_requests.RequestException, ValueError):
+        pass
+    return ""
+
+
+@app.post("/api/songs/{song_id}/links", response_model=SongResponse)
+def add_song_link(song_id: int, req: AddSongLinkRequest, request: Request):
+    """Attach a reference video (how-to lesson, backing track) to a song."""
+    db = get_db()
+    _get_song_with_access(db, song_id, request)
+    _require_role(request, "editor")
+    url = req.url.strip()
+    if urlparse(url).scheme not in ("http", "https") or not urlparse(url).netloc:
+        raise HTTPException(status_code=400, detail="Enter a full http(s) link")
+    title = req.title.strip() or _youtube_title(url)
+    user_id = request.state.user.id if request.state.user else None
+    db.add_song_link(song_id, req.kind, url, title, created_by=user_id)
+    return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
+
+
+@app.delete("/api/songs/{song_id}/links/{link_id}", response_model=SongResponse)
+def delete_song_link(song_id: int, link_id: int, request: Request):
+    db = get_db()
+    _get_song_with_access(db, song_id, request)
+    _require_role(request, "editor")
+    link = db.get_song_link(link_id)
+    if not link or link["song_id"] != song_id:
+        raise HTTPException(status_code=404, detail="Link not found")
+    db.delete_song_link(link_id)
     return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
 
 
