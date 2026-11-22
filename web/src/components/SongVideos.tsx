@@ -22,7 +22,18 @@ export default function SongVideos({
   const active = links.find((l) => l.id === activeId) ?? null;
   const activeYt = active ? youTubeId(active.url) : null;
 
-  if (links.length === 0 && !canEdit) return null;
+  if (links.length === 0) {
+    if (!canEdit) return null;
+    return (
+      <button
+        onClick={onAdd}
+        className="mt-4 inline-flex items-center gap-1.5 rounded-full px-1 text-sm text-gray-400 transition hover:text-gray-200"
+      >
+        <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" /></svg>
+        Add a how-to or backing track video
+      </button>
+    );
+  }
 
   return (
     <div className="mt-5">
