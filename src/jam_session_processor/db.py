@@ -47,6 +47,18 @@ CREATE TABLE IF NOT EXISTS songs (
     UNIQUE(group_id, name)
 );
 
+-- Which bands play which song. Songs are a shared catalog; songs.group_id is
+-- the song's "home" band and is always also present here.
+CREATE TABLE IF NOT EXISTS group_songs (
+    group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (group_id, song_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_songs_song ON group_songs(song_id);
+
 CREATE TABLE IF NOT EXISTS tracks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -364,6 +376,12 @@ class Database:
             self.conn.execute("ALTER TABLE groups ADD COLUMN features TEXT NOT NULL DEFAULT ''")
             self.conn.commit()
 
+        # Shared song catalog: every song is linked to its home band.
+        self.conn.execute(
+            "INSERT OR IGNORE INTO group_songs (group_id, song_id) SELECT group_id, id FROM songs"
+        )
+        self.conn.commit()
+
     def close(self):
         self.conn.close()
 
@@ -374,6 +392,7 @@ class Database:
             DROP TABLE IF EXISTS events;
             DROP TABLE IF EXISTS invite_tokens;
             DROP TABLE IF EXISTS activity_log;
+            DROP TABLE IF EXISTS group_songs;
             DROP TABLE IF EXISTS setlist_songs;
             DROP TABLE IF EXISTS setlists;
             DROP TABLE IF EXISTS jobs;
@@ -543,7 +562,17 @@ class Database:
         return [Group(**row) for row in rows]
 
     def delete_group(self, group_id: int):
-        """Delete a group. CASCADE removes sessions, songs, tracks, and memberships."""
+        """Delete a group. CASCADE removes sessions, tracks, memberships and songs
+        that only this group plays; songs other groups also play are re-homed."""
+        self.conn.execute(
+            """UPDATE songs SET group_id = (
+                   SELECT MIN(gs.group_id) FROM group_songs gs
+                   WHERE gs.song_id = songs.id AND gs.group_id != ?)
+               WHERE group_id = ? AND EXISTS (
+                   SELECT 1 FROM group_songs gs
+                   WHERE gs.song_id = songs.id AND gs.group_id != ?)""",
+            (group_id, group_id, group_id),
+        )
         self.conn.execute("DELETE FROM groups WHERE id = ?", (group_id,))
         self.conn.commit()
 
@@ -730,12 +759,18 @@ class Database:
         self.conn.commit()
 
     def update_session_group(self, session_id: int, new_group_id: int):
-        """Move a session to a new group. Retags tracks with equivalent songs in the new group."""
+        """Move a session to a new group. Tagged songs are linked to the new group
+        (or retagged to a same-named song that group already plays)."""
         tracks = self.get_tracks_for_session(session_id)
         for t in tracks:
             if t.song_id and t.song_name:
-                new_song_id = self._get_or_create_song(t.song_name, new_group_id)
-                self.conn.execute("UPDATE tracks SET song_id = ? WHERE id = ?", (new_song_id, t.id))
+                existing = self.find_song_in_groups(t.song_name, [new_group_id])
+                if existing and existing != t.song_id:
+                    self.conn.execute(
+                        "UPDATE tracks SET song_id = ? WHERE id = ?", (existing, t.id)
+                    )
+                else:
+                    self._link(t.song_id, new_group_id)
         self.conn.execute(
             "UPDATE sessions SET group_id = ? WHERE id = ?", (new_group_id, session_id)
         )
@@ -817,10 +852,18 @@ class Database:
         return [Track(**row) for row in rows]
 
     def tag_track(
-        self, track_id: int, song_name: str, group_id: int, user_id: int | None = None
+        self,
+        track_id: int,
+        song_name: str,
+        group_id: int,
+        user_id: int | None = None,
+        visible_group_ids: list[int] | None = None,
     ) -> int:
-        """Tag a track with a song name. Creates the song if it doesn't exist. Returns song_id."""
-        song_id = self._get_or_create_song(song_name, group_id, created_by=user_id)
+        """Tag a track with a song name. Reuses a same-named song from the group (or
+        from the caller's other groups, linking it); otherwise creates one."""
+        song_id = self._get_or_create_song(
+            song_name, group_id, created_by=user_id, visible_group_ids=visible_group_ids
+        )
         self.conn.execute(
             "UPDATE tracks SET song_id = ? WHERE id = ?",
             (song_id, track_id),
@@ -987,63 +1030,158 @@ class Database:
         self.conn.commit()
 
     # --- Songs ---
+    #
+    # Songs are a shared catalog. `group_songs` records which groups play each
+    # song (with per-group notes); a user sees a song if any of their groups is
+    # linked to it. `songs.group_id` is the song's home group, which is always
+    # linked too. Song names are unique per group (case-insensitive) across links.
 
-    def _get_or_create_song(self, name: str, group_id: int, created_by: int | None = None) -> int:
-        row = self.conn.execute(
-            "SELECT id FROM songs WHERE name = ? AND group_id = ?", (name, group_id)
-        ).fetchone()
-        if row:
-            return row["id"]
+    @staticmethod
+    def _in(ids: list[int]) -> str:
+        return ",".join("?" for _ in ids)
+
+    def _link(self, song_id: int, group_id: int):
+        self.conn.execute(
+            "INSERT OR IGNORE INTO group_songs (group_id, song_id) VALUES (?, ?)",
+            (group_id, song_id),
+        )
+
+    def find_song_in_groups(self, name: str, group_ids: list[int]) -> int | None:
+        """Id of a song with this name (case-insensitive) played by any of
+        `group_ids`, preferring the first group listed."""
+        for gid in group_ids:
+            row = self.conn.execute(
+                """SELECT s.id FROM songs s JOIN group_songs gs ON gs.song_id = s.id
+                   WHERE gs.group_id = ? AND s.name = ? COLLATE NOCASE
+                   ORDER BY s.id LIMIT 1""",
+                (gid, name.strip()),
+            ).fetchone()
+            if row:
+                return row["id"]
+        return None
+
+    def _get_or_create_song(
+        self,
+        name: str,
+        group_id: int,
+        created_by: int | None = None,
+        visible_group_ids: list[int] | None = None,
+    ) -> int:
+        """Return the song `group_id` plays with this name; else link a same-named
+        song from `visible_group_ids`; else create a new song homed in `group_id`."""
+        name = name.strip()
+        existing = self.find_song_in_groups(name, [group_id])
+        if existing:
+            return existing
+        others = [g for g in (visible_group_ids or []) if g != group_id]
+        shared = self.find_song_in_groups(name, others) if others else None
+        if shared:
+            self._link(shared, group_id)
+            self.conn.commit()
+            return shared
         cur = self.conn.execute(
             "INSERT INTO songs (name, group_id, created_by) VALUES (?, ?, ?)",
             (name, group_id, created_by),
         )
+        self._link(cur.lastrowid, group_id)
         self.conn.commit()
         return cur.lastrowid
 
     def song_exists_in_group(self, name: str, group_id: int) -> bool:
-        row = self.conn.execute(
-            "SELECT 1 FROM songs WHERE name = ? AND group_id = ?",
-            (name, group_id),
-        ).fetchone()
-        return row is not None
+        return self.find_song_in_groups(name, [group_id]) is not None
+
+    def _song_query(self, where: str, params: list, group_ids: list[int] | None) -> list:
+        """Songs with take counts/dates limited to sessions in `group_ids` (all if None)."""
+        take_filter = ""
+        take_params: list = []
+        if group_ids is not None:
+            take_filter = (
+                f" AND t.session_id IN (SELECT id FROM sessions WHERE group_id IN"
+                f" ({self._in(group_ids)}))"
+            )
+            take_params = list(group_ids)
+        sql = f"""SELECT s.id, s.group_id, s.name, s.artist, s.sheet, s.notes,
+                      COUNT(t.id) as take_count,
+                      MIN(ses.date) as first_date, MAX(ses.date) as last_date,
+                      s.created_by, s.updated_by, s.updated_at
+               FROM songs s
+               LEFT JOIN tracks t ON t.song_id = s.id{take_filter}
+               LEFT JOIN sessions ses ON t.session_id = ses.id
+               WHERE {where}
+               GROUP BY s.id ORDER BY s.name"""
+        return self.conn.execute(sql, take_params + params).fetchall()
 
     def list_songs(self, group_ids: list[int] | None = None) -> list[Song]:
+        """Songs played by any of `group_ids` (all songs if None)."""
         if group_ids is not None and not group_ids:
             return []
-        base = """SELECT s.id, s.group_id, s.name, s.artist, s.sheet, s.notes,
-                      COUNT(t.id) as take_count,
-                      MIN(ses.date) as first_date, MAX(ses.date) as last_date,
-                      s.created_by, s.updated_by, s.updated_at
-               FROM songs s
-               LEFT JOIN tracks t ON t.song_id = s.id
-               LEFT JOIN sessions ses ON t.session_id = ses.id"""
-        if group_ids is not None:
-            placeholders = ",".join("?" for _ in group_ids)
-            base += f" WHERE s.group_id IN ({placeholders})"
-            base += " GROUP BY s.id ORDER BY s.name"
-            rows = self.conn.execute(base, group_ids).fetchall()
+        if group_ids is None:
+            rows = self._song_query("1 = 1", [], None)
         else:
-            base += " GROUP BY s.id ORDER BY s.name"
-            rows = self.conn.execute(base).fetchall()
+            rows = self._song_query(
+                f"s.id IN (SELECT song_id FROM group_songs WHERE group_id IN"
+                f" ({self._in(group_ids)}))",
+                list(group_ids),
+                group_ids,
+            )
         return [Song(**row) for row in rows]
 
-    def get_song(self, song_id: int) -> Song | None:
-        row = self.conn.execute(
-            """SELECT s.id, s.group_id, s.name, s.artist, s.sheet, s.notes,
-                      COUNT(t.id) as take_count,
-                      MIN(ses.date) as first_date, MAX(ses.date) as last_date,
-                      s.created_by, s.updated_by, s.updated_at
-               FROM songs s
-               LEFT JOIN tracks t ON t.song_id = s.id
-               LEFT JOIN sessions ses ON t.session_id = ses.id
-               WHERE s.id = ?
-               GROUP BY s.id""",
+    def get_song(self, song_id: int, group_ids: list[int] | None = None) -> Song | None:
+        """A song by id. Take counts/dates cover sessions in `group_ids` (all if None)."""
+        rows = self._song_query("s.id = ?", [song_id], group_ids)
+        return Song(**rows[0]) if rows else None
+
+    def get_song_groups(self, song_id: int) -> list[dict]:
+        """Groups that play a song: [{id, name, notes}], home group first."""
+        rows = self.conn.execute(
+            """SELECT g.id, g.name, gs.notes FROM group_songs gs
+               JOIN groups g ON g.id = gs.group_id
+               JOIN songs s ON s.id = gs.song_id
+               WHERE gs.song_id = ?
+               ORDER BY (g.id = s.group_id) DESC, g.name""",
             (song_id,),
-        ).fetchone()
-        if not row:
-            return None
-        return Song(**row)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def link_song_to_group(self, song_id: int, group_id: int):
+        """Mark that `group_id` also plays this song.
+
+        Raises ValueError if that group already plays a different song with the
+        same name (merge them instead)."""
+        song = self.conn.execute("SELECT name FROM songs WHERE id = ?", (song_id,)).fetchone()
+        if not song:
+            raise ValueError("Song not found")
+        other = self.find_song_in_groups(song["name"], [group_id])
+        if other and other != song_id:
+            raise ValueError(f"That group already has a song named '{song['name']}'")
+        self._link(song_id, group_id)
+        self.conn.commit()
+
+    def unlink_song_from_group(self, song_id: int, group_id: int):
+        """Stop listing a song for a group. Its recorded takes are kept.
+
+        Raises ValueError if it's the song's only group (delete the song instead)."""
+        groups = [g["id"] for g in self.get_song_groups(song_id)]
+        if group_id not in groups:
+            return
+        if len(groups) == 1:
+            raise ValueError("A song must belong to at least one group")
+        self.conn.execute(
+            "DELETE FROM group_songs WHERE song_id = ? AND group_id = ?", (song_id, group_id)
+        )
+        new_home = next(g for g in groups if g != group_id)
+        self.conn.execute(
+            "UPDATE songs SET group_id = ? WHERE id = ? AND group_id = ?",
+            (new_home, song_id, group_id),
+        )
+        self.conn.commit()
+
+    def set_group_song_notes(self, song_id: int, group_id: int, notes: str):
+        self.conn.execute(
+            "UPDATE group_songs SET notes = ? WHERE song_id = ? AND group_id = ?",
+            (notes, song_id, group_id),
+        )
+        self.conn.commit()
 
     def update_song_details(
         self,
@@ -1062,7 +1200,8 @@ class Database:
         self.conn.commit()
 
     def update_song_group(self, song_id: int, new_group_id: int):
-        """Move a song to a new group.
+        """Move a song's home to `new_group_id` (linking it there and unlinking the
+        old home group).
 
         Raises ValueError if the target group already has a song with the same name.
         """
@@ -1071,28 +1210,39 @@ class Database:
         ).fetchone()
         if not song:
             raise ValueError("Song not found")
-        existing = self.conn.execute(
-            "SELECT id FROM songs WHERE name = ? AND group_id = ? AND id != ?",
-            (song["name"], new_group_id, song_id),
-        ).fetchone()
-        if existing:
+        if song["group_id"] == new_group_id:
+            return
+        other = self.find_song_in_groups(song["name"], [new_group_id])
+        if other and other != song_id:
             raise ValueError(f"A song named '{song['name']}' already exists in that group")
+        old_group = song["group_id"]
+        self._link(song_id, new_group_id)
         self.conn.execute("UPDATE songs SET group_id = ? WHERE id = ?", (new_group_id, song_id))
+        self.conn.execute(
+            "DELETE FROM group_songs WHERE song_id = ? AND group_id = ?", (song_id, old_group)
+        )
         self.conn.commit()
 
-    def get_tracks_for_song(self, song_id: int) -> list[dict]:
-        """Get all tracks tagged with a song, including session info."""
+    def get_tracks_for_song(self, song_id: int, group_ids: list[int] | None = None) -> list[dict]:
+        """Tracks tagged with a song (in sessions of `group_ids`, or all), newest first."""
+        group_filter = ""
+        params: list = [song_id]
+        if group_ids is not None:
+            if not group_ids:
+                return []
+            group_filter = f" AND ses.group_id IN ({self._in(group_ids)})"
+            params += list(group_ids)
         rows = self.conn.execute(
-            """SELECT t.id, t.session_id, t.track_number,
+            f"""SELECT t.id, t.session_id, t.track_number,
                       t.start_sec, t.end_sec, t.duration_sec,
                       t.audio_path, t.notes,
                       ses.date as session_date, ses.source_file,
                       ses.name as session_name
                FROM tracks t
                JOIN sessions ses ON t.session_id = ses.id
-               WHERE t.song_id = ?
+               WHERE t.song_id = ?{group_filter}
                ORDER BY ses.date DESC, t.track_number""",
-            (song_id,),
+            params,
         ).fetchall()
         return [dict(row) for row in rows]
 
@@ -1102,22 +1252,65 @@ class Database:
         self.conn.commit()
 
     def rename_song(self, song_id: int, new_name: str, updated_by: int | None = None):
-        """Rename a song. Raises ValueError if new_name already exists in the same group."""
-        # Get the song's group_id for scoped uniqueness check
-        song = self.conn.execute("SELECT group_id FROM songs WHERE id = ?", (song_id,)).fetchone()
-        if not song:
+        """Rename a song. Raises ValueError if a group that plays it already has
+        another song with that name."""
+        groups = [g["id"] for g in self.get_song_groups(song_id)]
+        if (
+            not groups
+            and not self.conn.execute("SELECT 1 FROM songs WHERE id = ?", (song_id,)).fetchone()
+        ):
             raise ValueError(f"Song {song_id} not found")
-        existing = self.conn.execute(
-            "SELECT id FROM songs WHERE name = ? AND group_id = ? AND id != ?",
-            (new_name, song["group_id"], song_id),
-        ).fetchone()
-        if existing:
-            raise ValueError(f"Song '{new_name}' already exists")
+        for gid in groups:
+            other = self.find_song_in_groups(new_name, [gid])
+            if other and other != song_id:
+                raise ValueError(f"Song '{new_name}' already exists")
         self.conn.execute(
             "UPDATE songs SET name = ?, updated_by = ?, updated_at = datetime('now') WHERE id = ?",
             (new_name, updated_by, song_id),
         )
         self.conn.commit()
+
+    def merge_songs(self, keep_id: int, merge_id: int):
+        """Fold song `merge_id` into `keep_id`: takes, setlist entries and group
+        links move over; the kept song's artist/chart/notes win unless empty.
+        `merge_id` is deleted."""
+        if keep_id == merge_id:
+            raise ValueError("Cannot merge a song into itself")
+        keep = self.conn.execute("SELECT * FROM songs WHERE id = ?", (keep_id,)).fetchone()
+        merge = self.conn.execute("SELECT * FROM songs WHERE id = ?", (merge_id,)).fetchone()
+        if not keep or not merge:
+            raise ValueError("Song not found")
+        with self.conn:
+            self.conn.execute(
+                "UPDATE tracks SET song_id = ? WHERE song_id = ?", (keep_id, merge_id)
+            )
+            self.conn.execute(
+                "UPDATE setlist_songs SET song_id = ? WHERE song_id = ?", (keep_id, merge_id)
+            )
+            for link in self.conn.execute(
+                "SELECT group_id, notes FROM group_songs WHERE song_id = ?", (merge_id,)
+            ).fetchall():
+                # The merged song's notes were band-specific: carry them to that band
+                notes = link["notes"] or merge["notes"]
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO group_songs (group_id, song_id, notes) VALUES (?, ?, ?)",
+                    (link["group_id"], keep_id, notes),
+                )
+                if notes:
+                    self.conn.execute(
+                        "UPDATE group_songs SET notes = ? WHERE group_id = ? AND song_id = ?"
+                        " AND notes = ''",
+                        (notes, link["group_id"], keep_id),
+                    )
+            self.conn.execute(
+                """UPDATE songs SET
+                       artist = CASE WHEN artist = '' THEN ? ELSE artist END,
+                       sheet = CASE WHEN sheet = '' THEN ? ELSE sheet END,
+                       updated_at = datetime('now')
+                   WHERE id = ?""",
+                (merge["artist"], merge["sheet"], keep_id),
+            )
+            self.conn.execute("DELETE FROM songs WHERE id = ?", (merge_id,))
 
     # --- Jobs ---
 

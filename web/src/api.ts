@@ -171,10 +171,19 @@ export interface Track {
   notes: string;
 }
 
+export interface SongGroup {
+  id: number;
+  name: string;
+  /** How this band plays the song (key, arrangement, ...) */
+  notes: string;
+}
+
 export interface Song {
   id: number;
+  /** Home band (compat); `groups` lists every band of yours that plays it */
   group_id: number;
   group_name: string;
+  groups: SongGroup[];
   name: string;
   artist: string;
   sheet: string;
@@ -539,6 +548,23 @@ export const api = {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ group_id: groupId }),
+    }),
+
+  linkSongGroup: (songId: number, groupId: number) =>
+    fetchJson<Song>(`${BASE}/songs/${songId}/groups`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_id: groupId }),
+    }),
+
+  unlinkSongGroup: (songId: number, groupId: number) =>
+    fetchJson<Song>(`${BASE}/songs/${songId}/groups/${groupId}`, { method: "DELETE" }),
+
+  setSongGroupNotes: (songId: number, groupId: number, notes: string) =>
+    fetchJson<Song>(`${BASE}/songs/${songId}/groups/${groupId}/notes`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes }),
     }),
 
   deleteSong: (songId: number) =>

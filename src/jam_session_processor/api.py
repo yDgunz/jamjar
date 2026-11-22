@@ -526,10 +526,19 @@ class TrackResponse(BaseModel):
     notes: str
 
 
+class SongGroup(BaseModel):
+    id: int
+    name: str
+    notes: str = ""
+
+
 class SongResponse(BaseModel):
     id: int
+    # Home group (kept for compatibility); `groups` lists every group of the
+    # caller's that plays this song.
     group_id: int
     group_name: str = ""
+    groups: list[SongGroup] = []
     name: str
     artist: str = ""
     sheet: str = ""
@@ -659,11 +668,21 @@ def _track_response(track) -> TrackResponse:
     return TrackResponse(**d)
 
 
-def _song_response(song) -> SongResponse:
+def _song_response(song, request: Request | None = None) -> SongResponse:
     db = get_db()
-    group = db.get_group(song.group_id)
+    groups = db.get_song_groups(song.id)
+    visible = _get_group_ids(request) if request is not None else None
+    if visible is not None:
+        groups = [g for g in groups if g["id"] in visible]
     d = song.__dict__.copy()
-    d["group_name"] = group.name if group else ""
+    d["groups"] = groups
+    # Report a home group the caller can see (falls back to the stored home group)
+    home = next((g for g in groups if g["id"] == song.group_id), groups[0] if groups else None)
+    if home:
+        d["group_id"], d["group_name"] = home["id"], home["name"]
+    else:
+        group = db.get_group(song.group_id)
+        d["group_name"] = group.name if group else ""
     d["created_by_name"] = db.get_user_name(d.pop("created_by", None))
     d["updated_by_name"] = db.get_user_name(d.pop("updated_by", None))
     return SongResponse(**d)
@@ -1431,7 +1450,13 @@ def tag_track(track_id: int, req: TagRequest, request: Request):
     track, session = _get_track_with_access(db, track_id, request)
     _require_role(request, "editor")
     user_id = request.state.user.id if request.state.user else None
-    db.tag_track(track_id, req.song_name, session.group_id, user_id=user_id)
+    db.tag_track(
+        track_id,
+        req.song_name,
+        session.group_id,
+        user_id=user_id,
+        visible_group_ids=_get_group_ids(request),
+    )
     if request.state.user:
         db.log_activity(request.state.user.id, session.group_id, "tag", req.song_name)
     track = db.get_track(track_id)
@@ -1817,11 +1842,16 @@ def share_landing_page(token: str):
 
 
 def _get_song_with_access(db: Database, song_id: int, request: Request):
-    """Get a song and verify group access."""
-    song = db.get_song(song_id)
+    """Get a song the caller can see (one of their groups plays it). Take counts
+    are limited to the caller's groups."""
+    group_ids = _get_group_ids(request)
+    song = db.get_song(song_id, group_ids)
     if not song:
         raise HTTPException(status_code=404, detail="Song not found")
-    _require_group_access(request, song.group_id)
+    if group_ids is not None:
+        linked = {g["id"] for g in db.get_song_groups(song_id)}
+        if not linked & set(group_ids):
+            raise HTTPException(status_code=404, detail="Song not found")
     return song
 
 
@@ -1833,7 +1863,7 @@ def list_songs(request: Request, group_id: int | None = None):
         if group_id not in group_ids:
             raise HTTPException(status_code=403, detail="No access to this group")
         group_ids = [group_id]
-    return [_song_response(s) for s in db.list_songs(group_ids)]
+    return [_song_response(s, request) for s in db.list_songs(group_ids)]
 
 
 class CreateSongRequest(BaseModel):
@@ -1853,19 +1883,22 @@ def create_song(req: CreateSongRequest, request: Request):
     if db.song_exists_in_group(name, req.group_id):
         raise HTTPException(status_code=409, detail="Song already exists in this group")
     user_id = request.state.user.id if request.state.user else None
-    song_id = db._get_or_create_song(name, req.group_id, created_by=user_id)
-    artist = req.artist.strip()
-    if artist:
-        db.update_song_details(song_id, "", "", artist, updated_by=user_id)
+    song_id = db._get_or_create_song(
+        name, req.group_id, created_by=user_id, visible_group_ids=_get_group_ids(request)
+    )
     song = db.get_song(song_id)
-    return _song_response(song)
+    artist = req.artist.strip()
+    if artist and not song.artist:
+        db.update_song_details(song_id, song.sheet, song.notes, artist, updated_by=user_id)
+    song = db.get_song(song_id, _get_group_ids(request))
+    return _song_response(song, request)
 
 
 @app.get("/api/songs/{song_id}", response_model=SongResponse)
 def get_song(song_id: int, request: Request):
     db = get_db()
     song = _get_song_with_access(db, song_id, request)
-    return _song_response(song)
+    return _song_response(song, request)
 
 
 @app.put("/api/songs/{song_id}/details", response_model=SongResponse)
@@ -1877,8 +1910,8 @@ def update_song_details(song_id: int, req: SongDetailsRequest, request: Request)
     db.update_song_details(song_id, req.sheet, req.notes, req.artist, updated_by=user_id)
     if request.state.user:
         db.log_activity(request.state.user.id, song.group_id, "song_edit", song.name)
-    song = db.get_song(song_id)
-    return _song_response(song)
+    song = db.get_song(song_id, _get_group_ids(request))
+    return _song_response(song, request)
 
 
 @app.post("/api/songs/{song_id}/fetch-lyrics")
@@ -1915,8 +1948,8 @@ def fetch_lyrics(song_id: int, request: Request):
     new_sheet = f"{song.sheet}\n\n{lyrics}".strip() if song.sheet else lyrics
     lyrics_user_id = request.state.user.id if request.state.user else None
     db.update_song_details(song.id, new_sheet, song.notes, song.artist, updated_by=lyrics_user_id)
-    updated = db.get_song(song.id)
-    return {"lyrics": lyrics, "song": _song_response(updated).model_dump()}
+    updated = db.get_song(song.id, _get_group_ids(request))
+    return {"lyrics": lyrics, "song": _song_response(updated, request).model_dump()}
 
 
 @app.delete("/api/songs/{song_id}")
@@ -1940,10 +1973,10 @@ def rename_song(song_id: int, req: NameRequest, request: Request):
         raise HTTPException(status_code=400, detail=str(e))
     if request.state.user:
         db.log_activity(request.state.user.id, song.group_id, "song_edit", req.name.strip())
-    song = db.get_song(song_id)
+    song = db.get_song(song_id, _get_group_ids(request))
     if not song:
         raise HTTPException(status_code=404, detail="Song not found")
-    return _song_response(song)
+    return _song_response(song, request)
 
 
 @app.put("/api/songs/{song_id}/group", response_model=SongResponse)
@@ -1958,16 +1991,83 @@ def update_song_group(song_id: int, req: GroupRequest, request: Request):
         db.update_song_group(song_id, req.group_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    song = db.get_song(song_id)
-    return _song_response(song)
+    song = db.get_song(song_id, _get_group_ids(request))
+    return _song_response(song, request)
 
 
 @app.get("/api/songs/{song_id}/tracks", response_model=list[SongTrackResponse])
 def get_song_tracks(song_id: int, request: Request):
     db = get_db()
     _get_song_with_access(db, song_id, request)
-    rows = db.get_tracks_for_song(song_id)
+    rows = db.get_tracks_for_song(song_id, _get_group_ids(request))
     return [_song_track_response(r) for r in rows]
+
+
+class SongGroupNotesRequest(BaseModel):
+    notes: NotesStr
+
+
+@app.post("/api/songs/{song_id}/groups", response_model=SongResponse)
+def link_song_group(song_id: int, req: GroupRequest, request: Request):
+    """Mark that another of the caller's groups also plays this song."""
+    db = get_db()
+    _get_song_with_access(db, song_id, request)
+    _require_group_access(request, req.group_id)
+    _require_role(request, "editor")
+    if not db.get_group(req.group_id):
+        raise HTTPException(status_code=400, detail="Group not found")
+    try:
+        db.link_song_to_group(song_id, req.group_id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
+
+
+@app.delete("/api/songs/{song_id}/groups/{group_id}", response_model=SongResponse)
+def unlink_song_group(song_id: int, group_id: int, request: Request):
+    """Stop listing a song for a group (its recorded takes are kept)."""
+    db = get_db()
+    _get_song_with_access(db, song_id, request)
+    _require_group_access(request, group_id)
+    _require_role(request, "admin")
+    try:
+        db.unlink_song_from_group(song_id, group_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
+
+
+@app.put("/api/songs/{song_id}/groups/{group_id}/notes", response_model=SongResponse)
+def set_song_group_notes(song_id: int, group_id: int, req: SongGroupNotesRequest, request: Request):
+    """Notes about how one group plays a song (key, arrangement, ...)."""
+    db = get_db()
+    _get_song_with_access(db, song_id, request)
+    _require_group_access(request, group_id)
+    _require_role(request, "editor")
+    if group_id not in {g["id"] for g in db.get_song_groups(song_id)}:
+        raise HTTPException(status_code=404, detail="That group doesn't play this song")
+    db.set_group_song_notes(song_id, group_id, req.notes.strip())
+    return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
+
+
+class MergeSongsRequest(BaseModel):
+    keep_id: int
+    merge_id: int
+
+
+@app.post("/api/songs/merge", response_model=SongResponse)
+def merge_songs(req: MergeSongsRequest, request: Request):
+    """Fold a duplicate song into another: takes, setlist entries and group links
+    move to `keep_id`, which keeps its own chart/artist unless empty."""
+    db = get_db()
+    _get_song_with_access(db, req.keep_id, request)
+    _get_song_with_access(db, req.merge_id, request)
+    _require_role(request, "admin")
+    try:
+        db.merge_songs(req.keep_id, req.merge_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _song_response(db.get_song(req.keep_id, _get_group_ids(request)), request)
 
 
 # --- Setlist endpoints ---
@@ -2124,16 +2224,26 @@ def update_setlist_notes(setlist_id: int, req: NotesRequest, request: Request):
     return _setlist_response(setlist)
 
 
+def _ensure_song_in_group(db: Database, song_id: int, group_id: int, request: Request):
+    """Validate a song for a group's setlist, linking it to that group if needed."""
+    try:
+        _get_song_with_access(db, song_id, request)
+    except HTTPException:
+        raise HTTPException(status_code=400, detail=f"Song {song_id} not found")
+    try:
+        db.link_song_to_group(song_id, group_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.put("/api/setlists/{setlist_id}/songs", response_model=list[SetlistSongResponse])
 def set_setlist_songs(setlist_id: int, req: SetlistSongsRequest, request: Request):
     db = get_db()
     setlist = _get_setlist_with_access(db, setlist_id, request)
     _require_role(request, "editor")
-    # Validate all songs belong to the same group as the setlist
+    # Songs must be visible to the caller; they become linked to the setlist's group
     for sid in req.song_ids:
-        song = db.get_song(sid)
-        if not song or song.group_id != setlist.group_id:
-            raise HTTPException(status_code=400, detail=f"Song {sid} not found in this group")
+        _ensure_song_in_group(db, sid, setlist.group_id, request)
     user_id = request.state.user.id if request.state.user else None
     db.set_setlist_songs(setlist_id, req.song_ids, updated_by=user_id)
     if request.state.user:
@@ -2146,10 +2256,7 @@ def add_setlist_song(setlist_id: int, req: AddSetlistSongRequest, request: Reque
     db = get_db()
     setlist = _get_setlist_with_access(db, setlist_id, request)
     _require_role(request, "editor")
-    # Validate the song belongs to the same group as the setlist
-    song = db.get_song(req.song_id)
-    if not song or song.group_id != setlist.group_id:
-        raise HTTPException(status_code=400, detail="Song not found in this group")
+    _ensure_song_in_group(db, req.song_id, setlist.group_id, request)
     user_id = request.state.user.id if request.state.user else None
     db.add_song_to_setlist(setlist_id, req.song_id, req.position, added_by=user_id)
     if request.state.user:

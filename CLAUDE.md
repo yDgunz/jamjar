@@ -106,6 +106,14 @@ detail
 created_at
 (indexes: user, event_type, created_at)
 
+group_songs
+──────────────
+group_id (FK→groups)
+song_id (FK→songs)
+notes            (per-band notes)
+created_at
+PRIMARY KEY (group_id, song_id)
+
 share_links                    invite_tokens
 ──────────────                ──────────────
 id (PK)                       id (PK)
@@ -116,9 +124,11 @@ created_at                    used_at (nullable)
                               created_at
 ```
 
-- **Multi-tenancy:** groups own sessions, songs, and setlists; users belong to groups via `user_groups`
+- **Multi-tenancy:** groups own sessions and setlists; users belong to groups via `user_groups`
+- **Shared song catalog:** songs are standalone; `group_songs` links each song to every band that plays it (with per-band notes). A user sees a song if any of their groups is linked. `songs.group_id` is the song's *home* band (always also linked; re-homed if unlinked or the group is deleted) and `UNIQUE(group_id, name)` is legacy. Song names are unique per band (case-insensitive) across links. Tagging, creating a song, adding to a setlist, or moving a session reuses/links a same-named song from the caller's other bands instead of duplicating it. Take counts and song tracks are scoped to the caller's bands.
 - **Roles:** `superadmin`, `admin`, `editor`, `readonly` — enforced in API middleware
-- `groups → sessions/songs/jobs/setlists`: one-to-many, CASCADE delete
+- `groups → sessions/jobs/setlists`: one-to-many, CASCADE delete
+- `groups ↔ songs` via `group_songs`: many-to-many, CASCADE on both sides; deleting a group deletes songs only that group plays
 - `sessions → tracks`: one-to-many, CASCADE delete
 - `tracks → songs`: many-to-one (nullable), SET NULL on delete
 - `jobs → sessions`: many-to-one (nullable), SET NULL on delete
@@ -128,7 +138,7 @@ created_at                    used_at (nullable)
 - `share_links → tracks`: one-to-one, CASCADE delete
 - `share_links → users`: many-to-one (nullable), SET NULL on delete
 - `invite_tokens → users`: many-to-one, CASCADE delete
-- Songs are created on first tag and reused across sessions within a group
+- Songs are created on first tag and reused across sessions and bands
 - Setlists are group-scoped ordered collections of songs, independent of sessions
 - **Removed scheduling feature:** the events/RSVP feature was removed. Existing production DBs still contain orphaned `events` and `event_responses` tables (and groups may still have `scheduling` in `groups.features`); no code reads them. They are left in place deliberately (no data loss) and can be dropped later. Fresh DBs don't create them. The generic `groups.features` flag mechanism remains for future feature flags.
 
@@ -142,7 +152,7 @@ All `/api` endpoints require authentication (JWT cookie or API key header). Role
 **Tracks:** `POST /api/tracks/{id}/tag` | `DELETE /api/tracks/{id}/tag` | `PUT /api/tracks/{id}/notes` | `GET /api/tracks/{id}/audio` | `POST /api/tracks/{id}/merge` (admin) | `POST /api/tracks/{id}/split` (admin) | `PUT /api/tracks/{id}/trim` (admin) | `POST /api/tracks/{id}/share` | `DELETE /api/tracks/{id}/share`
 **Share (public):** `GET /share/{token}` | `GET /api/share/{token}/audio`
 **Invite (public):** `POST /api/invite/validate` | `POST /api/invite/accept`
-**Songs:** `GET /api/songs` | `POST /api/songs` (editor) | `GET /api/songs/{id}` | `GET /api/songs/{id}/tracks` | `PUT /api/songs/{id}/details` | `PUT /api/songs/{id}/name` | `PUT /api/songs/{id}/group` (admin) | `POST /api/songs/{id}/fetch-lyrics` (editor) | `DELETE /api/songs/{id}` (admin)
+**Songs:** `GET /api/songs` | `POST /api/songs` (editor) | `GET /api/songs/{id}` | `GET /api/songs/{id}/tracks` | `PUT /api/songs/{id}/details` | `PUT /api/songs/{id}/name` | `PUT /api/songs/{id}/group` (admin, move home band) | `POST /api/songs/{id}/groups` (editor, link a band) | `DELETE /api/songs/{id}/groups/{group_id}` (admin, unlink) | `PUT /api/songs/{id}/groups/{group_id}/notes` (editor, per-band notes) | `POST /api/songs/merge` (admin, `{keep_id, merge_id}`) | `POST /api/songs/{id}/fetch-lyrics` (editor) | `DELETE /api/songs/{id}` (admin)
 **Setlists:** `GET /api/setlists` | `POST /api/setlists` (editor) | `GET /api/setlists/{id}` | `GET /api/setlists/{id}/songs` | `PUT /api/setlists/{id}/name` (editor) | `PUT /api/setlists/{id}/date` (editor) | `PUT /api/setlists/{id}/notes` (editor) | `PUT /api/setlists/{id}/songs` (editor, replace order) | `POST /api/setlists/{id}/songs` (editor, add song) | `DELETE /api/setlists/{id}/songs/{position}` (editor) | `DELETE /api/setlists/{id}` (admin)
 **Admin:** `GET/POST /api/admin/users` | `DELETE /api/admin/users/{id}` | `POST .../resend-invite` | `PUT .../password` | `PUT .../role` | `PUT .../name` | `POST/DELETE .../groups/{id}` | `GET/POST /api/admin/groups` | `DELETE /api/admin/groups/{id}` | `GET /api/admin/stats` (all superadmin)
 **Public:** `GET /` (landing page) | `POST /api/access-request`
@@ -328,9 +338,9 @@ Path values stored in the DB are relative to `JAM_DATA_DIR`. The `config.resolve
 - **Backend API:** FastAPI — serves JSON endpoints and static audio files
 - **Frontend:** React + TypeScript + Tailwind via Vite — clean separation from backend
 - **Auth:** JWT in httponly cookies for browser sessions, API key via `X-API-Key` header for CLI. Bcrypt for password hashing.
-- **Multi-tenancy:** Groups own sessions and songs. Users are assigned to groups. Role-based access control (superadmin > admin > editor > readonly).
+- **Multi-tenancy:** Groups own sessions and setlists; songs are shared and linked to groups. Users are assigned to groups. Role-based access control (superadmin > admin > editor > readonly).
 - **Storage:** Pluggable backend via `storage.py`. Local filesystem by default; Cloudflare R2 when `JAM_R2_BUCKET` is set. Audio served via presigned URLs (or custom domain) when remote.
-- **Song tagging:** Manual via web UI. Songs are scoped to groups and auto-created on first tag.
+- **Song tagging:** Manual via web UI. Songs are a shared catalog linked to bands (`group_songs`) and auto-created on first tag.
 
 ## Detailed Documentation
 
