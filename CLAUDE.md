@@ -277,7 +277,7 @@ At the end of any session where work state changed:
 
 ## Deployment
 
-The app runs in Docker via `docker compose`. CI/CD is via GitHub Actions (`.github/workflows/deploy.yml`): push to `main` triggers SSH deploy to the VPS.
+The app runs in Docker via `docker compose`. CI/CD is via GitHub Actions (`.github/workflows/deploy.yml`): push to `main` triggers SSH deploy to the VPS. The deploy rebuilds with `--pull` (fresh base images), then polls `/health` for up to ~60s; if the new version never becomes healthy it resets to the previous commit, rebuilds, and fails the workflow.
 
 **Required GitHub Secrets:** `SSH_HOST`, `SSH_USER`, `SSH_KEY`, `SSH_PASSPHRASE`
 
