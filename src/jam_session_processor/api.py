@@ -636,6 +636,8 @@ class ReprocessRequest(BaseModel):
     threshold: float = -20.0
     min_duration: int = 120
     single: bool = False
+    # Manual split: explicit [start_sec, end_sec] songs instead of detection
+    segments: list[tuple[float, float]] | None = Field(default=None, max_length=200)
 
 
 class UploadInitRequest(BaseModel):
@@ -875,6 +877,7 @@ def _process_reprocess(
     threshold: float,
     min_duration: int,
     single: bool,
+    manual_segments: list[tuple[float, float]] | None = None,
 ):
     """Run reprocessing in a background thread."""
     from jam_session_processor.metadata import extract_metadata
@@ -920,7 +923,14 @@ def _process_reprocess(
 
         # Re-detect songs (or use full duration for single-song mode)
         meta = extract_metadata(source)
-        if single:
+        if manual_segments:
+            # Clamp to the recording's real length
+            segments = [
+                (max(0.0, a), min(b, meta.duration_seconds))
+                for a, b in manual_segments
+                if min(b, meta.duration_seconds) - max(0.0, a) >= 1
+            ]
+        elif single:
             segments = [(0.0, meta.duration_seconds)]
         else:
             db.update_job_progress(job_id, "Detecting songs...")
@@ -974,6 +984,17 @@ async def reprocess_session(session_id: int, req: ReprocessRequest, request: Req
     _require_group_access(request, session.group_id)
     _require_role(request, "admin")
 
+    segments = None
+    if req.segments is not None:
+        segments = sorted((float(a), float(b)) for a, b in req.segments)
+        if not segments:
+            raise HTTPException(status_code=400, detail="Mark at least one song")
+        for i, (a, b) in enumerate(segments):
+            if a < 0 or b - a < 5:
+                raise HTTPException(status_code=400, detail="Each song must be at least 5 seconds")
+            if i and a < segments[i - 1][1]:
+                raise HTTPException(status_code=400, detail="Songs can't overlap")
+
     job_id = uuid4().hex[:16]
     job = db.create_job(job_id, session.group_id, job_type="reprocess", session_id=session_id)
 
@@ -989,6 +1010,7 @@ async def reprocess_session(session_id: int, req: ReprocessRequest, request: Req
         req.threshold,
         req.min_duration,
         req.single,
+        segments,
     )
 
     return JobResponse(

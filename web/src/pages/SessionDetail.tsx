@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router";
 import { api, formatLongDate, canEdit, canAdmin } from "../api";
 import type { Session, Track, Song } from "../api";
-import ActionSheet, { MoreButton } from "../components/ActionSheet";
+import ActionSheet from "../components/ActionSheet";
 import type { SheetSection } from "../components/ActionSheet";
 import { ListRows } from "../components/ListItemCard";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
+import ManualSplitPanel from "../components/ManualSplitPanel";
+import type { ManualSegment } from "../components/ManualSplitPanel";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
 import Spinner from "../components/Spinner";
@@ -34,7 +36,10 @@ export default function SessionDetail() {
   const [reprocessOpen, setReprocessOpen] = useState(false);
   const [singleSong, setSingleSong] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [pendingGroupId, setPendingGroupId] = useState<number | null>(null);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveTarget, setMoveTarget] = useState<number | null>(null);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualSubmitting, setManualSubmitting] = useState(false);
   const [processingProgress, setProcessingProgress] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [mergeTarget, setMergeTarget] = useState<{ trackId: number; nextId: number } | null>(null);
@@ -172,6 +177,35 @@ export default function SessionDetail() {
     }
   };
 
+  const handleManualSplit = async (segments: ManualSegment[]) => {
+    setManualSubmitting(true);
+    try {
+      if (player.item?.key === `session:${sessionId}` || tracks.some((t) => player.item?.trackId === t.id)) {
+        player.close();
+      }
+      const job = await api.splitSessionManually(sessionId, segments.map((s) => [s.start, s.end]));
+      setManualOpen(false);
+      if (session) setSession({ ...session, active_job_id: job.id });
+    } catch (err) {
+      showError(`Split failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setManualSubmitting(false);
+    }
+  };
+
+  const handleMove = async () => {
+    const gid = moveTarget;
+    setMoveOpen(false);
+    if (gid === null) return;
+    try {
+      const updated = await api.updateSessionGroup(sessionId, gid);
+      setSession(updated);
+      api.listSongs(updated.group_id).then(setSongs);
+    } catch (err) {
+      showError(`Move failed: ${err instanceof Error ? err.message : err}`);
+    }
+  };
+
   const handleDelete = async () => {
     setConfirmDelete(false);
     try {
@@ -211,6 +245,15 @@ export default function SessionDetail() {
   ].filter(Boolean).join(" · ");
   const fullKey = `session:${session.id}`;
   const fullIsCurrent = player.isCurrent(fullKey);
+  const fullItem = {
+    key: fullKey,
+    src: api.sessionAudioUrl(sessionId),
+    title: sessionTitle,
+    subtitle: `Full recording · ${formatLongDate(session.date)}`,
+    href: `/sessions/${sessionId}`,
+    durationSec: session.duration_sec ?? undefined,
+  };
+  const otherBands = (user?.groups ?? []).filter((g) => g.id !== session.group_id);
 
   const sheetSections: SheetSection[] = [];
   if (canEdit(user)) {
@@ -224,13 +267,15 @@ export default function SessionDetail() {
     sheetSections.push({
       title: "Manage",
       actions: [
-        ...(multiGroup
-          ? user!.groups.filter((g) => g.id !== session.group_id).map((g) => ({
-              label: `Move to ${g.name}`,
-              onClick: () => setPendingGroupId(g.id),
-            }))
+        ...(otherBands.length > 0
+          ? [{
+              label: "Move to another band…",
+              hint: session.group_name,
+              onClick: () => { setMoveTarget(null); setMoveOpen(true); },
+            }]
           : []),
-        { label: "Re-split into tracks…", onClick: () => setReprocessOpen(true), disabled: !!processingProgress },
+        { label: "Detect songs again…", onClick: () => setReprocessOpen(true), disabled: !!processingProgress },
+        { label: "Split by hand…", onClick: () => setManualOpen(true), disabled: !!processingProgress },
         { label: "Delete recording", destructive: true, onClick: () => setConfirmDelete(true) },
       ],
     });
@@ -277,7 +322,6 @@ export default function SessionDetail() {
             <p className="mt-1 text-[15px] text-gray-400">{meta}</p>
           )}
         </div>
-        {sheetSections.length > 0 && <MoreButton onClick={() => setSheetOpen(true)} label="Recording actions" />}
       </div>
 
       {editingNotes && canEdit(user) ? (
@@ -298,21 +342,35 @@ export default function SessionDetail() {
         <p className="mt-3 whitespace-pre-wrap text-[15px] text-gray-300">{session.notes}</p>
       ) : null}
 
-      {tracks.length > 1 && !processingProgress && (
-        <button
-          onClick={() => player.play({
-            key: fullKey,
-            src: api.sessionAudioUrl(sessionId),
-            title: sessionTitle,
-            subtitle: `Full recording · ${formatLongDate(session.date)}`,
-            href: `/sessions/${sessionId}`,
-            durationSec: session.duration_sec ?? undefined,
-          })}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-white/[0.08] py-3 text-[15px] font-semibold text-white transition active:bg-white/[0.12]"
-        >
-          {fullIsCurrent && player.playing ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="h-4 w-4" />}
-          {fullIsCurrent && player.playing ? "Pause full recording" : "Play full recording"}
-        </button>
+      {!processingProgress && (
+        <div className="mt-4 flex items-center gap-2">
+          <button
+            onClick={() => player.play(fullItem)}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-white/[0.08] py-3 text-[15px] font-semibold text-white transition hover:bg-white/[0.12] active:bg-white/[0.12]"
+          >
+            {fullIsCurrent && player.playing ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="h-4 w-4" />}
+            {fullIsCurrent && player.playing ? "Pause full recording" : "Play full recording"}
+          </button>
+          {sheetSections.length > 0 && (
+            <button
+              onClick={() => setSheetOpen(true)}
+              className="flex shrink-0 items-center gap-1.5 rounded-xl bg-white/[0.08] px-4 py-3 text-[15px] font-medium text-gray-200 transition hover:bg-white/[0.12] active:bg-white/[0.12]"
+            >
+              <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z" /><path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5Z" /></svg>
+              Edit
+            </button>
+          )}
+        </div>
+      )}
+
+      {manualOpen && canAdmin(user) && !processingProgress && (
+        <ManualSplitPanel
+          fullItem={fullItem}
+          duration={session.duration_sec ?? 0}
+          submitting={manualSubmitting}
+          onSubmit={handleManualSplit}
+          onCancel={() => setManualOpen(false)}
+        />
       )}
 
       {processingProgress ? (
@@ -321,20 +379,31 @@ export default function SessionDetail() {
           <p className="text-sm text-gray-400">{processingProgress}</p>
         </div>
       ) : tracks.length === 0 && !loading ? (
-        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl bg-white/[0.04] px-6 py-10 text-center">
-          <p className="text-[15px] text-gray-300">No songs were found in this recording.</p>
-          <p className="max-w-sm text-sm text-gray-500">
-            Try re-splitting with a lower threshold (e.g. 25 or 30), or as a single song if it’s one continuous piece.
-          </p>
-          {canAdmin(user) && (
-            <button
-              onClick={() => setReprocessOpen(true)}
-              className="mt-2 rounded-full bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500"
-            >
-              Re-split
-            </button>
-          )}
-        </div>
+        manualOpen ? null : (
+          <div className="mt-5 rounded-xl border border-dashed border-white/10 px-5 py-6 text-center">
+            <p className="text-[15px] text-gray-200">This recording isn’t split into songs yet.</p>
+            <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
+              You can still listen to the whole thing above.
+              {canAdmin(user) && " Detect songs automatically, or mark them yourself while it plays."}
+            </p>
+            {canAdmin(user) && (
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <button
+                  onClick={() => setReprocessOpen(true)}
+                  className="rounded-full bg-accent-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent-500"
+                >
+                  Detect songs
+                </button>
+                <button
+                  onClick={() => setManualOpen(true)}
+                  className="rounded-full bg-white/[0.08] px-4 py-2 text-sm font-semibold text-gray-200 transition hover:bg-white/[0.12]"
+                >
+                  Split by hand
+                </button>
+              </div>
+            )}
+          </div>
+        )
       ) : (
         <div className="relative mt-5">
           {merging && (
@@ -384,8 +453,8 @@ export default function SessionDetail() {
       />
       <FormModal
         open={reprocessOpen}
-        title="Re-split recording"
-        confirmLabel="Re-split"
+        title="Detect songs"
+        confirmLabel="Detect"
         onConfirm={handleReprocess}
         onCancel={() => setReprocessOpen(false)}
       >
@@ -424,24 +493,32 @@ export default function SessionDetail() {
         </div>
         )}
       </FormModal>
-      <Modal
-        open={pendingGroupId !== null}
-        title="Move recording"
-        message={`Move this recording to "${user?.groups.find(g => g.id === pendingGroupId)?.name}"? Tagged tracks will be relinked to matching songs in the new group (or new songs will be created).`}
+      <FormModal
+        open={moveOpen}
+        title="Move to another band"
         confirmLabel="Move"
-        onConfirm={async () => {
-          const gid = pendingGroupId!;
-          setPendingGroupId(null);
-          try {
-            const updated = await api.updateSessionGroup(sessionId, gid);
-            setSession(updated);
-            api.listSongs(updated.group_id).then(setSongs);
-          } catch (err) {
-            showError(`Move failed: ${err instanceof Error ? err.message : err}`);
-          }
-        }}
-        onCancel={() => setPendingGroupId(null)}
-      />
+        confirmDisabled={moveTarget === null}
+        onConfirm={handleMove}
+        onCancel={() => setMoveOpen(false)}
+      >
+        <div className="-mx-1 space-y-0.5">
+          {otherBands.map((g) => (
+            <label key={g.id} className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 hover:bg-white/5">
+              <input
+                type="radio"
+                name="move-band"
+                checked={moveTarget === g.id}
+                onChange={() => setMoveTarget(g.id)}
+                className="h-4 w-4 border-gray-600 bg-gray-800 text-accent-500 focus:ring-accent-500 focus:ring-offset-0"
+              />
+              <span className="text-sm text-gray-200">{g.name}</span>
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-gray-500">
+          Currently in {session?.group_name}. Tagged songs will also be listed for the new band.
+        </p>
+      </FormModal>
       <Modal
         open={confirmDelete}
         title="Delete recording"

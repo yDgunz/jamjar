@@ -1,3 +1,4 @@
+import InlineSelect from "./InlineSelect";
 import type { AuthGroup } from "../api";
 
 interface GroupSelectorProps {
@@ -12,16 +13,26 @@ interface GroupSelectorProps {
 export default function GroupSelector({ groups, value, onChange, allLabel, variant = "default" }: GroupSelectorProps) {
   if (groups.length <= 1) return null;
 
+  if (variant === "subtle") {
+    return (
+      <InlineSelect
+        value={value === null ? "" : String(value)}
+        options={[
+          ...(allLabel !== undefined ? [{ value: "", label: allLabel }] : []),
+          ...groups.map((g) => ({ value: String(g.id), label: g.name })),
+        ]}
+        onChange={(v) => onChange(v ? Number(v) : null)}
+        ariaLabel="Band"
+      />
+    );
+  }
+
   return (
     <select
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
       aria-label="Band"
-      className={
-        variant === "subtle"
-          ? "min-w-0 truncate rounded bg-transparent py-1 text-sm text-gray-400 focus:outline-none"
-          : "min-w-0 truncate rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
-      }
+      className="min-w-0 truncate rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
     >
       {allLabel !== undefined ? (
         <option value="">{allLabel}</option>
