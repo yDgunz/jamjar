@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'Post-compaction reminders: (1) Run pytest after Python changes (2) Run cd web && npm run build after frontend changes (3) Never commit without user approval (4) Never push without explicit directive'"
+            "command": "echo 'Post-compaction reminders: (1) Run pytest after Python changes (2) Run cd web && npm run build after frontend changes (3) Commit and push to non-main branches freely (4) Never push or merge to main (production deploy) without user approval'"
           }
         ]
       }
