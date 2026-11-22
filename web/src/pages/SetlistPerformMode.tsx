@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useParams, Link } from "react-router";
-import { api } from "../api";
+import { api, recordSongActivity } from "../api";
 import FetchError from "../components/FetchError";
 import { useFetch } from "../hooks/useFetch";
 import { transposeChartText } from "../utils/chordUtils";
@@ -20,6 +20,10 @@ export default function SetlistPerformMode() {
   const songs = fetchedData?.[1] ?? [];
   const [currentIdx, setCurrentIdx] = useState(0);
   const perform = usePerformMode();
+  const currentSongId = songs[currentIdx]?.song_id;
+  useEffect(() => {
+    if (currentSongId) recordSongActivity(currentSongId, "performed");
+  }, [currentSongId]);
 
   // Navigate to song — reset scroll and transpose
   const goToSong = useCallback((idx: number) => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router";
-import { api, formatLongDate, formatShortDate, canEdit, canAdmin } from "../api";
+import { api, formatLongDate, formatShortDate, canEdit, canAdmin, recordSongActivity } from "../api";
 import type { Song, SongLink, SongLinkKind, SongTrack } from "../api";
 import ActionSheet, { MoreButton } from "../components/ActionSheet";
 import type { SheetAction, SheetSection } from "../components/ActionSheet";
@@ -187,6 +187,7 @@ export default function SongHistory() {
   }, [songId]);
 
   useEffect(() => { loadSong(); }, [loadSong]);
+  useEffect(() => { recordSongActivity(songId, "opened"); }, [songId]);
 
   const refresh = () => {
     api.getSongTracks(songId).then(setTakes);

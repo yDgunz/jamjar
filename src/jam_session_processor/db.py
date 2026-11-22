@@ -74,6 +74,15 @@ CREATE TABLE IF NOT EXISTS song_links (
 
 CREATE INDEX IF NOT EXISTS idx_song_links_song ON song_links(song_id);
 
+-- Per-user song activity, for "recently opened / performed" sorting.
+CREATE TABLE IF NOT EXISTS song_activity (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+    last_opened_at TEXT,
+    last_performed_at TEXT,
+    PRIMARY KEY (user_id, song_id)
+);
+
 CREATE TABLE IF NOT EXISTS tracks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -447,6 +456,7 @@ class Database:
             DROP TABLE IF EXISTS events;
             DROP TABLE IF EXISTS invite_tokens;
             DROP TABLE IF EXISTS activity_log;
+            DROP TABLE IF EXISTS song_activity;
             DROP TABLE IF EXISTS song_links;
             DROP TABLE IF EXISTS group_songs;
             DROP TABLE IF EXISTS setlist_songs;
@@ -1346,6 +1356,17 @@ class Database:
             self.conn.execute(
                 "UPDATE song_links SET song_id = ? WHERE song_id = ?", (keep_id, merge_id)
             )
+            self.conn.execute(
+                """INSERT INTO song_activity (user_id, song_id, last_opened_at, last_performed_at)
+                   SELECT user_id, ?, last_opened_at, last_performed_at
+                   FROM song_activity WHERE song_id = ?
+                   ON CONFLICT(user_id, song_id) DO UPDATE SET
+                     last_opened_at = MAX(COALESCE(last_opened_at, ''),
+                                          COALESCE(excluded.last_opened_at, '')),
+                     last_performed_at = MAX(COALESCE(last_performed_at, ''),
+                                             COALESCE(excluded.last_performed_at, ''))""",
+                (keep_id, merge_id),
+            )
             for link in self.conn.execute(
                 "SELECT group_id, notes FROM group_songs WHERE song_id = ?", (merge_id,)
             ).fetchall():
@@ -1400,6 +1421,36 @@ class Database:
     def delete_song_link(self, link_id: int):
         self.conn.execute("DELETE FROM song_links WHERE id = ?", (link_id,))
         self.conn.commit()
+
+    # --- Per-user song activity ---
+
+    _ACTIVITY_COLUMNS = {"opened": "last_opened_at", "performed": "last_performed_at"}
+
+    def record_song_activity(self, user_id: int, song_id: int, event: str):
+        """Stamp `event` ("opened" or "performed") for this user and song as now."""
+        col = self._ACTIVITY_COLUMNS[event]
+        self.conn.execute(
+            f"""INSERT INTO song_activity (user_id, song_id, {col})
+                VALUES (?, ?, datetime('now'))
+                ON CONFLICT(user_id, song_id) DO UPDATE SET {col} = datetime('now')""",
+            (user_id, song_id),
+        )
+        self.conn.commit()
+
+    def get_song_activity(self, user_id: int) -> dict[int, dict]:
+        """{song_id: {last_opened_at, last_performed_at}} for one user."""
+        rows = self.conn.execute(
+            "SELECT song_id, last_opened_at, last_performed_at FROM song_activity"
+            " WHERE user_id = ?",
+            (user_id,),
+        ).fetchall()
+        return {
+            r["song_id"]: {
+                "last_opened_at": r["last_opened_at"] or None,
+                "last_performed_at": r["last_performed_at"] or None,
+            }
+            for r in rows
+        }
 
     # --- Jobs ---
 

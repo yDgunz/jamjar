@@ -41,6 +41,49 @@ export function formatLongDate(dateStr: string | null | undefined): string {
     : { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 }
 
+export type SongActivityEvent = "opened" | "performed";
+const ACTIVITY_KEY = "song-activity";
+
+/** Locally remembered activity, so lists reflect it before the server copy refreshes. */
+export function localSongActivity(): Record<number, Partial<Record<SongActivityEvent, string>>> {
+  try {
+    return JSON.parse(localStorage.getItem(ACTIVITY_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+/** Record that you opened/performed a song (fire-and-forget). */
+export function recordSongActivity(songId: number, event: SongActivityEvent) {
+  const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+  try {
+    const all = localSongActivity();
+    all[songId] = { ...all[songId], [event]: now };
+    localStorage.setItem(ACTIVITY_KEY, JSON.stringify(all));
+  } catch {
+    /* storage unavailable */
+  }
+  fetch(`/api/songs/${songId}/activity`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event }),
+  }).catch(() => {});
+}
+
+/** "just now", "5m ago", "3h ago", "2d ago", else "Feb 11" — for UTC "YYYY-MM-DD HH:MM:SS". */
+export function formatRelative(utc: string | null | undefined): string {
+  if (!utc) return "";
+  const t = Date.parse(utc.replace(" ", "T") + "Z");
+  if (isNaN(t)) return "";
+  const mins = Math.floor((Date.now() - t) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60 * 24) return `${Math.floor(mins / 60)}h ago`;
+  if (mins < 60 * 24 * 7) return `${Math.floor(mins / 1440)}d ago`;
+  return formatShortDate(new Date(t).toISOString().slice(0, 10));
+}
+
 export function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "Unknown date";
   const parts = dateStr.split("-");
@@ -196,6 +239,9 @@ export interface Song {
   groups: SongGroup[];
   /** Reference videos: how-to lessons, backing tracks */
   links: SongLink[];
+  /** Your own activity, UTC "YYYY-MM-DD HH:MM:SS" (null if never) */
+  last_opened_at: string | null;
+  last_performed_at: string | null;
   name: string;
   artist: string;
   sheet: string;

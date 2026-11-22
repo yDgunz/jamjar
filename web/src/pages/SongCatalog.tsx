@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { api, formatShortDate, canEdit } from "../api";
+import { api, formatRelative, formatShortDate, canEdit, localSongActivity } from "../api";
 import type { Song } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
@@ -12,14 +12,31 @@ import SearchInput from "../components/SearchInput";
 import { useAuth } from "../context/AuthContext";
 import { useFetch } from "../hooks/useFetch";
 
-type SortKey = "name" | "artist" | "last_played" | "takes";
+type SortKey = "opened" | "performed" | "recorded" | "takes";
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: "name", label: "A–Z" },
-  { key: "artist", label: "Artist" },
-  { key: "last_played", label: "Recently played" },
-  { key: "takes", label: "Most played" },
+  { key: "opened", label: "Recently opened" },
+  { key: "performed", label: "Recently performed" },
+  { key: "recorded", label: "Recently recorded" },
+  { key: "takes", label: "Most recorded" },
 ];
+
+const SORT_KEYS = SORT_OPTIONS.map((o) => o.key) as string[];
+
+/** Newest of the server timestamp and the locally remembered one. */
+function latest(a: string | null | undefined, b: string | undefined): string | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return a > b ? a : b;
+}
+
+/** Sort newest first; songs without a value go last, alphabetically. */
+function byRecent(a: string | null, b: string | null, an: string, bn: string): number {
+  if (a && b) return b.localeCompare(a) || an.localeCompare(bn);
+  if (a) return -1;
+  if (b) return 1;
+  return an.localeCompare(bn);
+}
 
 function matches(song: Song, q: string): "name" | "lyrics" | null {
   if (song.name.toLowerCase().includes(q) || (song.artist ?? "").toLowerCase().includes(q)) {
@@ -39,8 +56,7 @@ export default function SongCatalog() {
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortKey>(() => {
     const stored = localStorage.getItem("song-catalog-sort");
-    if (stored === "name" || stored === "artist" || stored === "last_played" || stored === "takes") return stored;
-    return "name";
+    return stored && SORT_KEYS.includes(stored) ? (stored as SortKey) : "opened";
   });
   const [groupFilter, setGroupFilter] = useState<number | null>(() => {
     const stored = localStorage.getItem("group-filter");
@@ -63,16 +79,24 @@ export default function SongCatalog() {
   const q = query.trim().toLowerCase();
 
   const results = useMemo(() => {
-    let list = (songs ?? []).map((s) => ({ song: s, hit: q ? matches(s, q) : ("name" as const) }));
+    const local = localSongActivity();
+    let list = (songs ?? []).map((s) => ({
+      song: {
+        ...s,
+        last_opened_at: latest(s.last_opened_at, local[s.id]?.opened),
+        last_performed_at: latest(s.last_performed_at, local[s.id]?.performed),
+      },
+      hit: q ? matches(s, q) : ("name" as const),
+    }));
     if (groupFilter !== null) {
       list = list.filter((r) => (r.song.groups ?? []).some((g) => g.id === groupFilter) || r.song.group_id === groupFilter);
     }
     if (q) list = list.filter((r) => r.hit !== null);
     const cmp: Record<SortKey, (a: Song, b: Song) => number> = {
-      name: (a, b) => a.name.localeCompare(b.name),
-      artist: (a, b) => (a.artist ?? "").localeCompare(b.artist ?? "") || a.name.localeCompare(b.name),
-      last_played: (a, b) => (b.last_date ?? "").localeCompare(a.last_date ?? ""),
-      takes: (a, b) => b.take_count - a.take_count,
+      opened: (a, b) => byRecent(a.last_opened_at, b.last_opened_at, a.name, b.name),
+      performed: (a, b) => byRecent(a.last_performed_at, b.last_performed_at, a.name, b.name),
+      recorded: (a, b) => byRecent(a.last_date, b.last_date, a.name, b.name),
+      takes: (a, b) => b.take_count - a.take_count || a.name.localeCompare(b.name),
     };
     // When searching, title/artist matches come before lyric-only matches
     return list.sort((a, b) =>
@@ -200,9 +224,13 @@ export default function SongCatalog() {
         <div className="mt-1">
           <ListRows>
             {results.map(({ song, hit }) => {
+              const when =
+                sortBy === "opened" ? (song.last_opened_at ? `opened ${formatRelative(song.last_opened_at)}` : null)
+                : sortBy === "performed" ? (song.last_performed_at ? `performed ${formatRelative(song.last_performed_at)}` : null)
+                : song.last_date ? `recorded ${formatShortDate(song.last_date)}` : null;
               const meta = [
                 song.artist,
-                song.last_date ? `played ${formatShortDate(song.last_date)}` : null,
+                when,
                 multiGroup && !groupFilter ? (song.groups?.length ? song.groups.map((g) => g.name).join(", ") : song.group_name) : null,
               ].filter(Boolean).join(" · ");
               return (
