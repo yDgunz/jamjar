@@ -231,6 +231,12 @@ export interface SongLink {
   created_by_name: string | null;
 }
 
+export interface SongBackground {
+  /** Paragraph whose [n] markers cite sources[n-1] */
+  text: string;
+  sources: { title: string; url: string }[];
+}
+
 export interface Song {
   id: number;
   /** Home band (compat); `groups` lists every band of yours that plays it */
@@ -239,6 +245,8 @@ export interface Song {
   groups: SongGroup[];
   /** Reference videos: how-to lessons, backing tracks */
   links: SongLink[];
+  /** Short written history of the song ("About" tab); null when there is none */
+  background: SongBackground | null;
   /** Your own activity, UTC "YYYY-MM-DD HH:MM:SS" (null if never) */
   last_opened_at: string | null;
   last_performed_at: string | null;

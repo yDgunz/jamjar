@@ -237,6 +237,8 @@ class Song:
     created_by: int | None = None
     updated_by: int | None = None
     updated_at: str | None = None
+    background: str = ""
+    background_sources: str = ""  # JSON list of {title, url}
 
 
 @dataclass
@@ -429,6 +431,15 @@ class Database:
         }
         if "features" not in group_cols:
             self.conn.execute("ALTER TABLE groups ADD COLUMN features TEXT NOT NULL DEFAULT ''")
+            self.conn.commit()
+
+        # Song background ("About" tab): paragraph with [n] markers + JSON sources
+        song_cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(songs)").fetchall()}
+        if "background" not in song_cols:
+            self.conn.execute("ALTER TABLE songs ADD COLUMN background TEXT NOT NULL DEFAULT ''")
+            self.conn.execute(
+                "ALTER TABLE songs ADD COLUMN background_sources TEXT NOT NULL DEFAULT ''"
+            )
             self.conn.commit()
 
         # Shared song catalog: every song is linked to its home band.
@@ -1169,7 +1180,8 @@ class Database:
         sql = f"""SELECT s.id, s.group_id, s.name, s.artist, s.sheet, s.notes,
                       COUNT(t.id) as take_count,
                       MIN(ses.date) as first_date, MAX(ses.date) as last_date,
-                      s.created_by, s.updated_by, s.updated_at
+                      s.created_by, s.updated_by, s.updated_at,
+                      s.background, s.background_sources
                FROM songs s
                LEFT JOIN tracks t ON t.song_id = s.id{take_filter}
                LEFT JOIN sessions ses ON t.session_id = ses.id
@@ -1262,6 +1274,14 @@ class Database:
             " updated_by = ?, updated_at = datetime('now')"
             " WHERE id = ?",
             (artist, sheet, notes, updated_by, song_id),
+        )
+        self.conn.commit()
+
+    def set_song_background(self, song_id: int, text: str, sources_json: str):
+        """Set (or clear, with empty text) a song's "About" background."""
+        self.conn.execute(
+            "UPDATE songs SET background = ?, background_sources = ? WHERE id = ?",
+            (text, sources_json if text else "", song_id),
         )
         self.conn.commit()
 
@@ -1386,9 +1406,18 @@ class Database:
                 """UPDATE songs SET
                        artist = CASE WHEN artist = '' THEN ? ELSE artist END,
                        sheet = CASE WHEN sheet = '' THEN ? ELSE sheet END,
+                       background_sources = CASE WHEN background = ''
+                                            THEN ? ELSE background_sources END,
+                       background = CASE WHEN background = '' THEN ? ELSE background END,
                        updated_at = datetime('now')
                    WHERE id = ?""",
-                (merge["artist"], merge["sheet"], keep_id),
+                (
+                    merge["artist"],
+                    merge["sheet"],
+                    merge["background_sources"],
+                    merge["background"],
+                    keep_id,
+                ),
             )
             self.conn.execute("DELETE FROM songs WHERE id = ?", (merge_id,))
 

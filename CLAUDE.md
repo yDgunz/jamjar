@@ -83,7 +83,8 @@ date                       track_number                   artist
 source_file                start_sec, end_sec             sheet, notes
 duration_sec               duration_sec                   created_at
 notes                      audio_path, notes              UNIQUE(group_id, name)
-created_at                 created_at
+created_at                 created_at                     background,
+                                                          background_sources
 
 jobs                           setlists                       setlist_songs
 ──────────────                ──────────────                 ─────────────────
@@ -137,6 +138,7 @@ created_at                    used_at (nullable)
 - `setlist_songs → songs`: many-to-one, CASCADE on delete
 - `activity_log → users/groups`: many-to-one, tracks user activity for admin stats
 - `song_activity (user_id, song_id, last_opened_at, last_performed_at)`: per-user "recently opened/performed" timestamps (UTC), CASCADE on user/song delete, merged (latest wins) on song merge. Recorded by the song page (opened) and Perform mode (performed)
+- `songs.background` / `background_sources`: a short written history of the song ("About" tab) with a JSON list of `{title, url}` sources. Written offline by Claude from web sources and stored as static content through the API (the server never calls an LLM); filled from the merged song on a song merge
 - `song_links → songs`: many-to-one, CASCADE delete. Reference videos (how-to lessons, backing tracks) shared by every band that plays the song; moved over by song merges
 - `share_links → tracks`: one-to-one, CASCADE delete
 - `share_links → users`: many-to-one (nullable), SET NULL on delete
@@ -155,7 +157,7 @@ All `/api` endpoints require authentication (JWT cookie or API key header). Role
 **Tracks:** `POST /api/tracks/{id}/tag` | `DELETE /api/tracks/{id}/tag` | `PUT /api/tracks/{id}/notes` | `GET /api/tracks/{id}/audio` | `POST /api/tracks/{id}/merge` (admin) | `POST /api/tracks/{id}/split` (admin) | `PUT /api/tracks/{id}/trim` (admin) | `POST /api/tracks/{id}/share` | `DELETE /api/tracks/{id}/share`
 **Share (public):** `GET /share/{token}` | `GET /api/share/{token}/audio`
 **Invite (public):** `POST /api/invite/validate` | `POST /api/invite/accept`
-**Songs:** `GET /api/songs` | `POST /api/songs` (editor) | `GET /api/songs/{id}` | `GET /api/songs/{id}/tracks` | `PUT /api/songs/{id}/details` | `PUT /api/songs/{id}/name` | `PUT /api/songs/{id}/group` (admin, move home band) | `POST /api/songs/{id}/groups` (editor, link a band) | `DELETE /api/songs/{id}/groups/{group_id}` (admin, unlink) | `PUT /api/songs/{id}/groups/{group_id}/notes` (editor, per-band notes) | `POST /api/songs/merge` (admin, `{keep_id, merge_id}`) | `POST /api/songs/{id}/links` (editor, `{url, kind, title?}`; YouTube titles auto-filled via oEmbed) | `DELETE /api/songs/{id}/links/{link_id}` (editor) | `POST /api/songs/{id}/activity` (`{event: opened|performed}`, 204; no-op for API key). Song responses include the caller's `last_opened_at` / `last_performed_at` | `POST /api/songs/{id}/fetch-lyrics` (editor) | `DELETE /api/songs/{id}` (admin)
+**Songs:** `GET /api/songs` | `POST /api/songs` (editor) | `GET /api/songs/{id}` | `GET /api/songs/{id}/tracks` | `PUT /api/songs/{id}/details` | `PUT /api/songs/{id}/name` | `PUT /api/songs/{id}/group` (admin, move home band) | `POST /api/songs/{id}/groups` (editor, link a band) | `DELETE /api/songs/{id}/groups/{group_id}` (admin, unlink) | `PUT /api/songs/{id}/groups/{group_id}/notes` (editor, per-band notes) | `POST /api/songs/merge` (admin, `{keep_id, merge_id}`) | `POST /api/songs/{id}/links` (editor, `{url, kind, title?}`; YouTube titles auto-filled via oEmbed) | `DELETE /api/songs/{id}/links/{link_id}` (editor) | `POST /api/songs/{id}/activity` (`{event: opened|performed}`, 204; no-op for API key). Song responses include the caller's `last_opened_at` / `last_performed_at` | `PUT /api/songs/{id}/background` (editor, `{text, sources: [{title, url}]}`; text cites sources with `[n]` markers, every marker must match a source) | `DELETE /api/songs/{id}/background` (editor). Song responses include `background: {text, sources} | null`; the song page shows an About tab only when it is set | `POST /api/songs/{id}/fetch-lyrics` (editor) | `DELETE /api/songs/{id}` (admin)
 **Setlists:** `GET /api/setlists` | `POST /api/setlists` (editor) | `GET /api/setlists/{id}` | `GET /api/setlists/{id}/songs` | `PUT /api/setlists/{id}/name` (editor) | `PUT /api/setlists/{id}/date` (editor) | `PUT /api/setlists/{id}/notes` (editor) | `PUT /api/setlists/{id}/songs` (editor, replace order) | `POST /api/setlists/{id}/songs` (editor, add song) | `DELETE /api/setlists/{id}/songs/{position}` (editor) | `DELETE /api/setlists/{id}` (admin)
 **Admin:** `GET/POST /api/admin/users` | `DELETE /api/admin/users/{id}` | `POST .../resend-invite` | `PUT .../password` | `PUT .../role` | `PUT .../name` | `POST/DELETE .../groups/{id}` | `GET/POST /api/admin/groups` | `DELETE /api/admin/groups/{id}` | `GET /api/admin/stats` (all superadmin)
 **Public:** `GET /` (landing page) | `POST /api/access-request`

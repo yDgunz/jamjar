@@ -1,8 +1,10 @@
 import asyncio
 import hmac
 import html
+import json
 import logging
 import os as _os
+import re as _re_mod
 import time
 from pathlib import Path
 from typing import Annotated, Literal
@@ -547,6 +549,17 @@ class SongLinkResponse(BaseModel):
     created_by_name: str | None = None
 
 
+class BackgroundSource(BaseModel):
+    title: NameStr
+    url: Annotated[str, Field(max_length=500)]
+
+
+class SongBackground(BaseModel):
+    # Paragraph with [n] markers that refer to sources[n-1]
+    text: str
+    sources: list[BackgroundSource]
+
+
 class SongResponse(BaseModel):
     id: int
     # Home group (kept for compatibility); `groups` lists every group of the
@@ -565,6 +578,8 @@ class SongResponse(BaseModel):
     updated_by_name: str | None = None
     updated_at: str | None = None
     links: list[SongLinkResponse] = []
+    # Short written history of the song ("About" tab); null when there is none
+    background: SongBackground | None = None
     # The caller's own activity (UTC "YYYY-MM-DD HH:MM:SS"); null for API-key callers
     last_opened_at: str | None = None
     last_performed_at: str | None = None
@@ -710,6 +725,10 @@ def _song_response(
         d["group_name"] = group.name if group else ""
     d["created_by_name"] = db.get_user_name(d.pop("created_by", None))
     d["updated_by_name"] = db.get_user_name(d.pop("updated_by", None))
+    bg_text, bg_sources = d.pop("background", ""), d.pop("background_sources", "")
+    d["background"] = (
+        SongBackground(text=bg_text, sources=json.loads(bg_sources or "[]")) if bg_text else None
+    )
     d["links"] = [
         SongLinkResponse(
             id=link["id"],
@@ -2158,6 +2177,49 @@ def delete_song_link(song_id: int, link_id: int, request: Request):
     if not link or link["song_id"] != song_id:
         raise HTTPException(status_code=404, detail="Link not found")
     db.delete_song_link(link_id)
+    return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
+
+
+class SetSongBackgroundRequest(BaseModel):
+    text: TextStr
+    sources: list[BackgroundSource] = Field(max_length=20)
+
+
+_BG_MARKER = _re_mod.compile(r"\[(\d+)\]")
+
+
+@app.put("/api/songs/{song_id}/background", response_model=SongResponse)
+def set_song_background(song_id: int, req: SetSongBackgroundRequest, request: Request):
+    """Set a song's "About" background: a short paragraph whose [n] markers cite
+    sources[n-1]. Every marker must point at a source and every source must be an
+    http(s) link."""
+    db = get_db()
+    _get_song_with_access(db, song_id, request)
+    _require_role(request, "editor")
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Background text is empty")
+    if not req.sources:
+        raise HTTPException(status_code=400, detail="Add at least one source")
+    for src in req.sources:
+        parsed = urlparse(src.url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise HTTPException(status_code=400, detail=f"Not a web link: {src.url}")
+    markers = {int(m) for m in _BG_MARKER.findall(text)}
+    if not markers:
+        raise HTTPException(status_code=400, detail="Cite sources with [1], [2], ... markers")
+    if max(markers) > len(req.sources) or min(markers) < 1:
+        raise HTTPException(status_code=400, detail="A [n] marker has no matching source")
+    db.set_song_background(song_id, text, json.dumps([src.model_dump() for src in req.sources]))
+    return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
+
+
+@app.delete("/api/songs/{song_id}/background", response_model=SongResponse)
+def clear_song_background(song_id: int, request: Request):
+    db = get_db()
+    _get_song_with_access(db, song_id, request)
+    _require_role(request, "editor")
+    db.set_song_background(song_id, "", "")
     return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
 
 

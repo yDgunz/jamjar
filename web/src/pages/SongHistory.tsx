@@ -9,6 +9,7 @@ import { ListRows } from "../components/ListItemCard";
 import EditableField from "../components/EditableField";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
+import SongAbout from "../components/SongAbout";
 import SongVideos from "../components/SongVideos";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
@@ -134,7 +135,7 @@ export default function SongHistory() {
   const [fetchingLyrics, setFetchingLyrics] = useState(false);
   const [editingSheet, setEditingSheet] = useState(false);
   const [sheetInput, setSheetInput] = useState("");
-  const [tab, setTab] = useState<"chart" | "takes" | null>(null);
+  const [tab, setTab] = useState<"chart" | "takes" | "about" | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [editingNotesField, setEditingNotesField] = useState(false);
   const [addingVideo, setAddingVideo] = useState(false);
@@ -409,13 +410,13 @@ export default function SongHistory() {
 
       <div className="mt-4 flex items-center gap-2">
         <div className="flex flex-1 rounded-lg bg-white/[0.08] p-0.5 text-sm font-medium">
-          {(["chart", "takes"] as const).map((t) => (
+          {(song.background ? (["chart", "takes", "about"] as const) : (["chart", "takes"] as const)).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex-1 rounded-md py-1.5 transition ${activeTab === t ? "bg-gray-600 text-white shadow" : "text-gray-400"}`}
+              className={`flex-1 whitespace-nowrap rounded-md px-1.5 py-1.5 sm:px-2 transition ${activeTab === t ? "bg-gray-600 text-white shadow" : "text-gray-400"}`}
             >
-              {t === "chart" ? "Chart" : `Takes${takes.length ? ` (${takes.length})` : ""}`}
+              {t === "chart" ? "Chart" : t === "about" ? "About" : `Takes${takes.length ? ` (${takes.length})` : ""}`}
             </button>
           ))}
         </div>
@@ -431,7 +432,7 @@ export default function SongHistory() {
         {song.sheet && (
           <Link
             to={`/songs/${songId}/perform`}
-            className="shrink-0 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent-500 active:bg-accent-700"
+            className="shrink-0 rounded-lg bg-accent-600 px-3 py-2 sm:px-4 text-sm font-semibold text-white transition hover:bg-accent-500 active:bg-accent-700"
           >
             Perform
           </Link>
@@ -541,6 +542,8 @@ export default function SongHistory() {
             </div>
           ))}
         </div>
+      ) : activeTab === "about" && song.background ? (
+        <SongAbout background={song.background} />
       ) : takes.length === 0 ? (
         <p className="mt-8 text-center text-gray-400">No recorded takes yet. Tag a track in a recording to add one.</p>
       ) : (
