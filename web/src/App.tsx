@@ -4,6 +4,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { api, isSuperAdmin, ApiError } from "./api";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { useOnline } from "./hooks/useOnline";
+import { MiniPlayer, PlayerProvider, usePlayer } from "./context/PlayerContext";
 import Login from "./pages/Login";
 import SessionList from "./pages/SessionList";
 import SessionDetail from "./pages/SessionDetail";
@@ -186,6 +187,7 @@ function MoreMenu({ onChangePassword }: { onChangePassword: () => void }) {
 
 function Layout({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
+  const { item: playerItem } = usePlayer();
   const online = useOnline();
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -251,9 +253,11 @@ function Layout({ children }: { children: React.ReactNode }) {
           )}
         </div>
       </header>
-      <main className="mx-auto max-w-3xl overflow-x-hidden px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[calc(5rem+env(safe-area-inset-bottom))] sm:px-6 sm:pt-6 sm:pb-8">
+      <main className={`mx-auto max-w-3xl overflow-x-hidden px-4 pt-[max(0.75rem,env(safe-area-inset-top))] ${playerItem ? "pb-[calc(10rem+env(safe-area-inset-bottom))] sm:pb-28" : "pb-[calc(5rem+env(safe-area-inset-bottom))] sm:pb-8"} sm:px-6 sm:pt-6`}>
         {children}
       </main>
+
+      <MiniPlayer />
 
       {/* Bottom tab bar for mobile */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-white/[0.07] bg-gray-950/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg sm:hidden">
@@ -296,6 +300,7 @@ function Layout({ children }: { children: React.ReactNode }) {
 function AuthenticatedApp() {
   return (
     <AuthProvider>
+      <PlayerProvider>
       <Routes>
         {/* Full-screen routes — no app chrome */}
         <Route path="/songs/:id/perform" element={<PerformMode />} />
@@ -319,6 +324,7 @@ function AuthenticatedApp() {
           </Layout>
         } />
       </Routes>
+      </PlayerProvider>
     </AuthProvider>
   );
 }

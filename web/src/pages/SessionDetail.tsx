@@ -1,75 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router";
-import { api, formatDate, canEdit, canAdmin } from "../api";
+import { Link, useParams, useNavigate, useSearchParams } from "react-router";
+import { api, formatLongDate, canEdit, canAdmin } from "../api";
 import type { Session, Track, Song } from "../api";
-import AudioPlayer from "../components/AudioPlayer";
-import type { Segment } from "../components/AudioPlayer";
+import ActionSheet, { MoreButton } from "../components/ActionSheet";
+import type { SheetSection } from "../components/ActionSheet";
+import { ListRows } from "../components/ListItemCard";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
 import Spinner from "../components/Spinner";
-import Breadcrumb from "../components/Breadcrumb";
 import TrackRow from "../components/TrackRow";
 import { useAuth } from "../context/AuthContext";
-
-function MergeButton({ trackId, nextTrackId, onTracksChanged, onError }: {
-  trackId: number;
-  nextTrackId: number;
-  onTracksChanged: (tracks: Track[]) => void;
-  onError: (msg: string) => void;
-}) {
-  const [loading, setLoading] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-
-  const handleMerge = async () => {
-    setConfirming(false);
-    setLoading(true);
-    try {
-      const newTracks = await api.mergeTrack(trackId, nextTrackId);
-      onTracksChanged(newTracks);
-    } catch (err) {
-      onError(`Merge failed: ${err instanceof Error ? err.message : err}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <>
-      <div className="flex items-center justify-center py-0.5">
-        <button
-          onClick={() => setConfirming(true)}
-          disabled={loading}
-          className="flex items-center gap-1.5 rounded px-3 py-2 text-xs text-gray-600 transition hover:bg-gray-800 hover:text-gray-300 disabled:opacity-50"
-          title="Merge with track above"
-        >
-          {loading ? (
-            <>
-              <Spinner size="sm" className="!h-3 !w-3" />
-              Merging...
-            </>
-          ) : (
-            <>
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12l7-4 7 4" />
-              </svg>
-              Merge with above
-            </>
-          )}
-        </button>
-      </div>
-      <Modal
-        open={confirming}
-        title="Merge tracks"
-        message="Merge these two tracks into one? The first track's song tag and notes will be kept."
-        confirmLabel="Merge"
-        onConfirm={handleMerge}
-        onCancel={() => setConfirming(false)}
-      />
-    </>
-  );
-}
+import { formatTime, PauseIcon, PlayIcon, usePlayer } from "../context/PlayerContext";
 
 export default function SessionDetail() {
   const { user } = useAuth();
@@ -93,6 +36,10 @@ export default function SessionDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [pendingGroupId, setPendingGroupId] = useState<number | null>(null);
   const [processingProgress, setProcessingProgress] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [mergeTarget, setMergeTarget] = useState<{ trackId: number; nextId: number } | null>(null);
+  const [merging, setMerging] = useState(false);
+  const player = usePlayer();
   const navigate = useNavigate();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -229,9 +176,24 @@ export default function SessionDetail() {
     setConfirmDelete(false);
     try {
       await api.deleteSession(sessionId, true);
-      navigate("/");
+      navigate("/sessions");
     } catch (err) {
       showError(`Delete failed: ${err instanceof Error ? err.message : err}`);
+    }
+  };
+
+  const handleMerge = async () => {
+    if (!mergeTarget) return;
+    const { trackId, nextId } = mergeTarget;
+    setMergeTarget(null);
+    setMerging(true);
+    try {
+      if (player.item?.trackId === trackId || player.item?.trackId === nextId) player.close();
+      handleTracksChanged(await api.mergeTrack(trackId, nextId));
+    } catch (err) {
+      showError(`Merge failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setMerging(false);
     }
   };
 
@@ -239,165 +201,118 @@ export default function SessionDetail() {
   if (fetchError) return <FetchError error={fetchError} onRetry={loadSession} />;
   if (!session) return <p className="text-red-400">Recording not found.</p>;
 
+  const multiGroup = user != null && user.groups.length > 1;
+  const sessionTitle = session.name || `Session ${session.id}`;
+  const meta = [
+    formatLongDate(session.date),
+    session.duration_sec ? formatTime(session.duration_sec) : null,
+    session.created_by_name ? `by ${session.created_by_name}` : null,
+    multiGroup ? session.group_name : null,
+  ].filter(Boolean).join(" · ");
+  const fullKey = `session:${session.id}`;
+  const fullIsCurrent = player.isCurrent(fullKey);
+
+  const sheetSections: SheetSection[] = [];
+  if (canEdit(user)) {
+    sheetSections.push({ actions: [
+      { label: "Rename", onClick: () => setEditingName(true) },
+      { label: "Change date", onClick: () => setEditingDate(true) },
+      { label: session.notes ? "Edit notes" : "Add notes", onClick: () => setEditingNotes(true) },
+    ] });
+  }
+  if (canAdmin(user)) {
+    sheetSections.push({
+      title: "Manage",
+      actions: [
+        ...(multiGroup
+          ? user!.groups.filter((g) => g.id !== session.group_id).map((g) => ({
+              label: `Move to ${g.name}`,
+              onClick: () => setPendingGroupId(g.id),
+            }))
+          : []),
+        { label: "Re-split into tracks…", onClick: () => setReprocessOpen(true), disabled: !!processingProgress },
+        { label: "Delete recording", destructive: true, onClick: () => setConfirmDelete(true) },
+      ],
+    });
+  }
+
   return (
     <div>
-      <Breadcrumb
-        items={[
-          { label: "Recordings", to: "/sessions" },
-        ]}
-      />
-      <div>
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            {editingName && canEdit(user) ? (
-              <input
-                autoFocus
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSaveName();
-                  if (e.key === "Escape") { setEditingName(false); setNameInput(session.name); }
-                }}
-                onBlur={handleSaveName}
-                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xl font-bold text-white focus:border-accent-500 focus:outline-none"
-              />
-            ) : (
-              <h1
-                onClick={() => canEdit(user) && setEditingName(true)}
-                className={`text-xl font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
-                title={canEdit(user) ? "Click to rename" : undefined}
-              >
-                {session.name || `Session ${session.id}`}
-              </h1>
-            )}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {editingDate && canEdit(user) ? (
-                <input
-                  type="date"
-                  autoFocus
-                  value={dateInput}
-                  onChange={(e) => setDateInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSaveDate();
-                    if (e.key === "Escape") { setEditingDate(false); setDateInput(session.date ?? ""); }
-                  }}
-                  onBlur={handleSaveDate}
-                  className="rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
-                />
-              ) : canEdit(user) ? (
-                <button
-                  onClick={() => setEditingDate(true)}
-                  className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300 hover:bg-gray-700"
-                  title="Click to change date"
-                >
-                  {formatDate(session.date)}
-                </button>
-              ) : (
-                <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300">{formatDate(session.date)}</span>
-              )}
-              {session.created_by_name && (
-                <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">by {session.created_by_name}</span>
-              )}
-              {session.group_name && user && user.groups.length > 1 && (
-                canAdmin(user) ? (
-                  <select
-                    value={session.group_id}
-                    onChange={(e) => setPendingGroupId(Number(e.target.value))}
-                    className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500 border-none focus:outline-none focus:ring-1 focus:ring-accent-500"
-                  >
-                    {user!.groups.map((g) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">{session.group_name}</span>
-                )
-              )}
-            </div>
-          </div>
-          {canAdmin(user) && (
-            <div className="flex shrink-0 items-center">
-              <button
-                onClick={() => setReprocessOpen(true)}
-                disabled={!!processingProgress}
-                className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-800 hover:text-gray-300 disabled:opacity-30"
-                title="Reprocess"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="rounded-lg p-2 text-gray-500 transition hover:bg-red-950 hover:text-red-400"
-                title="Delete"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            </div>
+      <Link to="/sessions" className="-ml-1 inline-flex items-center text-[15px] text-accent-400 active:opacity-70">
+        <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" /></svg>
+        Recordings
+      </Link>
+
+      <div className="mt-2 flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          {editingName && canEdit(user) ? (
+            <input
+              autoFocus
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSaveName();
+                if (e.key === "Escape") { setEditingName(false); setNameInput(session.name); }
+              }}
+              onBlur={handleSaveName}
+              className="w-full rounded-lg bg-white/[0.08] px-2 py-1 text-[26px] font-bold text-white outline-none focus:ring-2 focus:ring-accent-500/60"
+            />
+          ) : (
+            <h1 className="text-[28px] font-bold leading-tight tracking-tight text-white">{sessionTitle}</h1>
+          )}
+          {editingDate && canEdit(user) ? (
+            <input
+              type="date"
+              autoFocus
+              value={dateInput}
+              onChange={(e) => setDateInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSaveDate();
+                if (e.key === "Escape") { setEditingDate(false); setDateInput(session.date ?? ""); }
+              }}
+              onBlur={handleSaveDate}
+              className="mt-1 rounded-lg bg-white/[0.08] px-2 py-1 text-base text-white outline-none"
+            />
+          ) : (
+            <p className="mt-1 text-[15px] text-gray-400">{meta}</p>
           )}
         </div>
-
-        <div className="mt-1">
-          {editingNotes && canEdit(user) ? (
-            <textarea
-              autoFocus
-              value={notesInput}
-              onChange={(e) => setNotesInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveSessionNotes(); }
-                if (e.key === "Escape") { setEditingNotes(false); setNotesInput(session.notes ?? ""); }
-              }}
-              onBlur={handleSaveSessionNotes}
-              placeholder="Add notes..."
-              rows={3}
-              className="w-full max-w-md rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
-            />
-          ) : session.notes ? (
-            canEdit(user) ? (
-              <button
-                onClick={() => setEditingNotes(true)}
-                className="text-left text-sm whitespace-pre-wrap text-gray-400 italic hover:text-gray-300"
-              >
-                {session.notes}
-              </button>
-            ) : (
-              <p className="text-sm whitespace-pre-wrap text-gray-400 italic">{session.notes}</p>
-            )
-          ) : canEdit(user) ? (
-            <button
-              onClick={() => setEditingNotes(true)}
-              className="text-sm text-gray-600 hover:text-gray-400"
-            >
-              + add notes
-            </button>
-          ) : null}
-        </div>
-
-        {(tracks.length > 1 || processingProgress) && (
-        <div className="mt-2 rounded-lg border border-gray-700 bg-gray-800/50 px-4 py-3">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">Full Recording</p>
-          <AudioPlayer
-            src={api.sessionAudioUrl(sessionId)}
-            durationSec={session.duration_sec ?? undefined}
-            segments={tracks.map((t): Segment => ({
-              startSec: t.start_sec,
-              endSec: t.end_sec,
-              label: `Track ${t.track_number}`,
-            }))}
-          />
-        </div>
-        )}
+        {sheetSections.length > 0 && <MoreButton onClick={() => setSheetOpen(true)} label="Recording actions" />}
       </div>
 
-      {(tracks.length > 1 || processingProgress) && (
-      <div className="mb-6 mt-8 flex items-center gap-3">
-        <div className="h-px flex-1 bg-gray-700" />
-        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Tracks</span>
-        <div className="h-px flex-1 bg-gray-700" />
-      </div>
+      {editingNotes && canEdit(user) ? (
+        <textarea
+          autoFocus
+          value={notesInput}
+          onChange={(e) => setNotesInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveSessionNotes(); }
+            if (e.key === "Escape") { setEditingNotes(false); setNotesInput(session.notes ?? ""); }
+          }}
+          onBlur={handleSaveSessionNotes}
+          placeholder="Notes about this session…"
+          rows={3}
+          className="mt-3 w-full rounded-lg bg-white/[0.08] px-3 py-2 text-base text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-accent-500/60"
+        />
+      ) : session.notes ? (
+        <p className="mt-3 whitespace-pre-wrap text-[15px] text-gray-300">{session.notes}</p>
+      ) : null}
+
+      {tracks.length > 1 && !processingProgress && (
+        <button
+          onClick={() => player.play({
+            key: fullKey,
+            src: api.sessionAudioUrl(sessionId),
+            title: sessionTitle,
+            subtitle: `Full recording · ${formatLongDate(session.date)}`,
+            href: `/sessions/${sessionId}`,
+            durationSec: session.duration_sec ?? undefined,
+          })}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-white/[0.08] py-3 text-[15px] font-semibold text-white transition active:bg-white/[0.12]"
+        >
+          {fullIsCurrent && player.playing ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="h-4 w-4" />}
+          {fullIsCurrent && player.playing ? "Pause full recording" : "Play full recording"}
+        </button>
       )}
 
       {processingProgress ? (
@@ -406,54 +321,76 @@ export default function SessionDetail() {
           <p className="text-sm text-gray-400">{processingProgress}</p>
         </div>
       ) : tracks.length === 0 && !loading ? (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-gray-800 bg-gray-900 px-6 py-12 text-center">
-          <p className="text-sm text-gray-300">No tracks were found in this recording.</p>
-          <p className="text-xs text-gray-500 max-w-sm">
-            The threshold may be too high for this recording. Try reprocessing with a lower threshold (e.g. 25 or 30), or use "Single song" mode if the recording is one continuous piece.
+        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl bg-white/[0.04] px-6 py-10 text-center">
+          <p className="text-[15px] text-gray-300">No songs were found in this recording.</p>
+          <p className="max-w-sm text-sm text-gray-500">
+            Try re-splitting with a lower threshold (e.g. 25 or 30), or as a single song if it’s one continuous piece.
           </p>
           {canAdmin(user) && (
             <button
               onClick={() => setReprocessOpen(true)}
-              className="mt-2 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500"
+              className="mt-2 rounded-full bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500"
             >
-              Reprocess
+              Re-split
             </button>
           )}
         </div>
       ) : (
-      <div className={tracks.length > 1 ? "space-y-0" : "mt-2 space-y-0"}>
-        {tracks.map((t, i) => (
-          <div key={t.id}>
-            <TrackRow
-              track={t}
-              trackCount={tracks.length}
-              sessionDuration={session?.duration_sec ?? null}
-              songs={songs}
-              onUpdate={refresh}
-              onTracksChanged={handleTracksChanged}
-              onError={showError}
-            />
-            {i < tracks.length - 1 && canAdmin(user) && (
-              <MergeButton
-                trackId={t.id}
-                nextTrackId={tracks[i + 1].id}
+        <div className="relative mt-5">
+          {merging && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/80">
+              <div className="flex items-center gap-2 text-sm text-gray-300"><Spinner size="sm" /> Merging…</div>
+            </div>
+          )}
+          <h2 className="mb-1 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+            {tracks.length} track{tracks.length !== 1 ? "s" : ""}
+            {tracks.some((t) => !t.song_name) && canEdit(user) && (
+              <span className="normal-case tracking-normal text-gray-600"> · tap Tag to name a song</span>
+            )}
+          </h2>
+          <ListRows>
+            {tracks.map((t, i) => (
+              <TrackRow
+                key={t.id}
+                track={t}
+                sessionName={sessionTitle}
+                sessionDuration={session?.duration_sec ?? null}
+                songs={songs}
+                onUpdate={refresh}
                 onTracksChanged={handleTracksChanged}
                 onError={showError}
+                onMergeNext={i < tracks.length - 1 && canAdmin(user)
+                  ? () => setMergeTarget({ trackId: t.id, nextId: tracks[i + 1].id })
+                  : undefined}
               />
-            )}
-          </div>
-        ))}
-      </div>
+            ))}
+          </ListRows>
+        </div>
       )}
+      <ActionSheet
+        open={sheetOpen}
+        title={sessionTitle}
+        subtitle={formatLongDate(session.date)}
+        sections={sheetSections}
+        onClose={() => setSheetOpen(false)}
+      />
+      <Modal
+        open={mergeTarget !== null}
+        title="Merge tracks"
+        message="Merge this track with the next one? This track's song tag and notes are kept."
+        confirmLabel="Merge"
+        onConfirm={handleMerge}
+        onCancel={() => setMergeTarget(null)}
+      />
       <FormModal
         open={reprocessOpen}
-        title="Reprocess"
-        confirmLabel="Reprocess"
+        title="Re-split recording"
+        confirmLabel="Re-split"
         onConfirm={handleReprocess}
         onCancel={() => setReprocessOpen(false)}
       >
         <p className="-mt-2 text-sm text-gray-400">
-          Current tracks and tags will be replaced.
+          Detect songs again. Current tracks, tags and notes will be replaced.
         </p>
         <label className="flex items-center gap-2 cursor-pointer">
           <input
