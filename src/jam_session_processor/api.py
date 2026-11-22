@@ -262,7 +262,8 @@ def get_me(request: Request):
         role=user.role,
         groups=[
             AuthUserGroup(
-                id=g.id, name=g.name,
+                id=g.id,
+                name=g.name,
                 features=[f for f in (g.features or "").split(",") if f],
             )
             for g in groups
@@ -327,9 +328,7 @@ def reset_password_validate(req: ResetPasswordValidateRequest):
         raise HTTPException(status_code=404, detail="Invalid reset link")
     if row.used_at is not None:
         raise HTTPException(status_code=410, detail="This reset link has already been used")
-    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(
-        tzinfo=timezone.utc
-    )
+    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) > expires_at:
         raise HTTPException(status_code=410, detail="This reset link has expired")
     user = db.get_user(row.user_id)
@@ -355,9 +354,7 @@ def reset_password(req: ResetPasswordRequest):
         raise HTTPException(status_code=404, detail="Invalid reset link")
     if row.used_at is not None:
         raise HTTPException(status_code=410, detail="This reset link has already been used")
-    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(
-        tzinfo=timezone.utc
-    )
+    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) > expires_at:
         raise HTTPException(status_code=410, detail="This reset link has expired")
     user = db.get_user(row.user_id)
@@ -2202,10 +2199,7 @@ def _event_response(event, request=None) -> EventResponse:
     d["updated_by_name"] = db.get_user_name(d.pop("updated_by", None))
     d["response_summary"] = db.get_event_response_summary(event.id, event.group_id)
     responses = db.get_event_responses(event.id)
-    d["responses"] = [
-        {"user_name": r.user_name, "status": r.status}
-        for r in responses
-    ]
+    d["responses"] = [{"user_name": r.user_name, "status": r.status} for r in responses]
     d["my_response"] = None
     if request and request.state.user:
         my = next((r for r in responses if r.user_id == request.state.user.id), None)
@@ -2227,7 +2221,8 @@ def list_events(request: Request, type: str | None = None, include_past: bool = 
     db = get_db()
     group_ids = _get_group_ids(request)
     events = db.list_events(
-        group_ids, event_type=type,
+        group_ids,
+        event_type=type,
         upcoming_only=not include_past,
     )
     # Only return events for groups with scheduling feature enabled
@@ -2246,14 +2241,22 @@ def create_event(req: CreateEventRequest, request: Request):
     if not name:
         raise HTTPException(status_code=400, detail="Event name cannot be empty")
     _validate_event_fields(
-        type=req.type, date=req.date, time=req.time,
+        type=req.type,
+        date=req.date,
+        time=req.time,
         status=req.status,
     )
     user_id = request.state.user.id if request.state.user else None
     eid = db.create_event(
-        group_id=req.group_id, type=req.type, name=name, date=req.date,
-        time=req.time, location=req.location,
-        status=req.status, notes=req.notes, created_by=user_id,
+        group_id=req.group_id,
+        type=req.type,
+        name=name,
+        date=req.date,
+        time=req.time,
+        location=req.location,
+        status=req.status,
+        notes=req.notes,
+        created_by=user_id,
     )
     if request.state.user:
         db.log_activity(request.state.user.id, req.group_id, "event_created", name)
@@ -2340,16 +2343,26 @@ def get_event_responses(event_id: int, request: Request):
     members = db.get_users_for_group(event.group_id)
     result = []
     for r in responses:
-        result.append(EventMemberResponse(
-            user_id=r.user_id, user_name=r.user_name,
-            status=r.status, comment=r.comment, responded_at=r.responded_at,
-        ))
+        result.append(
+            EventMemberResponse(
+                user_id=r.user_id,
+                user_name=r.user_name,
+                status=r.status,
+                comment=r.comment,
+                responded_at=r.responded_at,
+            )
+        )
     for m in members:
         if m.id not in responded_ids:
-            result.append(EventMemberResponse(
-                user_id=m.id, user_name=m.name or m.email,
-                status="pending", comment=None, responded_at=None,
-            ))
+            result.append(
+                EventMemberResponse(
+                    user_id=m.id,
+                    user_name=m.name or m.email,
+                    status="pending",
+                    comment=None,
+                    responded_at=None,
+                )
+            )
     return result
 
 
@@ -2374,9 +2387,7 @@ def _validate_invite_token(db, token: str):
         raise HTTPException(status_code=404, detail="Invalid invite link")
     if row.used_at is not None:
         raise HTTPException(status_code=410, detail="This invite has already been used")
-    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(
-        tzinfo=timezone.utc
-    )
+    expires_at = datetime.strptime(row.expires_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) > expires_at:
         raise HTTPException(status_code=410, detail="This invite has expired")
     user = db.get_user(row.user_id)
@@ -2478,7 +2489,10 @@ def _admin_group_response(db, group) -> AdminGroupResponse:
     count = db.get_group_member_count(group.id)
     features = [f for f in (group.features or "").split(",") if f]
     return AdminGroupResponse(
-        id=group.id, name=group.name, member_count=count, features=features,
+        id=group.id,
+        name=group.name,
+        member_count=count,
+        features=features,
     )
 
 
@@ -2655,9 +2669,7 @@ class UpdateGroupFeaturesRequest(BaseModel):
     "/api/admin/groups/{group_id}/features",
     response_model=AdminGroupResponse,
 )
-def admin_update_group_features(
-    group_id: int, req: UpdateGroupFeaturesRequest, request: Request
-):
+def admin_update_group_features(group_id: int, req: UpdateGroupFeaturesRequest, request: Request):
     _require_role(request, "superadmin")
     db = get_db()
     group = db.get_group(group_id)

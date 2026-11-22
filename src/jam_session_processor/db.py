@@ -393,41 +393,26 @@ class Database:
         fk_clause = "INTEGER REFERENCES users(id) ON DELETE SET NULL"
         for table in ("sessions", "songs", "setlists"):
             table_cols = {
-                row["name"]
-                for row in self.conn.execute(f"PRAGMA table_info({table})").fetchall()
+                row["name"] for row in self.conn.execute(f"PRAGMA table_info({table})").fetchall()
             }
             if "created_by" not in table_cols:
-                self.conn.execute(
-                    f"ALTER TABLE {table} ADD COLUMN created_by {fk_clause}"
-                )
-                self.conn.execute(
-                    f"ALTER TABLE {table} ADD COLUMN updated_by {fk_clause}"
-                )
-                self.conn.execute(
-                    f"ALTER TABLE {table} ADD COLUMN updated_at TEXT"
-                )
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN created_by {fk_clause}")
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN updated_by {fk_clause}")
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN updated_at TEXT")
                 self.conn.commit()
 
         setlist_song_cols = {
-            row["name"]
-            for row in self.conn.execute(
-                "PRAGMA table_info(setlist_songs)"
-            ).fetchall()
+            row["name"] for row in self.conn.execute("PRAGMA table_info(setlist_songs)").fetchall()
         }
         if "added_by" not in setlist_song_cols:
-            self.conn.execute(
-                f"ALTER TABLE setlist_songs ADD COLUMN added_by {fk_clause}"
-            )
+            self.conn.execute(f"ALTER TABLE setlist_songs ADD COLUMN added_by {fk_clause}")
             self.conn.commit()
 
         group_cols = {
-            row["name"]
-            for row in self.conn.execute("PRAGMA table_info(groups)").fetchall()
+            row["name"] for row in self.conn.execute("PRAGMA table_info(groups)").fetchall()
         }
         if "features" not in group_cols:
-            self.conn.execute(
-                "ALTER TABLE groups ADD COLUMN features TEXT NOT NULL DEFAULT ''"
-            )
+            self.conn.execute("ALTER TABLE groups ADD COLUMN features TEXT NOT NULL DEFAULT ''")
             self.conn.commit()
 
     def close(self):
@@ -614,15 +599,11 @@ class Database:
         self.conn.commit()
 
     def update_group_features(self, group_id: int, features: str):
-        self.conn.execute(
-            "UPDATE groups SET features = ? WHERE id = ?", (features, group_id)
-        )
+        self.conn.execute("UPDATE groups SET features = ? WHERE id = ?", (features, group_id))
         self.conn.commit()
 
     def group_has_feature(self, group_id: int, feature: str) -> bool:
-        row = self.conn.execute(
-            "SELECT features FROM groups WHERE id = ?", (group_id,)
-        ).fetchone()
+        row = self.conn.execute("SELECT features FROM groups WHERE id = ?", (group_id,)).fetchone()
         if not row or not row["features"]:
             return False
         return feature in row["features"].split(",")
@@ -1433,16 +1414,13 @@ class Database:
             "INSERT INTO events (group_id, type, name, date, time,"
             " location, status, notes, created_by, updated_by)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (group_id, type, name, date, time, location, status,
-             notes, created_by, created_by),
+            (group_id, type, name, date, time, location, status, notes, created_by, created_by),
         )
         self.conn.commit()
         return cur.lastrowid
 
     def get_event(self, event_id: int) -> Event | None:
-        row = self.conn.execute(
-            "SELECT * FROM events WHERE id = ?", (event_id,)
-        ).fetchone()
+        row = self.conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         if not row:
             return None
         return Event(**row)
@@ -1467,6 +1445,7 @@ class Database:
             params.append(event_type)
         if upcoming_only:
             from datetime import date as date_cls
+
             d = today or date_cls.today().isoformat()
             clauses.append("date >= ?")
             params.append(d)
@@ -1493,7 +1472,8 @@ class Database:
         sets.append("updated_at = datetime('now')")
         params.append(event_id)
         self.conn.execute(
-            f"UPDATE events SET {', '.join(sets)} WHERE id = ?", params,
+            f"UPDATE events SET {', '.join(sets)} WHERE id = ?",
+            params,
         )
         self.conn.commit()
 
@@ -1504,7 +1484,11 @@ class Database:
     # ── Event Responses ─────────────────────────────────────────────────
 
     def set_event_response(
-        self, event_id: int, user_id: int, status: str, comment: str | None = None,
+        self,
+        event_id: int,
+        user_id: int,
+        status: str,
+        comment: str | None = None,
     ):
         self.conn.execute(
             "INSERT INTO event_responses (event_id, user_id, status, comment)"
