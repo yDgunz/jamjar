@@ -34,4 +34,8 @@ ENV JAM_PORT=8000
 
 EXPOSE 8000
 
+# /health runs a query against SQLite and returns 503 if the DB is unusable
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ.get(\"JAM_PORT\", \"8000\")}/health', timeout=4)" || exit 1
+
 CMD ["jam-session", "serve"]

@@ -352,6 +352,10 @@ class Database:
         self.conn.row_factory = sqlite3.Row
         self._init_schema()
 
+    def ping(self) -> None:
+        """Run a trivial query against the schema; raises if the DB is unusable."""
+        self.conn.execute("SELECT 1 FROM users LIMIT 1").fetchall()
+
     def _init_schema(self):
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
