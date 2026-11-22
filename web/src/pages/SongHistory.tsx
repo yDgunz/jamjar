@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router";
 import { api, formatLongDate, formatShortDate, canEdit, canAdmin } from "../api";
-import type { Song, SongTrack } from "../api";
+import type { Song, SongLink, SongLinkKind, SongTrack } from "../api";
 import ActionSheet, { MoreButton } from "../components/ActionSheet";
 import type { SheetAction, SheetSection } from "../components/ActionSheet";
 import ChordSheet from "../components/ChordSheet";
 import { ListRows } from "../components/ListItemCard";
 import EditableField from "../components/EditableField";
 import FetchError from "../components/FetchError";
+import FormModal from "../components/FormModal";
+import SongVideos from "../components/SongVideos";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
 import { formatTime, PauseIcon, PlayIcon, usePlayer } from "../context/PlayerContext";
 import { isChordPro, toChordPro } from "../utils/chordpro";
+import { LINK_KIND_LABEL } from "../utils/youtube";
 
 
 function TakeRow({ take, songName, onUpdate, readOnly, onError }: {
@@ -134,6 +137,36 @@ export default function SongHistory() {
   const [tab, setTab] = useState<"chart" | "takes" | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [editingNotesField, setEditingNotesField] = useState(false);
+  const [addingVideo, setAddingVideo] = useState(false);
+  const [videoUrl, setVideoUrl] = useState("");
+  const [videoKind, setVideoKind] = useState<SongLinkKind>("lesson");
+  const [videoTitle, setVideoTitle] = useState("");
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [savingVideo, setSavingVideo] = useState(false);
+  const [removingLink, setRemovingLink] = useState<SongLink | null>(null);
+
+  const openAddVideo = () => {
+    setVideoUrl("");
+    setVideoTitle("");
+    setVideoKind("lesson");
+    setVideoError(null);
+    setTab("chart");
+    setAddingVideo(true);
+  };
+
+  const handleAddVideo = async () => {
+    if (!videoUrl.trim()) return;
+    setSavingVideo(true);
+    setVideoError(null);
+    try {
+      setSong(await api.addSongLink(songId, videoUrl.trim(), videoKind, videoTitle.trim()));
+      setAddingVideo(false);
+    } catch (err) {
+      setVideoError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingVideo(false);
+    }
+  };
 
   const loadSong = useCallback(() => {
     setLoading(true);
@@ -307,6 +340,7 @@ export default function SongHistory() {
       ...(currentSheet && !isChordPro(currentSheet)
         ? [{ label: "Convert to ChordPro", onClick: handleConvertToChordPro }]
         : []),
+      { label: "Add video", hint: "how-to, backing track", onClick: openAddVideo },
       { label: "Rename", onClick: () => setEditingName(true) },
       { label: song.artist ? "Change artist" : "Add artist", onClick: () => setEditingArtist(true) },
       { label: song.notes ? "Edit notes" : "Add notes", onClick: () => { setTab("chart"); setEditingNotesField(true); } },
@@ -407,6 +441,13 @@ export default function SongHistory() {
 
       {activeTab === "chart" ? (
         <div className="mt-5">
+          <SongVideos
+            links={song.links ?? []}
+            canEdit={canEdit(user) === true}
+            onAdd={openAddVideo}
+            onRemove={setRemovingLink}
+          />
+          <div className={(song.links ?? []).length > 0 || canEdit(user) ? "mt-6" : ""} />
           {editingSheet && canEdit(user) ? (
             <div>
               <textarea
@@ -526,6 +567,60 @@ export default function SongHistory() {
         subtitle={song.artist || undefined}
         sections={sheetActions}
         onClose={() => setActionsOpen(false)}
+      />
+      <FormModal
+        open={addingVideo}
+        title="Add video"
+        error={videoError}
+        confirmLabel={savingVideo ? "Adding…" : "Add"}
+        confirmDisabled={!videoUrl.trim() || savingVideo}
+        onConfirm={handleAddVideo}
+        onCancel={() => setAddingVideo(false)}
+      >
+        <input
+          autoFocus
+          type="url"
+          inputMode="url"
+          value={videoUrl}
+          onChange={(e) => setVideoUrl(e.target.value)}
+          placeholder="Paste a YouTube link"
+          className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+        />
+        <div className="flex rounded-lg bg-white/[0.06] p-0.5 text-sm font-medium">
+          {(["lesson", "backing_track"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setVideoKind(k)}
+              className={`flex-1 rounded-md py-1.5 transition ${videoKind === k ? "bg-gray-600 text-white" : "text-gray-400"}`}
+            >
+              {LINK_KIND_LABEL[k]}
+            </button>
+          ))}
+        </div>
+        <input
+          value={videoTitle}
+          onChange={(e) => setVideoTitle(e.target.value)}
+          placeholder="Title (optional — filled in from YouTube)"
+          className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+        />
+      </FormModal>
+      <Modal
+        open={removingLink !== null}
+        title="Remove video"
+        message={`Remove "${removingLink?.title || removingLink?.url}" from ${song?.name}?`}
+        confirmLabel="Remove"
+        variant="danger"
+        onConfirm={async () => {
+          const link = removingLink!;
+          setRemovingLink(null);
+          try {
+            setSong(await api.deleteSongLink(songId, link.id));
+          } catch (err) {
+            setErrorMsg(`Remove failed: ${err instanceof Error ? err.message : err}`);
+          }
+        }}
+        onCancel={() => setRemovingLink(null)}
       />
       <Modal
         open={showFetchConfirm}

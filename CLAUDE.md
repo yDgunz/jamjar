@@ -106,13 +106,14 @@ detail
 created_at
 (indexes: user, event_type, created_at)
 
-group_songs
-──────────────
-group_id (FK→groups)
-song_id (FK→songs)
-notes            (per-band notes)
-created_at
-PRIMARY KEY (group_id, song_id)
+group_songs                    song_links
+──────────────                ──────────────
+group_id (FK→groups)          id (PK)
+song_id (FK→songs)            song_id (FK→songs)
+notes  (per-band notes)       kind (lesson|backing_track|other)
+created_at                    url, title
+PRIMARY KEY (group_id,        created_by (FK→users, nullable)
+             song_id)         created_at
 
 share_links                    invite_tokens
 ──────────────                ──────────────
@@ -135,6 +136,7 @@ created_at                    used_at (nullable)
 - `setlists → setlist_songs`: one-to-many, CASCADE delete
 - `setlist_songs → songs`: many-to-one, CASCADE on delete
 - `activity_log → users/groups`: many-to-one, tracks user activity for admin stats
+- `song_links → songs`: many-to-one, CASCADE delete. Reference videos (how-to lessons, backing tracks) shared by every band that plays the song; moved over by song merges
 - `share_links → tracks`: one-to-one, CASCADE delete
 - `share_links → users`: many-to-one (nullable), SET NULL on delete
 - `invite_tokens → users`: many-to-one, CASCADE delete
@@ -152,7 +154,7 @@ All `/api` endpoints require authentication (JWT cookie or API key header). Role
 **Tracks:** `POST /api/tracks/{id}/tag` | `DELETE /api/tracks/{id}/tag` | `PUT /api/tracks/{id}/notes` | `GET /api/tracks/{id}/audio` | `POST /api/tracks/{id}/merge` (admin) | `POST /api/tracks/{id}/split` (admin) | `PUT /api/tracks/{id}/trim` (admin) | `POST /api/tracks/{id}/share` | `DELETE /api/tracks/{id}/share`
 **Share (public):** `GET /share/{token}` | `GET /api/share/{token}/audio`
 **Invite (public):** `POST /api/invite/validate` | `POST /api/invite/accept`
-**Songs:** `GET /api/songs` | `POST /api/songs` (editor) | `GET /api/songs/{id}` | `GET /api/songs/{id}/tracks` | `PUT /api/songs/{id}/details` | `PUT /api/songs/{id}/name` | `PUT /api/songs/{id}/group` (admin, move home band) | `POST /api/songs/{id}/groups` (editor, link a band) | `DELETE /api/songs/{id}/groups/{group_id}` (admin, unlink) | `PUT /api/songs/{id}/groups/{group_id}/notes` (editor, per-band notes) | `POST /api/songs/merge` (admin, `{keep_id, merge_id}`) | `POST /api/songs/{id}/fetch-lyrics` (editor) | `DELETE /api/songs/{id}` (admin)
+**Songs:** `GET /api/songs` | `POST /api/songs` (editor) | `GET /api/songs/{id}` | `GET /api/songs/{id}/tracks` | `PUT /api/songs/{id}/details` | `PUT /api/songs/{id}/name` | `PUT /api/songs/{id}/group` (admin, move home band) | `POST /api/songs/{id}/groups` (editor, link a band) | `DELETE /api/songs/{id}/groups/{group_id}` (admin, unlink) | `PUT /api/songs/{id}/groups/{group_id}/notes` (editor, per-band notes) | `POST /api/songs/merge` (admin, `{keep_id, merge_id}`) | `POST /api/songs/{id}/links` (editor, `{url, kind, title?}`; YouTube titles auto-filled via oEmbed) | `DELETE /api/songs/{id}/links/{link_id}` (editor) | `POST /api/songs/{id}/fetch-lyrics` (editor) | `DELETE /api/songs/{id}` (admin)
 **Setlists:** `GET /api/setlists` | `POST /api/setlists` (editor) | `GET /api/setlists/{id}` | `GET /api/setlists/{id}/songs` | `PUT /api/setlists/{id}/name` (editor) | `PUT /api/setlists/{id}/date` (editor) | `PUT /api/setlists/{id}/notes` (editor) | `PUT /api/setlists/{id}/songs` (editor, replace order) | `POST /api/setlists/{id}/songs` (editor, add song) | `DELETE /api/setlists/{id}/songs/{position}` (editor) | `DELETE /api/setlists/{id}` (admin)
 **Admin:** `GET/POST /api/admin/users` | `DELETE /api/admin/users/{id}` | `POST .../resend-invite` | `PUT .../password` | `PUT .../role` | `PUT .../name` | `POST/DELETE .../groups/{id}` | `GET/POST /api/admin/groups` | `DELETE /api/admin/groups/{id}` | `GET /api/admin/stats` (all superadmin)
 **Public:** `GET /` (landing page) | `POST /api/access-request`
@@ -334,7 +336,7 @@ Path values stored in the DB are relative to `JAM_DATA_DIR`. The `config.resolve
 - **Song detection:** Energy-based, not silence-based. A 15-second smoothing window and minimum duration filter distinguish actual songs from brief noodling between them.
 - **Default threshold:** -20 dB with 120s minimum duration. For louder rooms or more noodling, raise the threshold (e.g., -15). For quieter recordings, lower it (e.g., -25).
 - **Performance:** ffmpeg handles all decoding and segment export at the C level. A 1.5hr session processes in ~10 seconds.
-- **Database:** SQLite — no server, portable, lives in the project directory
+- **Database:** SQLite — no server, portable, lives in the project directory. `Database.conn` is a per-thread connection (FastAPI runs sync endpoints in a thread pool; a single shared `sqlite3` connection fails under concurrent requests)
 - **Backend API:** FastAPI — serves JSON endpoints and static audio files
 - **Frontend:** React + TypeScript + Tailwind via Vite — clean separation from backend
 - **Auth:** JWT in httponly cookies for browser sessions, API key via `X-API-Key` header for CLI. Bcrypt for password hashing.
