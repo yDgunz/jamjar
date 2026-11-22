@@ -1,28 +1,34 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router";
-import { api, formatDate, canEdit, canAdmin } from "../api";
+import { api, formatLongDate, formatShortDate, canEdit, canAdmin } from "../api";
 import type { Song, SongTrack } from "../api";
-import AudioPlayer from "../components/AudioPlayer";
-import Breadcrumb from "../components/Breadcrumb";
+import ActionSheet, { MoreButton } from "../components/ActionSheet";
+import type { SheetAction, SheetSection } from "../components/ActionSheet";
+import ChordSheet from "../components/ChordSheet";
+import { ListRows } from "../components/ListItemCard";
 import EditableField from "../components/EditableField";
 import FetchError from "../components/FetchError";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
+import { formatTime, PauseIcon, PlayIcon, usePlayer } from "../context/PlayerContext";
 import { isChordPro, toChordPro } from "../utils/chordpro";
 
 
-function formatTime(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-function TakeRow({ take, onUpdate, readOnly, onError }: { take: SongTrack; onUpdate: () => void; readOnly?: boolean; onError?: (msg: string) => void }) {
+function TakeRow({ take, songName, onUpdate, readOnly, onError }: {
+  take: SongTrack;
+  songName: string;
+  onUpdate: () => void;
+  readOnly?: boolean;
+  onError?: (msg: string) => void;
+}) {
+  const player = usePlayer();
+  const key = `track:${take.id}`;
+  const isCurrent = player.isCurrent(key);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesInput, setNotesInput] = useState(take.notes ?? "");
-  const [shareLoading, setShareLoading] = useState(false);
-  const [shared, setShared] = useState(false);
+  const sessionName = take.session_name || `Session ${take.session_id}`;
 
   const handleSaveNotes = async () => {
     await api.updateTrackNotes(take.id, notesInput.trim());
@@ -31,50 +37,54 @@ function TakeRow({ take, onUpdate, readOnly, onError }: { take: SongTrack; onUpd
   };
 
   const handleShare = async () => {
-    setShareLoading(true);
     try {
       const result = await api.createShareLink(take.id);
       const fullUrl = `${window.location.origin}${result.url}`;
-      if (navigator.share) {
-        await navigator.share({ url: fullUrl });
-      } else {
-        await navigator.clipboard.writeText(fullUrl);
-      }
-      setShared(true);
-      setTimeout(() => setShared(false), 2000);
+      if (navigator.share) await navigator.share({ title: songName, url: fullUrl });
+      else await navigator.clipboard.writeText(fullUrl);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       onError?.(`Share failed: ${err instanceof Error ? err.message : err}`);
-    } finally {
-      setShareLoading(false);
     }
   };
 
+  const play = () => player.play({
+    key,
+    src: api.trackAudioUrl(take.id),
+    title: songName,
+    subtitle: `${sessionName} · ${formatShortDate(take.session_date)}`,
+    durationSec: take.duration_sec,
+    trackId: take.id,
+  });
+
+  const actions: SheetAction[] = [
+    { label: "Go to recording", href: `/sessions/${take.session_id}` },
+    ...(!readOnly ? [{ label: take.notes ? "Edit notes" : "Add notes", onClick: () => setEditingNotes(true) }] : []),
+    { label: "Share link", onClick: handleShare },
+    { label: "Download", href: `${api.trackAudioUrl(take.id)}?download=1`, download: `${songName}.m4a` },
+  ];
+
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-3">
-      <div className="mb-2 flex items-center gap-2">
-        <Link
-          to={`/sessions/${take.session_id}`}
-          className="text-sm font-medium text-gray-300 hover:text-accent-400"
-        >
-          {take.session_name || `Session ${take.session_id}`}
-        </Link>
-        <span className="text-xs text-gray-500">
-          {formatDate(take.session_date)} &middot; {formatTime(take.duration_sec)}
-        </span>
+    <div>
+      <div className="-mx-4 flex items-center gap-1 px-4 sm:mx-0 sm:px-0">
+        <button onClick={play} className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left active:opacity-70">
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${isCurrent ? "bg-accent-600 text-white" : "bg-white/[0.08] text-gray-200"}`}>
+            {isCurrent && player.playing ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="ml-0.5 h-4 w-4" />}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className={`block truncate text-[17px] leading-snug sm:text-base ${isCurrent ? "font-medium text-accent-400" : "text-white"}`}>
+              {formatLongDate(take.session_date)}
+            </span>
+            <span className="block truncate text-sm text-gray-500">
+              {sessionName} · <span className="tabular-nums">{formatTime(take.duration_sec)}</span>
+              {take.notes && <span className="italic text-gray-400"> · {take.notes}</span>}
+            </span>
+          </span>
+        </button>
+        <MoreButton onClick={() => setSheetOpen(true)} label="Take actions" />
       </div>
-
-      <AudioPlayer
-        src={api.trackAudioUrl(take.id)}
-        durationSec={take.duration_sec}
-        downloadUrl={`${api.trackAudioUrl(take.id)}?download=1`}
-        onShare={handleShare}
-        shareState={shareLoading ? "loading" : shared ? "copied" : "idle"}
-      />
-
-      {/* Notes */}
-      <div className="mt-2">
-        {editingNotes && !readOnly ? (
+      {editingNotes && !readOnly && (
+        <div className="mb-3 ml-12">
           <textarea
             autoFocus
             value={notesInput}
@@ -84,30 +94,19 @@ function TakeRow({ take, onUpdate, readOnly, onError }: { take: SongTrack; onUpd
               if (e.key === "Escape") { setEditingNotes(false); setNotesInput(take.notes ?? ""); }
             }}
             onBlur={handleSaveNotes}
-            placeholder="Add notes..."
+            placeholder="Notes about this take…"
             rows={2}
-            className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-xs text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+            className="w-full rounded-lg bg-white/[0.08] px-3 py-2 text-base text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-accent-500/60"
           />
-        ) : take.notes ? (
-          readOnly ? (
-            <p className="text-xs whitespace-pre-wrap text-gray-400 italic">{take.notes}</p>
-          ) : (
-            <button
-              onClick={() => setEditingNotes(true)}
-              className="text-left text-xs whitespace-pre-wrap text-gray-400 italic hover:text-gray-300"
-            >
-              {take.notes}
-            </button>
-          )
-        ) : readOnly ? null : (
-          <button
-            onClick={() => setEditingNotes(true)}
-            className="text-xs text-gray-600 hover:text-gray-400"
-          >
-            + add notes
-          </button>
-        )}
-      </div>
+        </div>
+      )}
+      <ActionSheet
+        open={sheetOpen}
+        title={songName}
+        subtitle={`${sessionName} · ${formatLongDate(take.session_date)}`}
+        sections={[{ actions }]}
+        onClose={() => setSheetOpen(false)}
+      />
     </div>
   );
 }
@@ -132,6 +131,9 @@ export default function SongHistory() {
   const [fetchingLyrics, setFetchingLyrics] = useState(false);
   const [editingSheet, setEditingSheet] = useState(false);
   const [sheetInput, setSheetInput] = useState("");
+  const [tab, setTab] = useState<"chart" | "takes" | null>(null);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [editingNotesField, setEditingNotesField] = useState(false);
 
   const loadSong = useCallback(() => {
     setLoading(true);
@@ -277,140 +279,115 @@ export default function SongHistory() {
   );
   if (fetchError) return <FetchError error={fetchError} onRetry={loadSong} />;
 
+  if (!song) return <p className="text-red-400">Song not found.</p>;
+
+  const activeTab = tab ?? (song.sheet || takes.length === 0 ? "chart" : "takes");
+  const multiGroup = user != null && user.groups.length > 1;
+  const meta = [
+    song.artist,
+    `${takes.length} take${takes.length !== 1 ? "s" : ""}`,
+    multiGroup ? song.group_name : null,
+  ].filter(Boolean).join(" · ");
+  const currentSheet = editingSheet ? sheetInput : song.sheet;
+
+  const sheetActions: SheetSection[] = [];
+  if (canEdit(user)) {
+    sheetActions.push({ actions: [
+      { label: song.sheet ? "Edit chart" : "Add chart", onClick: () => { setTab("chart"); setEditingSheet(true); } },
+      {
+        label: "Fetch lyrics",
+        hint: song.artist ? "lrclib.net" : "needs artist",
+        disabled: !song.artist || fetchingLyrics,
+        onClick: () => { setTab("chart"); handleFetchLyrics(); },
+      },
+      ...(currentSheet && !isChordPro(currentSheet)
+        ? [{ label: "Convert to ChordPro", onClick: handleConvertToChordPro }]
+        : []),
+      { label: "Rename", onClick: () => setEditingName(true) },
+      { label: song.artist ? "Change artist" : "Add artist", onClick: () => setEditingArtist(true) },
+      { label: song.notes ? "Edit notes" : "Add notes", onClick: () => { setTab("chart"); setEditingNotesField(true); } },
+    ] });
+  }
+  if (canAdmin(user)) {
+    sheetActions.push({ title: "Manage", actions: [
+      ...(multiGroup
+        ? user!.groups.filter((g) => g.id !== song.group_id).map((g) => ({
+            label: `Move to ${g.name}`,
+            onClick: () => setPendingGroupId(g.id),
+          }))
+        : []),
+      { label: "Delete song", destructive: true, onClick: () => setShowDelete(true) },
+    ] });
+  }
+
   return (
     <div>
-      <Breadcrumb
-        items={[
-          { label: "Songs", to: "/songs" },
-        ]}
-      />
-      <div>
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            {editingName && canEdit(user) ? (
-              <input
-                autoFocus
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSaveName();
-                  if (e.key === "Escape") { setEditingName(false); setNameInput(song?.name ?? ""); }
-                }}
-                onBlur={handleSaveName}
-                className="w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xl font-bold text-white focus:border-accent-500 focus:outline-none"
-              />
-            ) : (
-              <h1
-                onClick={() => canEdit(user) && setEditingName(true)}
-                className={`text-xl font-bold ${canEdit(user) ? "cursor-pointer hover:text-accent-400" : ""}`}
-                title={canEdit(user) ? "Click to rename" : undefined}
-              >
-                {song?.name ?? "Unknown Song"}
-              </h1>
-            )}
-            {editingArtist && canEdit(user) ? (
-              <input
-                autoFocus
-                value={artistInput}
-                onChange={(e) => setArtistInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSaveArtist();
-                  if (e.key === "Escape") { setEditingArtist(false); setArtistInput(song?.artist ?? ""); }
-                }}
-                onBlur={handleSaveArtist}
-                placeholder="Artist name"
-                className="mt-1 w-full max-w-lg rounded border border-gray-700 bg-gray-800 px-2 py-0.5 text-base sm:text-sm text-gray-300 placeholder-gray-500 focus:border-accent-500 focus:outline-none"
-              />
-            ) : song?.artist ? (
-              <p
-                onClick={() => canEdit(user) && setEditingArtist(true)}
-                className={`mt-0.5 text-sm text-gray-400 ${canEdit(user) ? "cursor-pointer hover:text-gray-300" : ""}`}
-              >
-                {song.artist}
-              </p>
-            ) : canEdit(user) ? (
-              <button
-                onClick={() => setEditingArtist(true)}
-                className="mt-0.5 text-sm text-gray-600 hover:text-gray-400"
-              >
-                + add artist
-              </button>
-            ) : null}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-300">{takes.length} take{takes.length !== 1 ? "s" : ""}</span>
-              {song?.created_by_name && (
-                <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">by {song.created_by_name}</span>
-              )}
-              {song?.group_name && user && user.groups.length > 1 && (
-                canAdmin(user) ? (
-                  <select
-                    value={song.group_id}
-                    onChange={(e) => setPendingGroupId(Number(e.target.value))}
-                    className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500 border-none focus:outline-none focus:ring-1 focus:ring-accent-500"
-                  >
-                    {user!.groups.map((g) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className="rounded-md bg-gray-800/50 px-2.5 py-1 text-xs text-gray-500">{song.group_name}</span>
-                )
-              )}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {song?.sheet && (
-              <Link
-                to={`/songs/${songId}/perform`}
-                className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
-              >
-                Perform
-              </Link>
-            )}
-            {canAdmin(user) && (
-              <button
-                onClick={() => setShowDelete(true)}
-                className="rounded-lg p-2 text-gray-500 transition hover:bg-red-950 hover:text-red-400"
-                title="Delete song"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            )}
-          </div>
+      <Link to="/songs" className="-ml-1 inline-flex items-center text-[15px] text-accent-400 active:opacity-70">
+        <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" /></svg>
+        Songs
+      </Link>
+
+      <div className="mt-2 flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          {editingName && canEdit(user) ? (
+            <input
+              autoFocus
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSaveName();
+                if (e.key === "Escape") { setEditingName(false); setNameInput(song.name); }
+              }}
+              onBlur={handleSaveName}
+              className="w-full rounded-lg bg-white/[0.08] px-2 py-1 text-[26px] font-bold text-white outline-none focus:ring-2 focus:ring-accent-500/60"
+            />
+          ) : (
+            <h1 className="text-[28px] font-bold leading-tight tracking-tight text-white">{song.name}</h1>
+          )}
+          {editingArtist && canEdit(user) ? (
+            <input
+              autoFocus
+              value={artistInput}
+              onChange={(e) => setArtistInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSaveArtist();
+                if (e.key === "Escape") { setEditingArtist(false); setArtistInput(song.artist ?? ""); }
+              }}
+              onBlur={handleSaveArtist}
+              placeholder="Artist"
+              className="mt-1 w-full rounded-lg bg-white/[0.08] px-2 py-1 text-base text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-accent-500/60"
+            />
+          ) : (
+            <p className="mt-1 text-[15px] text-gray-400">{meta}</p>
+          )}
         </div>
+        {sheetActions.length > 0 && <MoreButton onClick={() => setActionsOpen(true)} label="Song actions" />}
       </div>
 
-      {/* Song metadata */}
-      <div className="mt-4 mb-4 space-y-4 rounded-lg border border-gray-800 bg-gray-900 p-4">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <label className="mr-1 text-xs font-medium text-gray-500 uppercase tracking-wide">Sheet</label>
-            {canEdit(user) && (
-              <button
-                onClick={handleFetchLyrics}
-                disabled={!song?.artist || fetchingLyrics}
-                title={!song?.artist ? "Set artist first" : "Fetch lyrics from lrclib.net"}
-                className={`text-xs rounded border px-2 py-0.5 ${
-                  !song?.artist || fetchingLyrics
-                    ? "border-gray-800 text-gray-600 cursor-not-allowed"
-                    : "border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-300"
-                }`}
-              >
-                {fetchingLyrics ? "Fetching..." : "Fetch lyrics"}
-              </button>
-            )}
-            {canEdit(user) && (editingSheet ? sheetInput : song?.sheet) && !isChordPro(editingSheet ? sheetInput : song?.sheet ?? "") && (
-              <button
-                onClick={handleConvertToChordPro}
-                title="Convert chords-above-lyrics to ChordPro format"
-                className="text-xs rounded border px-2 py-0.5 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-300"
-              >
-                Convert to ChordPro
-              </button>
-            )}
-          </div>
+      <div className="mt-4 flex items-center gap-2">
+        <div className="flex flex-1 rounded-lg bg-white/[0.08] p-0.5 text-sm font-medium">
+          {(["chart", "takes"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`flex-1 rounded-md py-1.5 transition ${activeTab === t ? "bg-gray-600 text-white shadow" : "text-gray-400"}`}
+            >
+              {t === "chart" ? "Chart" : `Takes${takes.length ? ` (${takes.length})` : ""}`}
+            </button>
+          ))}
+        </div>
+        {song.sheet && (
+          <Link
+            to={`/songs/${songId}/perform`}
+            className="shrink-0 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent-500 active:bg-accent-700"
+          >
+            Perform
+          </Link>
+        )}
+      </div>
+
+      {activeTab === "chart" ? (
+        <div className="mt-5">
           {editingSheet && canEdit(user) ? (
             <div>
               <textarea
@@ -421,68 +398,98 @@ export default function SongHistory() {
                   if (e.key === "Enter" && e.metaKey) { e.preventDefault(); handleSaveSheet(); }
                   if (e.key === "Escape") handleCancelSheet();
                 }}
-                rows={12}
-                className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none font-mono"
-                placeholder="Add sheet (chords, lyrics, tabs...)"
+                rows={16}
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+                className="w-full rounded-xl bg-white/[0.06] px-3 py-2 font-mono text-[15px] leading-relaxed text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-accent-500/60"
+                placeholder={"Paste chords and lyrics here.\n\n[Verse 1]\nG           C\nHeading down south to the land of the pines"}
               />
-              <div className="mt-1 flex items-center gap-2">
+              <div className="mt-2 flex items-center gap-2">
                 <button
                   onMouseDown={(e) => { e.preventDefault(); handleSaveSheet(); }}
-                  className="rounded bg-accent-600 px-3 py-1.5 text-xs text-white hover:bg-accent-500"
+                  className="rounded-full bg-accent-600 px-5 py-2 text-sm font-semibold text-white hover:bg-accent-500"
                 >
                   Save
                 </button>
                 <button
                   onMouseDown={(e) => { e.preventDefault(); handleCancelSheet(); }}
-                  className="rounded px-3 py-1.5 text-xs text-gray-400 hover:text-white"
+                  className="rounded-full px-4 py-2 text-sm text-gray-400 hover:text-white"
                 >
                   Cancel
                 </button>
-                <span className="hidden text-xs text-gray-600 sm:inline">⌘Enter to save · Esc to cancel</span>
               </div>
             </div>
-          ) : song?.sheet ? (
-            canEdit(user) ? (
-              <div className="overflow-x-auto">
-                <button
-                  onClick={() => setEditingSheet(true)}
-                  className="text-left text-base sm:text-sm text-gray-300 hover:text-white font-mono whitespace-pre"
-                >
-                  {song.sheet}
-                </button>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <p className="text-base sm:text-sm text-gray-300 font-mono whitespace-pre">{song.sheet}</p>
-              </div>
-            )
-          ) : canEdit(user) ? (
-            <button
-              onClick={() => setEditingSheet(true)}
-              className="text-sm text-gray-600 hover:text-gray-400"
-            >
-              + add sheet (chords, lyrics, tabs...)
-            </button>
-          ) : null}
-        </div>
-        <EditableField
-          label="Notes"
-          value={song?.notes ?? ""}
-          placeholder="Add notes"
-          readOnly={!canEdit(user)}
-          onSave={(v) => handleSaveField("notes", v)}
-        />
-      </div>
+          ) : song.sheet ? (
+            <div className="text-[17px]">
+              <ChordSheet text={song.sheet} wrapText />
+            </div>
+          ) : (
+            <div className="flex flex-col items-center rounded-xl bg-white/[0.04] px-6 py-10 text-center">
+              <p className="text-[15px] text-gray-300">No chart yet.</p>
+              {canEdit(user) && (
+                <>
+                  <p className="mt-1 max-w-xs text-sm text-gray-500">Copy chords and lyrics from any chord site and paste them in.</p>
+                  <div className="mt-4 flex flex-wrap justify-center gap-2">
+                    <button
+                      onClick={() => setEditingSheet(true)}
+                      className="rounded-full bg-accent-600 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-500"
+                    >
+                      Paste chart
+                    </button>
+                    {song.artist && (
+                      <button
+                        onClick={handleFetchLyrics}
+                        disabled={fetchingLyrics}
+                        className="rounded-full bg-white/[0.08] px-4 py-2 text-sm font-medium text-gray-200 disabled:opacity-50"
+                      >
+                        {fetchingLyrics ? "Fetching…" : "Fetch lyrics"}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
-      {takes.length === 0 ? (
-        <p className="text-gray-500">No tracks found for this song.</p>
+          {(song.notes || editingNotesField) && (
+            <div className="mt-8 border-t border-white/[0.07] pt-4">
+              <EditableField
+                label="Notes"
+                value={song.notes ?? ""}
+                placeholder="Add notes"
+                readOnly={!canEdit(user)}
+                onSave={(v) => { setEditingNotesField(false); return handleSaveField("notes", v); }}
+              />
+            </div>
+          )}
+        </div>
+      ) : takes.length === 0 ? (
+        <p className="mt-8 text-center text-gray-400">No recorded takes yet. Tag a track in a recording to add one.</p>
       ) : (
-        <div className="space-y-2">
-          {takes.map((take) => (
-            <TakeRow key={take.id} take={take} onUpdate={refresh} readOnly={!canEdit(user)} onError={setErrorMsg} />
-          ))}
+        <div className="mt-3">
+          <ListRows>
+            {takes.map((take) => (
+              <TakeRow
+                key={take.id}
+                take={take}
+                songName={song.name}
+                onUpdate={refresh}
+                readOnly={!canEdit(user)}
+                onError={setErrorMsg}
+              />
+            ))}
+          </ListRows>
         </div>
       )}
+
+      <ActionSheet
+        open={actionsOpen}
+        title={song.name}
+        subtitle={song.artist || undefined}
+        sections={sheetActions}
+        onClose={() => setActionsOpen(false)}
+      />
       <Modal
         open={showFetchConfirm}
         title="Append lyrics"

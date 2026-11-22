@@ -1,5 +1,9 @@
 const CHORD_RE = /^[A-G][#b]?(m|min|maj|dim|aug|sus[24]?|add[249]?|M|Maj)?[0-9]*(\/[A-G][#b]?)?$/;
 
+export function isChordToken(token: string): boolean {
+  return CHORD_RE.test(token);
+}
+
 export function isChordLine(line: string): boolean {
   const tokens = line.trim().split(/\s+/);
   if (tokens.length === 0 || (tokens.length === 1 && tokens[0] === "")) return false;

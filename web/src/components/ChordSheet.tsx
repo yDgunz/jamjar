@@ -1,4 +1,4 @@
-import { parseSheet } from "../utils/sheetParser";
+import { isChordToken, parseSheet } from "../utils/sheetParser";
 import { isChordPro, parseChordProLine } from "../utils/chordpro";
 
 interface ChordSheetProps {
@@ -27,7 +27,7 @@ function ChordProSheet({ text, wrapText, lyricsOnly }: { text: string; wrapText:
   const lines = text.split("\n");
 
   return (
-    <div className={`font-mono leading-relaxed text-gray-200 ${!wrapText ? "overflow-x-auto" : ""}`}>
+    <div className={`leading-relaxed text-gray-100 ${!wrapText ? "overflow-x-auto font-mono" : ""}`}>
       {lines.map((line, i) => {
         const parsed = parseChordProLine(line);
         switch (parsed.type) {
@@ -51,14 +51,7 @@ function ChordProSheet({ text, wrapText, lyricsOnly }: { text: string; wrapText:
             }
             return (
               <div key={i} className={!wrapText ? "whitespace-nowrap" : ""}>
-                {parsed.segments.map((seg, j) => (
-                  <span key={j} className="inline-block min-w-[3ch] whitespace-pre align-top">
-                    <span className="block font-bold text-accent-400">
-                      {seg.chord || "\u00A0"}
-                    </span>
-                    <span className="block">{seg.text || "\u00A0"}</span>
-                  </span>
-                ))}
+                <PairedLine segments={parsed.segments.map((seg) => ({ chord: seg.chord, text: seg.text }))} />
               </div>
             );
         }
@@ -71,28 +64,28 @@ function LegacySheet({ text, lyricsOnly }: { text: string; lyricsOnly?: boolean 
   const lines = parseSheet(text);
 
   return (
-    <div className="font-mono leading-relaxed text-gray-200">
+    <div className="leading-relaxed text-gray-100">
       {lines.map((line, i) => {
         switch (line.type) {
           case "empty":
             return <div key={i} className="h-[1.5em]" />;
           case "header":
             return (
-              <div key={i} className="mt-2 font-bold text-accent-400 whitespace-pre">
+              <div key={i} className="mt-3 text-[0.8em] font-semibold uppercase tracking-wide text-gray-500 whitespace-pre">
                 {line.text}
               </div>
             );
           case "chords-only":
             if (lyricsOnly) return null;
             return (
-              <div key={i} className="whitespace-pre font-bold text-accent-400">
+              <div key={i} className="whitespace-pre font-mono font-semibold text-accent-400">
                 {line.text}
               </div>
             );
           case "text":
             return (
               <div key={i} className="whitespace-pre-wrap">
-                {line.text}
+                {lyricsOnly ? line.text : <InlineChords text={line.text} />}
               </div>
             );
           case "paired":
@@ -107,18 +100,75 @@ function LegacySheet({ text, lyricsOnly }: { text: string; lyricsOnly?: boolean 
             }
             return (
               <div key={i}>
-                {line.segments.map((seg, j) => (
-                  <span key={j} className="inline-block whitespace-pre align-top">
-                    <span className="block font-bold text-accent-400">
-                      {seg.chord || "\u00A0"}
-                    </span>
-                    <span className="block">{seg.lyric || "\u00A0"}</span>
-                  </span>
-                ))}
+                <PairedLine segments={line.segments.map((seg) => ({ chord: seg.chord, text: seg.lyric }))} />
               </div>
             );
         }
       })}
     </div>
+  );
+}
+
+/**
+ * Colour chord names inside shorthand lines like "Verse: D | F#m | Bm | G".
+ * Only applies when most of the line's words are chords, so lyrics that
+ * happen to contain "A" or "Am" aren't highlighted.
+ */
+function InlineChords({ text }: { text: string }) {
+  const parts = text.split(/(\s+|\|)/);
+  const words = parts.filter((p) => p.trim() && p !== "|" && !p.endsWith(":"));
+  const chordCount = words.filter(isChordToken).length;
+  if (words.length === 0 || chordCount / words.length < 0.6) return <>{text}</>;
+  return (
+    <>
+      {parts.map((p, i) =>
+        isChordToken(p) ? (
+          <span key={i} className="font-semibold text-accent-400">{p}</span>
+        ) : p === "|" ? (
+          <span key={i} className="text-gray-600">{p}</span>
+        ) : (
+          <span key={i}>{p}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+/**
+ * Render a chord-over-lyric line so it can wrap at any word boundary.
+ *
+ * Each segment (chord + the lyric under it) is split into words; the chord
+ * sits above the first word, later words get an empty chord row. Words that a
+ * chord splits in two ("pra|y") are kept together in one unbreakable group.
+ */
+function PairedLine({ segments }: { segments: { chord?: string; text?: string }[] }) {
+  type Unit = { chord: string; text: string };
+  const units: Unit[] = [];
+  for (const seg of segments) {
+    const words = (seg.text ?? "").split(/(?<=\s)(?=\S)/);
+    words.forEach((w, k) => units.push({ chord: k === 0 ? seg.chord ?? "" : "", text: w }));
+  }
+  const groups: Unit[][] = [];
+  units.forEach((u, i) => {
+    const prev = i > 0 ? units[i - 1].text : "";
+    const glued = i > 0 && /\S$/.test(prev) && /^\S/.test(u.text);
+    if (glued && groups.length) groups[groups.length - 1].push(u);
+    else groups.push([u]);
+  });
+  return (
+    <>
+      {groups.map((group, g) => (
+        <span key={g} className="inline-block whitespace-nowrap align-top">
+          {group.map((u, j) => (
+            <span key={j} className="inline-block whitespace-pre align-top">
+              <span className="block pr-1 text-[0.85em] font-semibold text-accent-400">
+                {u.chord || "\u00A0"}
+              </span>
+              <span className="block">{u.text || "\u00A0"}</span>
+            </span>
+          ))}
+        </span>
+      ))}
+    </>
   );
 }
