@@ -1,5 +1,6 @@
+import { useEffect } from "react";
 import { useParams, Link } from "react-router";
-import { api } from "../api";
+import { api, recordSongActivity } from "../api";
 import FetchError from "../components/FetchError";
 import { useFetch } from "../hooks/useFetch";
 import { transposeChartText } from "../utils/chordUtils";
@@ -16,6 +17,7 @@ export default function PerformMode() {
     [songId],
   );
   const perform = usePerformMode();
+  useEffect(() => { recordSongActivity(songId, "performed"); }, [songId]);
 
   if (loading) return (
     <div className="min-h-screen bg-gray-950 p-4">

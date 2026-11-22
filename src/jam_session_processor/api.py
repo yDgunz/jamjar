@@ -12,7 +12,13 @@ from uuid import uuid4
 import requests as http_requests
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from pydantic import BaseModel, Field
 
 from jam_session_processor.auth import (
@@ -559,6 +565,9 @@ class SongResponse(BaseModel):
     updated_by_name: str | None = None
     updated_at: str | None = None
     links: list[SongLinkResponse] = []
+    # The caller's own activity (UTC "YYYY-MM-DD HH:MM:SS"); null for API-key callers
+    last_opened_at: str | None = None
+    last_performed_at: str | None = None
 
 
 class SongTrackResponse(BaseModel):
@@ -678,8 +687,12 @@ def _track_response(track) -> TrackResponse:
     return TrackResponse(**d)
 
 
-def _song_response(song, request: Request | None = None) -> SongResponse:
+def _song_response(
+    song, request: Request | None = None, activity: dict[int, dict] | None = None
+) -> SongResponse:
     db = get_db()
+    if activity is None and request is not None and request.state.user:
+        activity = db.get_song_activity(request.state.user.id)
     groups = db.get_song_groups(song.id)
     visible = _get_group_ids(request) if request is not None else None
     if visible is not None:
@@ -705,6 +718,7 @@ def _song_response(song, request: Request | None = None) -> SongResponse:
         )
         for link in db.list_song_links(song.id)
     ]
+    d.update((activity or {}).get(song.id, {}))
     return SongResponse(**d)
 
 
@@ -1883,7 +1897,8 @@ def list_songs(request: Request, group_id: int | None = None):
         if group_id not in group_ids:
             raise HTTPException(status_code=403, detail="No access to this group")
         group_ids = [group_id]
-    return [_song_response(s, request) for s in db.list_songs(group_ids)]
+    activity = db.get_song_activity(request.state.user.id) if request.state.user else {}
+    return [_song_response(s, request, activity) for s in db.list_songs(group_ids)]
 
 
 class CreateSongRequest(BaseModel):
@@ -2122,6 +2137,20 @@ def delete_song_link(song_id: int, link_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Link not found")
     db.delete_song_link(link_id)
     return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
+
+
+class SongActivityRequest(BaseModel):
+    event: Literal["opened", "performed"]
+
+
+@app.post("/api/songs/{song_id}/activity", status_code=204)
+def record_song_activity(song_id: int, req: SongActivityRequest, request: Request):
+    """Record that the caller opened a song or performed it (Perform mode)."""
+    db = get_db()
+    _get_song_with_access(db, song_id, request)
+    if request.state.user:  # API-key callers have no per-user activity
+        db.record_song_activity(request.state.user.id, song_id, req.event)
+    return Response(status_code=204)
 
 
 class MergeSongsRequest(BaseModel):
