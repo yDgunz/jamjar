@@ -6,7 +6,8 @@ import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
 import ListItemCard, { ListRows } from "../components/ListItemCard";
-import PageHeader, { HeaderIconButton, PlusIcon } from "../components/PageHeader";
+import Artwork from "../components/Artwork";
+import { HeaderIconButton, PlusIcon } from "../components/PageHeader";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import SearchInput from "../components/SearchInput";
 import { useAuth } from "../context/AuthContext";
@@ -20,6 +21,14 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: "last_played", label: "Recently played" },
   { key: "takes", label: "Most played" },
 ];
+
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 5) return "Late night";
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
 
 function matches(song: Song, q: string): "name" | "lyrics" | null {
   if (song.name.toLowerCase().includes(q) || (song.artist ?? "").toLowerCase().includes(q)) {
@@ -36,6 +45,7 @@ export default function SongCatalog() {
     () => api.listSongs(),
     [],
   );
+  const { data: sessions } = useFetch(() => api.listSessions(), []);
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortKey>(() => {
     const stored = localStorage.getItem("song-catalog-sort");
@@ -61,6 +71,10 @@ export default function SongCatalog() {
   }, [groupFilter]);
 
   const q = query.trim().toLowerCase();
+  const recent = useMemo(
+    () => [...(sessions ?? [])].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).slice(0, 8),
+    [sessions],
+  );
 
   const results = useMemo(() => {
     let list = (songs ?? []).map((s) => ({ song: s, hit: q ? matches(s, q) : ("name" as const) }));
@@ -106,18 +120,52 @@ export default function SongCatalog() {
 
   return (
     <div>
-      <PageHeader
-        title="Songs"
-        actions={canEdit(user) && (
+      <div className="mb-5 flex items-start justify-between gap-3 pt-2">
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-accent-400/90">{greeting()}</p>
+          <h1 className="font-display mt-1 truncate text-[40px] leading-[1.05] text-white">
+            {user?.name ? user.name.split(" ")[0] : "Your songs"}
+          </h1>
+        </div>
+        {canEdit(user) && (
           <HeaderIconButton label="New song" onClick={() => openCreate()}>
             <PlusIcon />
           </HeaderIconButton>
         )}
-      />
+      </div>
 
       <SearchInput value={query} onChange={setQuery} placeholder="Search songs, artists, lyrics" />
 
-      <div className="mt-2 flex items-center justify-between gap-2 text-sm text-gray-400">
+      {!q && recent.length > 0 && (
+        <section className="mt-7">
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 className="font-display text-[26px] leading-none text-white">Recent sessions</h2>
+            <Link to="/sessions" className="text-sm font-medium text-accent-400">See all</Link>
+          </div>
+          <div className="no-scrollbar -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:scroll-px-0 sm:px-0">
+            {recent.map((s) => {
+              const names = s.song_names ? s.song_names.split(",") : [];
+              return (
+                <Link key={s.id} to={`/sessions/${s.id}`} className="w-36 shrink-0 snap-start active:opacity-80">
+                  <Artwork seed={`session-${s.id}`} size="md" label={formatShortDate(s.date).split(" ").reverse()[0]}>
+                    <div className="flex flex-col items-center leading-none text-white/95">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.2em]">{formatShortDate(s.date).split(" ")[0]}</span>
+                      <span className="font-display mt-1 text-[56px]">{formatShortDate(s.date).split(" ")[1]?.replace(",", "")}</span>
+                    </div>
+                  </Artwork>
+                  <div className="mt-2 truncate text-[15px] font-semibold text-white">{s.name || "Session"}</div>
+                  <div className="truncate text-[13px] text-gray-400">
+                    {names.length ? names.slice(0, 2).join(", ") + (names.length > 2 ? ` +${names.length - 2}` : "") : `${s.track_count} tracks`}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {!q && <h2 className="font-display mt-8 text-[26px] leading-none text-white">Library</h2>}
+      <div className={`${q ? "mt-3" : "mt-1"} flex items-center justify-between gap-2 text-sm text-gray-400`}>
         <span>
           {results.length} song{results.length !== 1 ? "s" : ""}
         </span>
@@ -208,7 +256,10 @@ export default function SongCatalog() {
                   key={song.id}
                   to={`/songs/${song.id}`}
                   title={song.name}
-                  right={song.take_count > 0 ? <span className="text-gray-500">{song.take_count}</span> : null}
+                  leading={<Artwork seed={`song-${song.id}`} name={song.name} size="sm" />}
+                  right={song.take_count > 0 ? (
+                    <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-xs font-semibold tabular-nums text-gray-300">{song.take_count}</span>
+                  ) : null}
                 >
                   {(meta || hit === "lyrics") && (
                     <div className="mt-0.5 truncate text-sm text-gray-400">

@@ -4,6 +4,7 @@ import { api, formatShortDate, canEdit } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
+import Artwork from "../components/Artwork";
 import ListItemCard, { ListRows } from "../components/ListItemCard";
 import PageHeader, { HeaderIconButton, PlusIcon } from "../components/PageHeader";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
@@ -173,6 +174,7 @@ export default function SetlistList() {
             <ListItemCard
               key={sl.id}
               to={`/setlists/${sl.id}`}
+              leading={<Artwork seed={`setlist-${sl.id}`} name={sl.name} size="sm" />}
               title={<>
                 {sl.name}
                 {user && user.groups.length > 1 && !groupFilter && sl.group_name && (

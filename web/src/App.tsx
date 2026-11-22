@@ -219,18 +219,18 @@ function Layout({ children }: { children: React.ReactNode }) {
           <div className="py-1.5">Offline — showing cached data</div>
         </div>
       )}
-      <header className={`hidden border-b border-white/[0.07] px-4 py-2.5 sm:block ${online ? "pt-[max(0.625rem,env(safe-area-inset-top))]" : ""}`}>
+      <header className={`glass sticky top-0 z-30 hidden border-b border-white/[0.06] px-4 py-2.5 sm:block ${online ? "pt-[max(0.625rem,env(safe-area-inset-top))]" : ""}`}>
         <div className="mx-auto flex max-w-3xl items-center gap-x-6">
-          <NavLink to="/songs" className="flex items-center gap-1.5 text-lg font-bold text-white">
+          <NavLink to="/songs" className="flex items-center gap-2 text-white">
             <img src="/logo.png" alt="" className="h-7 w-7" />
-            <span>JamJar</span>
+            <span className="font-display text-2xl">JamJar</span>
           </NavLink>
           <nav className="flex flex-1 gap-1 text-sm">
             {NAV_ITEMS.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
-                className={`rounded-full px-3 py-1.5 transition ${isActive(item.to) ? "bg-white/10 text-white" : "text-gray-400 hover:text-white"}`}
+                className={`rounded-full px-3.5 py-1.5 font-medium transition ${isActive(item.to) ? "bg-white/10 text-white" : "text-gray-400 hover:text-white"}`}
               >
                 {item.label}
               </NavLink>
@@ -260,24 +260,31 @@ function Layout({ children }: { children: React.ReactNode }) {
       <MiniPlayer />
 
       {/* Bottom tab bar for mobile */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-white/[0.07] bg-gray-950/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg sm:hidden">
-        <div className="flex items-stretch justify-around">
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={`flex flex-1 flex-col items-center gap-0.5 pb-1.5 pt-2 ${isActive(item.to) ? "text-accent-400" : "text-gray-500"}`}
-            >
-              <NavIcon name={item.icon} />
-              <span className="text-[11px] font-medium">{item.label}</span>
-            </NavLink>
-          ))}
+      <nav className="glass fixed bottom-0 left-0 right-0 z-30 border-t border-white/[0.06] pb-[env(safe-area-inset-bottom)] sm:hidden">
+        <div className="flex items-stretch justify-around px-2">
+          {NAV_ITEMS.map((item) => {
+            const active = isActive(item.to);
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={`group flex flex-1 flex-col items-center gap-1 pb-1.5 pt-2 transition-colors ${active ? "text-white" : "text-gray-500"}`}
+              >
+                <span className={`flex h-7 w-14 items-center justify-center rounded-full transition-colors ${active ? "bg-accent-500/20 text-accent-400" : ""}`}>
+                  <NavIcon name={item.icon} className="h-[22px] w-[22px]" />
+                </span>
+                <span className="text-[11px] font-semibold tracking-wide">{item.label}</span>
+              </NavLink>
+            );
+          })}
           <button
             onClick={() => setMoreOpen(true)}
-            className={`flex flex-1 flex-col items-center gap-0.5 pb-1.5 pt-2 ${moreActive ? "text-accent-400" : "text-gray-500"}`}
+            className={`flex flex-1 flex-col items-center gap-1 pb-1.5 pt-2 ${moreActive ? "text-white" : "text-gray-500"}`}
           >
-            <NavIcon name="more" />
-            <span className="text-[11px] font-medium">More</span>
+            <span className={`flex h-7 w-14 items-center justify-center rounded-full ${moreActive ? "bg-accent-500/20 text-accent-400" : ""}`}>
+              <NavIcon name="more" className="h-[22px] w-[22px]" />
+            </span>
+            <span className="text-[11px] font-semibold tracking-wide">More</span>
           </button>
         </div>
       </nav>
@@ -285,8 +292,8 @@ function Layout({ children }: { children: React.ReactNode }) {
       {/* Mobile "More" bottom sheet */}
       {moreOpen && (
         <div className="fixed inset-0 z-50 sm:hidden">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setMoreOpen(false)} />
-          <div className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-gray-900 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMoreOpen(false)} />
+          <div className="absolute bottom-0 left-0 right-0 animate-rise rounded-t-3xl border-t border-white/10 bg-gray-900 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl">
             <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-gray-700" />
             <MoreMenu onChangePassword={openPassword} />
           </div>

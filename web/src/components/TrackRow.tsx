@@ -66,6 +66,7 @@ export default function TrackRow({
       href: track.song_id ? `/songs/${track.song_id}` : undefined,
       durationSec: track.duration_sec,
       trackId: track.id,
+      artSeed: track.song_id ? `song-${track.song_id}` : `session-${track.session_id}`,
     });
 
   const handleTag = async (name?: string) => {

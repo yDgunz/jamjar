@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "react-router";
 import { api, formatLongDate, formatShortDate, canEdit, canAdmin } from "../api";
 import type { Song, SongTrack } from "../api";
 import ActionSheet, { MoreButton } from "../components/ActionSheet";
+import Artwork, { HeroBackdrop } from "../components/Artwork";
 import type { SheetAction, SheetSection } from "../components/ActionSheet";
 import ChordSheet from "../components/ChordSheet";
 import { ListRows } from "../components/ListItemCard";
@@ -15,8 +16,9 @@ import { formatTime, PauseIcon, PlayIcon, usePlayer } from "../context/PlayerCon
 import { isChordPro, toChordPro } from "../utils/chordpro";
 
 
-function TakeRow({ take, songName, onUpdate, readOnly, onError }: {
+function TakeRow({ take, songId, songName, onUpdate, readOnly, onError }: {
   take: SongTrack;
+  songId: number;
   songName: string;
   onUpdate: () => void;
   readOnly?: boolean;
@@ -55,6 +57,7 @@ function TakeRow({ take, songName, onUpdate, readOnly, onError }: {
     subtitle: `${sessionName} · ${formatShortDate(take.session_date)}`,
     durationSec: take.duration_sec,
     trackId: take.id,
+    artSeed: `song-${songId}`,
   });
 
   const actions: SheetAction[] = [
@@ -134,6 +137,7 @@ export default function SongHistory() {
   const [tab, setTab] = useState<"chart" | "takes" | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [editingNotesField, setEditingNotesField] = useState(false);
+  const player = usePlayer();
 
   const loadSong = useCallback(() => {
     setLoading(true);
@@ -284,10 +288,11 @@ export default function SongHistory() {
   const activeTab = tab ?? (song.sheet || takes.length === 0 ? "chart" : "takes");
   const multiGroup = user != null && user.groups.length > 1;
   const meta = [
-    song.artist,
     `${takes.length} take${takes.length !== 1 ? "s" : ""}`,
+    song.last_date ? `last played ${formatShortDate(song.last_date)}` : null,
     multiGroup ? song.group_name : null,
   ].filter(Boolean).join(" · ");
+  const latestPlaying = takes.length > 0 && player.isCurrent(`track:${takes[0].id}`) && player.playing;
   const currentSheet = editingSheet ? sheetInput : song.sheet;
 
   const sheetActions: SheetSection[] = [];
@@ -322,13 +327,15 @@ export default function SongHistory() {
 
   return (
     <div>
-      <Link to="/songs" className="-ml-1 inline-flex items-center text-[15px] text-accent-400 active:opacity-70">
-        <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" /></svg>
-        Songs
-      </Link>
+      <div className="relative isolate -mx-4 -mt-3 px-4 pt-3 sm:mx-0 sm:px-0">
+        <HeroBackdrop seed={`song-${song.id}`} />
+        <Link to="/songs" className="-ml-1 inline-flex items-center text-[15px] font-medium text-white/80 active:opacity-70">
+          <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" /></svg>
+          Songs
+        </Link>
 
-      <div className="mt-2 flex items-start gap-2">
-        <div className="min-w-0 flex-1">
+        <div className="mt-3 flex animate-rise flex-col items-center text-center">
+          <Artwork seed={`song-${song.id}`} name={song.name} size="lg" className="shadow-[0_24px_60px_-20px_rgba(0,0,0,0.8)]" />
           {editingName && canEdit(user) ? (
             <input
               autoFocus
@@ -339,10 +346,10 @@ export default function SongHistory() {
                 if (e.key === "Escape") { setEditingName(false); setNameInput(song.name); }
               }}
               onBlur={handleSaveName}
-              className="w-full rounded-lg bg-white/[0.08] px-2 py-1 text-[26px] font-bold text-white outline-none focus:ring-2 focus:ring-accent-500/60"
+              className="font-display mt-6 w-full max-w-sm rounded-xl bg-white/[0.08] px-3 py-1 text-center text-[34px] text-white outline-none focus:ring-2 focus:ring-accent-500/60"
             />
           ) : (
-            <h1 className="text-[28px] font-bold leading-tight tracking-tight text-white">{song.name}</h1>
+            <h1 className="font-display mt-6 text-[42px] leading-[1.02] text-white">{song.name}</h1>
           )}
           {editingArtist && canEdit(user) ? (
             <input
@@ -355,39 +362,67 @@ export default function SongHistory() {
               }}
               onBlur={handleSaveArtist}
               placeholder="Artist"
-              className="mt-1 w-full rounded-lg bg-white/[0.08] px-2 py-1 text-base text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-accent-500/60"
+              className="mt-2 w-full max-w-xs rounded-xl bg-white/[0.08] px-3 py-1.5 text-center text-base text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-accent-500/60"
             />
           ) : (
-            <p className="mt-1 text-[15px] text-gray-400">{meta}</p>
+            <>
+              {song.artist && <p className="mt-1.5 text-[17px] font-medium text-gray-200">{song.artist}</p>}
+              <p className="mt-1 text-sm text-gray-400">{meta}</p>
+            </>
           )}
+
+          <div className="mt-6 flex w-full max-w-sm items-center gap-3">
+            {takes.length > 0 && (
+              <button
+                onClick={() => {
+                  const t = takes[0];
+                  player.play({
+                    key: `track:${t.id}`,
+                    src: api.trackAudioUrl(t.id),
+                    title: song.name,
+                    subtitle: `${t.session_name || "Session"} · ${formatShortDate(t.session_date)}`,
+                    durationSec: t.duration_sec,
+                    trackId: t.id,
+                    artSeed: `song-${song.id}`,
+                  });
+                }}
+                className="btn-primary h-12 flex-1 text-[15px]"
+              >
+                {latestPlaying ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="h-4 w-4" />}
+                {latestPlaying ? "Pause" : "Latest take"}
+              </button>
+            )}
+            {song.sheet && (
+              <Link to={`/songs/${songId}/perform`} className={`${takes.length > 0 ? "btn-glass" : "btn-primary"} h-12 flex-1 text-[15px]`}>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h10" /></svg>
+                Perform
+              </Link>
+            )}
+            {sheetActions.length > 0 && (
+              <button onClick={() => setActionsOpen(true)} aria-label="Song actions" className="btn-glass h-12 w-12 shrink-0">
+                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"><path d="M3 10a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM8.5 10a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM15.5 8.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" /></svg>
+              </button>
+            )}
+          </div>
         </div>
-        {sheetActions.length > 0 && <MoreButton onClick={() => setActionsOpen(true)} label="Song actions" />}
       </div>
 
-      <div className="mt-4 flex items-center gap-2">
-        <div className="flex flex-1 rounded-lg bg-white/[0.08] p-0.5 text-sm font-medium">
+      <div className="sticky top-0 z-20 -mx-4 mt-7 px-4 py-2 glass sm:top-[57px] sm:mx-0 sm:rounded-xl sm:px-1">
+        <div className="flex rounded-full bg-white/[0.06] p-1 text-sm font-semibold">
           {(["chart", "takes"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex-1 rounded-md py-1.5 transition ${activeTab === t ? "bg-gray-600 text-white shadow" : "text-gray-400"}`}
+              className={`flex-1 rounded-full py-2 transition ${activeTab === t ? "bg-white text-gray-950 shadow" : "text-gray-400"}`}
             >
-              {t === "chart" ? "Chart" : `Takes${takes.length ? ` (${takes.length})` : ""}`}
+              {t === "chart" ? "Chart" : `Takes${takes.length ? ` · ${takes.length}` : ""}`}
             </button>
           ))}
         </div>
-        {song.sheet && (
-          <Link
-            to={`/songs/${songId}/perform`}
-            className="shrink-0 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent-500 active:bg-accent-700"
-          >
-            Perform
-          </Link>
-        )}
       </div>
 
       {activeTab === "chart" ? (
-        <div className="mt-5">
+        <div className="mt-6 animate-rise">
           {editingSheet && canEdit(user) ? (
             <div>
               <textarea
@@ -408,7 +443,7 @@ export default function SongHistory() {
               <div className="mt-2 flex items-center gap-2">
                 <button
                   onMouseDown={(e) => { e.preventDefault(); handleSaveSheet(); }}
-                  className="rounded-full bg-accent-600 px-5 py-2 text-sm font-semibold text-white hover:bg-accent-500"
+                  className="btn-primary h-10 px-5 text-sm"
                 >
                   Save
                 </button>
@@ -421,11 +456,11 @@ export default function SongHistory() {
               </div>
             </div>
           ) : song.sheet ? (
-            <div className="text-[17px]">
+            <div className="text-[18px] leading-relaxed">
               <ChordSheet text={song.sheet} wrapText />
             </div>
           ) : (
-            <div className="flex flex-col items-center rounded-xl bg-white/[0.04] px-6 py-10 text-center">
+            <div className="flex flex-col items-center rounded-3xl border border-dashed border-white/10 bg-white/[0.02] px-6 py-12 text-center">
               <p className="text-[15px] text-gray-300">No chart yet.</p>
               {canEdit(user) && (
                 <>
@@ -433,7 +468,7 @@ export default function SongHistory() {
                   <div className="mt-4 flex flex-wrap justify-center gap-2">
                     <button
                       onClick={() => setEditingSheet(true)}
-                      className="rounded-full bg-accent-600 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-500"
+                      className="btn-primary h-11 px-5 text-sm"
                     >
                       Paste chart
                     </button>
@@ -441,7 +476,7 @@ export default function SongHistory() {
                       <button
                         onClick={handleFetchLyrics}
                         disabled={fetchingLyrics}
-                        className="rounded-full bg-white/[0.08] px-4 py-2 text-sm font-medium text-gray-200 disabled:opacity-50"
+                        className="btn-glass h-11 px-5 text-sm disabled:opacity-50"
                       >
                         {fetchingLyrics ? "Fetching…" : "Fetch lyrics"}
                       </button>
@@ -473,6 +508,7 @@ export default function SongHistory() {
               <TakeRow
                 key={take.id}
                 take={take}
+                songId={song.id}
                 songName={song.name}
                 onUpdate={refresh}
                 readOnly={!canEdit(user)}

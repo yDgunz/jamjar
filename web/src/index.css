@@ -1,18 +1,115 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource/instrument-serif/400.css";
+@import "@fontsource/instrument-serif/400-italic.css";
 
+/*
+ * "Stage" design system.
+ * Warm near-black neutrals + a tangerine accent. Every page uses the gray-*
+ * and accent-* scales, so they're redefined here rather than per component.
+ */
 @theme {
-  --color-accent-300: #6ee7b7; /* emerald-300 — link hover */
-  --color-accent-400: #34d399; /* emerald-400 — active nav, links, spinners */
-  --color-accent-500: #10b981; /* emerald-500 — focus borders, progress bars */
-  --color-accent-600: #059669; /* emerald-600 — primary buttons, avatar */
-  --color-accent-700: #047857; /* emerald-700 — button active/press */
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: "Instrument Serif", ui-serif, Georgia, serif;
+
+  --color-gray-50: #faf8f5;
+  --color-gray-100: #f3f0eb;
+  --color-gray-200: #e4dfd8;
+  --color-gray-300: #c9c2b8;
+  --color-gray-400: #a39b90;
+  --color-gray-500: #7a7369;
+  --color-gray-600: #57514a;
+  --color-gray-700: #39342f;
+  --color-gray-800: #252220;
+  --color-gray-900: #181614;
+  --color-gray-950: #0d0c0b;
+
+  --color-accent-300: #ffc995;
+  --color-accent-400: #ffab5e;
+  --color-accent-500: #ff8f3a;
+  --color-accent-600: #f27419;
+  --color-accent-700: #c95a0c;
+
+  --animate-rise: rise 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-html {
-  background-color: theme(--color-gray-950);
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
 }
 
 @keyframes eq {
   0%, 100% { height: 30%; }
   50% { height: 100%; }
+}
+
+html {
+  background-color: var(--color-gray-950);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background:
+    radial-gradient(120% 60% at 50% -10%, rgb(255 143 58 / 0.07), transparent 60%),
+    var(--color-gray-950);
+  background-attachment: fixed;
+  color: var(--color-gray-100);
+}
+
+::selection {
+  background: rgb(255 143 58 / 0.35);
+}
+
+/* Big serif page/section titles */
+@utility font-display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* Primary call-to-action: warm gradient pill with dark text */
+@utility btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  background-image: linear-gradient(135deg, var(--color-accent-400), var(--color-accent-600));
+  color: var(--color-gray-950);
+  font-weight: 600;
+  box-shadow: 0 8px 24px -8px rgb(242 116 25 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.25);
+  transition: transform 0.12s ease, filter 0.12s ease;
+  &:active { transform: scale(0.97); }
+  &:hover { filter: brightness(1.06); }
+}
+
+/* Secondary pill on dark surfaces */
+@utility btn-glass {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.08);
+  color: var(--color-gray-100);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
+  transition: transform 0.12s ease, background 0.12s ease;
+  &:active { transform: scale(0.97); background: rgb(255 255 255 / 0.12); }
+  &:hover { background: rgb(255 255 255 / 0.12); }
+}
+
+/* Frosted panels (tab bar, mini-player, sheets) */
+@utility glass {
+  background: rgb(22 20 18 / 0.9);
+  @apply backdrop-blur-2xl backdrop-saturate-150;
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
 }

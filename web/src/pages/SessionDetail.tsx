@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router";
-import { api, formatLongDate, canEdit, canAdmin } from "../api";
+import { api, formatLongDate, formatShortDate, canEdit, canAdmin } from "../api";
 import type { Session, Track, Song } from "../api";
-import ActionSheet, { MoreButton } from "../components/ActionSheet";
+import ActionSheet from "../components/ActionSheet";
+import Artwork, { HeroBackdrop } from "../components/Artwork";
 import type { SheetSection } from "../components/ActionSheet";
 import { ListRows } from "../components/ListItemCard";
 import FetchError from "../components/FetchError";
@@ -238,13 +239,21 @@ export default function SessionDetail() {
 
   return (
     <div>
-      <Link to="/sessions" className="-ml-1 inline-flex items-center text-[15px] text-accent-400 active:opacity-70">
-        <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" /></svg>
-        Recordings
-      </Link>
+      <div className="relative isolate -mx-4 -mt-3 px-4 pt-3 sm:mx-0 sm:px-0">
+        <HeroBackdrop seed={`session-${session.id}`} />
+        <Link to="/sessions" className="-ml-1 inline-flex items-center text-[15px] font-medium text-white/80 active:opacity-70">
+          <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" /></svg>
+          Recordings
+        </Link>
 
-      <div className="mt-2 flex items-start gap-2">
-        <div className="min-w-0 flex-1">
+        <div className="mt-3 flex animate-rise flex-col items-center text-center">
+          <Artwork seed={`session-${session.id}`} size="lg" className="shadow-[0_24px_60px_-20px_rgba(0,0,0,0.8)]">
+            <div className="flex flex-col items-center leading-none text-white/95">
+              <span className="text-[13px] font-bold uppercase tracking-[0.25em]">{formatShortDate(session.date).split(" ")[0]}</span>
+              <span className="font-display mt-1 text-[84px]">{formatShortDate(session.date).split(" ")[1]?.replace(",", "")}</span>
+            </div>
+          </Artwork>
+
           {editingName && canEdit(user) ? (
             <input
               autoFocus
@@ -255,10 +264,10 @@ export default function SessionDetail() {
                 if (e.key === "Escape") { setEditingName(false); setNameInput(session.name); }
               }}
               onBlur={handleSaveName}
-              className="w-full rounded-lg bg-white/[0.08] px-2 py-1 text-[26px] font-bold text-white outline-none focus:ring-2 focus:ring-accent-500/60"
+              className="font-display mt-6 w-full max-w-sm rounded-xl bg-white/[0.08] px-3 py-1 text-center text-[34px] text-white outline-none focus:ring-2 focus:ring-accent-500/60"
             />
           ) : (
-            <h1 className="text-[28px] font-bold leading-tight tracking-tight text-white">{sessionTitle}</h1>
+            <h1 className="font-display mt-6 text-[42px] leading-[1.02] text-white">{sessionTitle}</h1>
           )}
           {editingDate && canEdit(user) ? (
             <input
@@ -271,49 +280,71 @@ export default function SessionDetail() {
                 if (e.key === "Escape") { setEditingDate(false); setDateInput(session.date ?? ""); }
               }}
               onBlur={handleSaveDate}
-              className="mt-1 rounded-lg bg-white/[0.08] px-2 py-1 text-base text-white outline-none"
+              className="mt-2 rounded-xl bg-white/[0.08] px-3 py-1.5 text-base text-white outline-none"
             />
           ) : (
-            <p className="mt-1 text-[15px] text-gray-400">{meta}</p>
+            <p className="mt-1.5 text-[15px] text-gray-300">{meta}</p>
           )}
+
+          {editingNotes && canEdit(user) ? (
+            <textarea
+              autoFocus
+              value={notesInput}
+              onChange={(e) => setNotesInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveSessionNotes(); }
+                if (e.key === "Escape") { setEditingNotes(false); setNotesInput(session.notes ?? ""); }
+              }}
+              onBlur={handleSaveSessionNotes}
+              placeholder="Notes about this session…"
+              rows={3}
+              className="mt-4 w-full max-w-md rounded-xl bg-white/[0.08] px-3 py-2 text-base text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-accent-500/60"
+            />
+          ) : session.notes ? (
+            <p className="font-display mt-3 max-w-md whitespace-pre-wrap text-[20px] italic leading-snug text-gray-200">“{session.notes}”</p>
+          ) : null}
+
+          <div className="mt-6 flex w-full max-w-sm items-center gap-3">
+            {tracks.length > 0 && !processingProgress && (
+              <button
+                onClick={() => {
+                  if (tracks.length > 1) {
+                    player.play({
+                      key: fullKey,
+                      src: api.sessionAudioUrl(sessionId),
+                      title: sessionTitle,
+                      subtitle: `Full recording · ${formatLongDate(session.date)}`,
+                      href: `/sessions/${sessionId}`,
+                      durationSec: session.duration_sec ?? undefined,
+                      artSeed: `session-${sessionId}`,
+                    });
+                  } else {
+                    const t = tracks[0];
+                    player.play({
+                      key: `track:${t.id}`,
+                      src: api.trackAudioUrl(t.id),
+                      title: t.song_name ?? sessionTitle,
+                      subtitle: sessionTitle,
+                      durationSec: t.duration_sec,
+                      trackId: t.id,
+                      artSeed: t.song_id ? `song-${t.song_id}` : `session-${sessionId}`,
+                    });
+                  }
+                }}
+                className="btn-primary h-12 flex-1 text-[15px]"
+              >
+                {fullIsCurrent && player.playing ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="h-4 w-4" />}
+                {fullIsCurrent && player.playing ? "Pause" : tracks.length > 1 ? "Play full session" : "Play"}
+              </button>
+            )}
+            {sheetSections.length > 0 && (
+              <button onClick={() => setSheetOpen(true)} aria-label="Recording actions" className="btn-glass h-12 w-12 shrink-0">
+                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"><path d="M3 10a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM8.5 10a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM15.5 8.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" /></svg>
+              </button>
+            )}
+          </div>
         </div>
-        {sheetSections.length > 0 && <MoreButton onClick={() => setSheetOpen(true)} label="Recording actions" />}
       </div>
-
-      {editingNotes && canEdit(user) ? (
-        <textarea
-          autoFocus
-          value={notesInput}
-          onChange={(e) => setNotesInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveSessionNotes(); }
-            if (e.key === "Escape") { setEditingNotes(false); setNotesInput(session.notes ?? ""); }
-          }}
-          onBlur={handleSaveSessionNotes}
-          placeholder="Notes about this session…"
-          rows={3}
-          className="mt-3 w-full rounded-lg bg-white/[0.08] px-3 py-2 text-base text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-accent-500/60"
-        />
-      ) : session.notes ? (
-        <p className="mt-3 whitespace-pre-wrap text-[15px] text-gray-300">{session.notes}</p>
-      ) : null}
-
-      {tracks.length > 1 && !processingProgress && (
-        <button
-          onClick={() => player.play({
-            key: fullKey,
-            src: api.sessionAudioUrl(sessionId),
-            title: sessionTitle,
-            subtitle: `Full recording · ${formatLongDate(session.date)}`,
-            href: `/sessions/${sessionId}`,
-            durationSec: session.duration_sec ?? undefined,
-          })}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-white/[0.08] py-3 text-[15px] font-semibold text-white transition active:bg-white/[0.12]"
-        >
-          {fullIsCurrent && player.playing ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="h-4 w-4" />}
-          {fullIsCurrent && player.playing ? "Pause full recording" : "Play full recording"}
-        </button>
-      )}
 
       {processingProgress ? (
         <div className="flex flex-col items-center gap-3 py-12">
@@ -336,16 +367,16 @@ export default function SessionDetail() {
           )}
         </div>
       ) : (
-        <div className="relative mt-5">
+        <div className="relative mt-8">
           {merging && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/80">
               <div className="flex items-center gap-2 text-sm text-gray-300"><Spinner size="sm" /> Merging…</div>
             </div>
           )}
-          <h2 className="mb-1 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+          <h2 className="font-display mb-2 mt-2 text-[26px] leading-none text-white">
             {tracks.length} track{tracks.length !== 1 ? "s" : ""}
             {tracks.some((t) => !t.song_name) && canEdit(user) && (
-              <span className="normal-case tracking-normal text-gray-600"> · tap Tag to name a song</span>
+              <span className="font-sans text-sm text-gray-500"> · tap Tag to name a song</span>
             )}
           </h2>
           <ListRows>
