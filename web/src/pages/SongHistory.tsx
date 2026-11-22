@@ -127,7 +127,7 @@ export default function SongHistory() {
   const [nameInput, setNameInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
-  const [pendingGroupId, setPendingGroupId] = useState<number | null>(null);
+  const [bandsOpen, setBandsOpen] = useState(false);
 
   const [editingArtist, setEditingArtist] = useState(false);
   const [artistInput, setArtistInput] = useState("");
@@ -320,7 +320,13 @@ export default function SongHistory() {
   const songGroups = song.groups ?? [];
   const bandNames = songGroups.length ? songGroups.map((g) => g.name).join(", ") : song.group_name;
   const linkedIds = new Set(songGroups.map((g) => g.id));
-  const unlinkedBands = (user?.groups ?? []).filter((g) => !linkedIds.has(g.id));
+  const toggleBand = async (groupId: number, linked: boolean) => {
+    try {
+      setSong(linked ? await api.unlinkSongGroup(songId, groupId) : await api.linkSongGroup(songId, groupId));
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+    }
+  };
   const meta = [
     song.artist,
     `${takes.length} take${takes.length !== 1 ? "s" : ""}`,
@@ -346,30 +352,14 @@ export default function SongHistory() {
       { label: song.artist ? "Change artist" : "Add artist", onClick: () => setEditingArtist(true) },
       { label: song.notes ? "Edit notes" : "Add notes", onClick: () => { setTab("chart"); setEditingNotesField(true); } },
     ] });
-    if (unlinkedBands.length > 0) {
+    if (multiGroup) {
       sheetActions.push({
-        title: "Bands",
-        actions: unlinkedBands.map((g) => ({
-          label: `Also played by ${g.name}`,
-          onClick: async () => {
-            try {
-              setSong(await api.linkSongGroup(songId, g.id));
-            } catch (err) {
-              setErrorMsg(err instanceof Error ? err.message : String(err));
-            }
-          },
-        })),
+        actions: [{ label: "Bands…", hint: bandNames, onClick: () => setBandsOpen(true) }],
       });
     }
   }
   if (canAdmin(user)) {
     sheetActions.push({ title: "Manage", actions: [
-      ...(songGroups.length > 1
-        ? songGroups.map((g) => ({
-            label: `Remove from ${g.name}`,
-            onClick: () => setPendingGroupId(g.id),
-          }))
-        : []),
       { label: "Delete song", destructive: true, onClick: () => setShowDelete(true) },
     ] });
   }
@@ -415,7 +405,6 @@ export default function SongHistory() {
             <p className="mt-1 text-[15px] text-gray-400">{meta}</p>
           )}
         </div>
-        {sheetActions.length > 0 && <MoreButton onClick={() => setActionsOpen(true)} label="Song actions" />}
       </div>
 
       <div className="mt-4 flex items-center gap-2">
@@ -430,6 +419,15 @@ export default function SongHistory() {
             </button>
           ))}
         </div>
+        {sheetActions.length > 0 && (
+          <button
+            onClick={() => setActionsOpen(true)}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white/[0.08] px-3 py-2 text-sm font-medium text-gray-200 transition hover:bg-white/[0.14] active:bg-white/[0.14]"
+          >
+            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z" /><path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5Z" /></svg>
+            Edit
+          </button>
+        )}
         {song.sheet && (
           <Link
             to={`/songs/${songId}/perform`}
@@ -631,22 +629,39 @@ export default function SongHistory() {
         onConfirm={doFetchLyrics}
         onCancel={() => setShowFetchConfirm(false)}
       />
-      <Modal
-        open={pendingGroupId !== null}
-        title="Remove from band"
-        message={`Stop listing "${song?.name}" for ${songGroups.find((g) => g.id === pendingGroupId)?.name}? The song stays in your other bands and existing recordings keep their tags.`}
-        confirmLabel="Remove"
-        onConfirm={async () => {
-          const gid = pendingGroupId!;
-          setPendingGroupId(null);
-          try {
-            setSong(await api.unlinkSongGroup(songId, gid));
-          } catch (err) {
-            setErrorMsg(`Remove failed: ${err instanceof Error ? err.message : err}`);
-          }
-        }}
-        onCancel={() => setPendingGroupId(null)}
-      />
+      <FormModal
+        open={bandsOpen}
+        title="Bands that play this song"
+        confirmLabel="Done"
+        onConfirm={() => setBandsOpen(false)}
+        onCancel={() => setBandsOpen(false)}
+      >
+        <div className="-mx-1 space-y-0.5">
+          {(user?.groups ?? []).map((g) => {
+            const linked = linkedIds.has(g.id);
+            const locked = linked && (songGroups.length <= 1 || !canAdmin(user));
+            return (
+              <label
+                key={g.id}
+                className={`flex items-center gap-3 rounded-lg px-2 py-2 ${locked ? "opacity-60" : "cursor-pointer hover:bg-white/5"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={linked}
+                  disabled={locked}
+                  onChange={() => toggleBand(g.id, linked)}
+                  className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent-500 focus:ring-accent-500 focus:ring-offset-0"
+                />
+                <span className="text-sm text-gray-200">{g.name}</span>
+              </label>
+            );
+          })}
+        </div>
+        <p className="text-xs text-gray-500">
+          Charts and videos are shared by every band that plays the song.
+          {!canAdmin(user) && " Removing a band needs an admin."}
+        </p>
+      </FormModal>
       <Modal
         open={showDelete}
         title="Delete song"
