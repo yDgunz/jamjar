@@ -64,7 +64,9 @@ export default function SongCatalog() {
 
   const results = useMemo(() => {
     let list = (songs ?? []).map((s) => ({ song: s, hit: q ? matches(s, q) : ("name" as const) }));
-    if (groupFilter !== null) list = list.filter((r) => r.song.group_id === groupFilter);
+    if (groupFilter !== null) {
+      list = list.filter((r) => (r.song.groups ?? []).some((g) => g.id === groupFilter) || r.song.group_id === groupFilter);
+    }
     if (q) list = list.filter((r) => r.hit !== null);
     const cmp: Record<SortKey, (a: Song, b: Song) => number> = {
       name: (a, b) => a.name.localeCompare(b.name),
@@ -201,7 +203,7 @@ export default function SongCatalog() {
               const meta = [
                 song.artist,
                 song.last_date ? `played ${formatShortDate(song.last_date)}` : null,
-                multiGroup && !groupFilter ? song.group_name : null,
+                multiGroup && !groupFilter ? (song.groups?.length ? song.groups.map((g) => g.name).join(", ") : song.group_name) : null,
               ].filter(Boolean).join(" · ");
               return (
                 <ListItemCard

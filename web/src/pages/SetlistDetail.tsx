@@ -170,12 +170,15 @@ export default function SetlistDetail() {
     setSongs(slSongs);
   };
 
-  // Songs available to add (in same group, not already in setlist)
+  // Songs available to add: this band's songs first, then your other bands'
+  // (adding one links it to this band). Excludes songs already in the setlist.
   const availableSongs = useMemo(() => {
     if (!setlist) return [];
     const inSetlist = new Set(songs.map((s) => s.song_id));
+    const inBand = (s: Song) => (s.groups ?? []).some((g) => g.id === setlist.group_id) || s.group_id === setlist.group_id;
     let filtered = allSongs
-      .filter((s) => s.group_id === setlist.group_id && !inSetlist.has(s.id));
+      .filter((s) => !inSetlist.has(s.id))
+      .sort((a, b) => Number(inBand(b)) - Number(inBand(a)));
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(

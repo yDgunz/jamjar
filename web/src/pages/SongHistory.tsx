@@ -283,10 +283,14 @@ export default function SongHistory() {
 
   const activeTab = tab ?? (song.sheet || takes.length === 0 ? "chart" : "takes");
   const multiGroup = user != null && user.groups.length > 1;
+  const songGroups = song.groups ?? [];
+  const bandNames = songGroups.length ? songGroups.map((g) => g.name).join(", ") : song.group_name;
+  const linkedIds = new Set(songGroups.map((g) => g.id));
+  const unlinkedBands = (user?.groups ?? []).filter((g) => !linkedIds.has(g.id));
   const meta = [
     song.artist,
     `${takes.length} take${takes.length !== 1 ? "s" : ""}`,
-    multiGroup ? song.group_name : null,
+    multiGroup ? bandNames : null,
   ].filter(Boolean).join(" · ");
   const currentSheet = editingSheet ? sheetInput : song.sheet;
 
@@ -307,12 +311,27 @@ export default function SongHistory() {
       { label: song.artist ? "Change artist" : "Add artist", onClick: () => setEditingArtist(true) },
       { label: song.notes ? "Edit notes" : "Add notes", onClick: () => { setTab("chart"); setEditingNotesField(true); } },
     ] });
+    if (unlinkedBands.length > 0) {
+      sheetActions.push({
+        title: "Bands",
+        actions: unlinkedBands.map((g) => ({
+          label: `Also played by ${g.name}`,
+          onClick: async () => {
+            try {
+              setSong(await api.linkSongGroup(songId, g.id));
+            } catch (err) {
+              setErrorMsg(err instanceof Error ? err.message : String(err));
+            }
+          },
+        })),
+      });
+    }
   }
   if (canAdmin(user)) {
     sheetActions.push({ title: "Manage", actions: [
-      ...(multiGroup
-        ? user!.groups.filter((g) => g.id !== song.group_id).map((g) => ({
-            label: `Move to ${g.name}`,
+      ...(songGroups.length > 1
+        ? songGroups.map((g) => ({
+            label: `Remove from ${g.name}`,
             onClick: () => setPendingGroupId(g.id),
           }))
         : []),
@@ -463,6 +482,24 @@ export default function SongHistory() {
               />
             </div>
           )}
+
+          {songGroups.filter((g) => g.notes || (multiGroup && canEdit(user))).map((g) => (
+            <div key={g.id} className="mt-6 border-t border-white/[0.07] pt-4">
+              <EditableField
+                label={`${g.name} notes`}
+                value={g.notes}
+                placeholder={`How ${g.name} plays it — key, capo, arrangement…`}
+                readOnly={!canEdit(user)}
+                onSave={async (v) => {
+                  try {
+                    setSong(await api.setSongGroupNotes(songId, g.id, v));
+                  } catch (err) {
+                    setErrorMsg(`Save failed: ${err instanceof Error ? err.message : err}`);
+                  }
+                }}
+              />
+            </div>
+          ))}
         </div>
       ) : takes.length === 0 ? (
         <p className="mt-8 text-center text-gray-400">No recorded takes yet. Tag a track in a recording to add one.</p>
@@ -500,17 +537,16 @@ export default function SongHistory() {
       />
       <Modal
         open={pendingGroupId !== null}
-        title="Move song"
-        message={`Move "${song?.name}" to "${user?.groups.find(g => g.id === pendingGroupId)?.name}"? Tracks in existing sessions will stay in their current group.`}
-        confirmLabel="Move"
+        title="Remove from band"
+        message={`Stop listing "${song?.name}" for ${songGroups.find((g) => g.id === pendingGroupId)?.name}? The song stays in your other bands and existing recordings keep their tags.`}
+        confirmLabel="Remove"
         onConfirm={async () => {
           const gid = pendingGroupId!;
           setPendingGroupId(null);
           try {
-            const updated = await api.updateSongGroup(songId, gid);
-            setSong(updated);
+            setSong(await api.unlinkSongGroup(songId, gid));
           } catch (err) {
-            setErrorMsg(`Move failed: ${err instanceof Error ? err.message : err}`);
+            setErrorMsg(`Remove failed: ${err instanceof Error ? err.message : err}`);
           }
         }}
         onCancel={() => setPendingGroupId(null)}
