@@ -344,6 +344,14 @@ export interface UsageStatsActivity {
   created_at: string;
 }
 
+export interface CurationRun {
+  id: number;
+  summary: string;
+  /** action: added_song | added_lesson | added_backing_track | added_background */
+  items: { song_id: number | null; song_name: string; action: string }[];
+  created_at: string;
+}
+
 export interface UsageStats {
   users: UsageStatsUser[];
   recent_activity: UsageStatsActivity[];
@@ -932,6 +940,8 @@ export const api = {
     ),
 
   adminGetUsageStats: () => fetchJson<UsageStats>(`${BASE}/admin/stats`),
+
+  adminGetCurationRuns: () => fetchJson<CurationRun[]>(`${BASE}/admin/curation-runs`),
 
   adminGetServerHealth: () => fetchJson<ServerHealth>(`${BASE}/admin/server-health`),
 

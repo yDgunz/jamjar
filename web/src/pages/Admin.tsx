@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, isSuperAdmin } from "../api";
 import type { AdminUser, AdminGroup, Role, UsageStats, ServerHealth } from "../api";
+import CurationHistory from "../components/CurationHistory";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
@@ -8,7 +9,7 @@ import { AdminSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
 
 const ROLES: Role[] = ["readonly", "editor", "admin", "superadmin"];
-type Tab = "users" | "groups" | "usage" | "health";
+type Tab = "users" | "groups" | "usage" | "library" | "health";
 
 const EVENT_LABELS: Record<string, string> = {
   login: "Logins",
@@ -330,18 +331,19 @@ export default function Admin() {
     { key: "users", label: "Users" },
     { key: "groups", label: "Groups" },
     { key: "usage", label: "Usage" },
+    { key: "library", label: "Library" },
     { key: "health", label: "Server Health" },
   ];
 
   return (
     <div className="space-y-6">
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-800">
+      <div className="flex gap-1 overflow-x-auto border-b border-gray-800">
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`cursor-pointer px-4 py-2 text-sm font-medium transition -mb-px ${
+            className={`cursor-pointer whitespace-nowrap px-3 py-2 text-sm font-medium transition -mb-px sm:px-4 ${
               tab === t.key
                 ? "border-b-2 border-accent-500 text-accent-400"
                 : "text-gray-400 hover:text-gray-200"
@@ -545,6 +547,16 @@ export default function Admin() {
               </div>
             </>
           )}
+        </section>
+      )}
+
+      {/* === Library curation Tab === */}
+      {tab === "library" && (
+        <section>
+          <p className="mb-3 text-xs text-gray-500">
+            What the daily library routine added: new songs, how-to and backing-track videos, and About histories.
+          </p>
+          <CurationHistory />
         </section>
       )}
 

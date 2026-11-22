@@ -83,6 +83,15 @@ CREATE TABLE IF NOT EXISTS song_activity (
     PRIMARY KEY (user_id, song_id)
 );
 
+-- Log of the scheduled library-curation routine (new songs, videos, histories).
+-- items is a JSON list of {song_id, song_name, action}.
+CREATE TABLE IF NOT EXISTS curation_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    summary TEXT NOT NULL DEFAULT '',
+    items TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS tracks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -499,6 +508,21 @@ class Database:
             (user_id, group_id, event_type, detail),
         )
         self.conn.commit()
+
+    def add_curation_run(self, summary: str, items_json: str) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO curation_runs (summary, items) VALUES (?, ?)", (summary, items_json)
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def list_curation_runs(self, limit: int = 50) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id, summary, items, created_at FROM curation_runs"
+            " ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def get_activity_stats(self) -> dict:
         """Return per-user stats and recent activity for the admin stats page."""
