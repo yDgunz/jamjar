@@ -54,7 +54,7 @@ function LandingContent() {
           <img src="/logo.png" alt="" className="h-12 w-12 sm:h-14 sm:w-14" /> JamJar
         </h1>
         <p className="mb-5 leading-snug tracking-tight text-white">
-          Jam session recordings, song charts, setlists, and scheduling
+          Jam session recordings, song charts, and setlists
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Link to="/login" className="rounded-lg border border-gray-700 px-7 py-3 text-base text-gray-300 hover:border-gray-500 hover:text-white transition">Log In</Link>
