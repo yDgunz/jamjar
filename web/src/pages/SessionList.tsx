@@ -242,7 +242,7 @@ export default function SessionList() {
         />
         <InlineSelect
           value={sortBy}
-          options={[{ value: "date", label: "By date played" }, { value: "uploaded", label: "By date added" }] as { value: SortBy; label: string }[]}
+          options={[{ value: "date", label: "By date recorded" }, { value: "uploaded", label: "By date added" }] as { value: SortBy; label: string }[]}
           onChange={setSortBy}
           ariaLabel="Sort recordings"
         />
