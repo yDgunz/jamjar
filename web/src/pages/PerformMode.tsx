@@ -54,7 +54,7 @@ export default function PerformMode() {
       <div ref={perform.contentRef} className="flex min-h-full flex-col">
       {/* Header — auto-hides during scroll */}
       <header
-        className={`sticky top-0 z-10 border-b border-gray-800 bg-gray-950/95 px-3 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 backdrop-blur transition-all duration-300 ${
+        className={`sticky top-0 z-10 border-b border-gray-800 bg-gray-950/95 px-3 pt-[max(0.625rem,var(--safe-top))] pb-2.5 backdrop-blur transition-all duration-300 ${
           perform.headerVisible ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0"
         }`}
       >
