@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { Link } from "react-router";
 import { useTuner } from "../hooks/useTuner";
 import TunerGauge from "../components/TunerGauge";
+import ToolsHeader from "../components/ToolsHeader";
 
 const LS_A4_KEY = "tuner-a4";
 const DEFAULT_A4 = 440;
@@ -53,31 +53,7 @@ export default function Tuner() {
   return (
     <div className="flex min-h-dvh flex-col bg-gray-950 text-gray-100">
       {/* Header */}
-      <header className="border-b border-gray-800 px-3 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5">
-        <div className="flex items-center gap-2">
-          <Link
-            to="/"
-            className="shrink-0 p-2 text-lg text-gray-400 hover:text-white"
-            title="Back"
-          >
-            &larr;
-          </Link>
-          <div className="flex flex-1 justify-center">
-            <div className="inline-flex rounded-lg bg-gray-900 p-0.5 text-sm">
-              <span className="rounded-md bg-gray-700 px-4 py-1.5 font-medium text-white">
-                Tuner
-              </span>
-              <Link
-                to="/metronome"
-                className="rounded-md px-4 py-1.5 text-gray-400 transition hover:text-gray-200"
-              >
-                Metronome
-              </Link>
-            </div>
-          </div>
-          <div className="w-10 shrink-0" />
-        </div>
-      </header>
+      <ToolsHeader active="Tuner" />
 
       {/* Body */}
       <div className="flex flex-1 flex-col items-center justify-center gap-6 px-4 pb-[env(safe-area-inset-bottom)]">
