@@ -74,6 +74,16 @@ export type ParsedLine =
   | { type: "text"; text: string }
   | { type: "empty" };
 
+/** Drop leading/trailing blank lines and squeeze runs of blank lines down to one. */
+export function tidyBlankLines(text: string): string {
+  return text
+    .split("\n")
+    .map((l) => (l.trim() === "" ? "" : l))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^\n+|\n+$/g, "");
+}
+
 export function parseSheet(text: string): ParsedLine[] {
   const lines = text.split("\n");
   const result: ParsedLine[] = [];

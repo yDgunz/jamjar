@@ -1194,6 +1194,24 @@ def test_fetch_lyrics_success(seeded_client):
     assert data["song"]["sheet"] == "Imagine there's no heaven..."
 
 
+def test_fetch_lyrics_appends_with_one_blank_line(seeded_client):
+    """Trailing blank lines in the chart and leading ones in the lyrics don't pile up."""
+    from unittest.mock import MagicMock, patch
+
+    client, uid, gid = seeded_client
+    client.post("/api/tracks/1/tag", json={"song_name": "Imagine"})
+    song_id = client.get("/api/songs").json()[0]["id"]
+    client.put(
+        f"/api/songs/{song_id}/details",
+        json={"artist": "John Lennon", "sheet": "Verse: C | F\n\n\n", "notes": ""},
+    )
+    mock_resp = MagicMock(status_code=200)
+    mock_resp.json.return_value = [{"plainLyrics": "\n\nImagine there's no heaven\n"}]
+    with patch("requests.get", return_value=mock_resp):
+        resp = client.post(f"/api/songs/{song_id}/fetch-lyrics")
+    assert resp.json()["song"]["sheet"] == "Verse: C | F\n\nImagine there's no heaven"
+
+
 def test_fetch_lyrics_not_found(seeded_client):
     from unittest.mock import MagicMock, patch
 
