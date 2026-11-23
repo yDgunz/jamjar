@@ -8,6 +8,9 @@ const ACTION_COUNTS: Record<string, [string, string]> = {
   added_lesson: ["how-to video", "how-to videos"],
   added_backing_track: ["backing track", "backing tracks"],
   added_background: ["history", "histories"],
+  cleaned_chart: ["chart cleaned up", "charts cleaned up"],
+  fixed_label: ["label fixed", "labels fixed"],
+  updated_chart: ["chart replaced", "charts replaced"],
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -15,6 +18,9 @@ const ACTION_LABELS: Record<string, string> = {
   added_lesson: "How-to video",
   added_backing_track: "Backing track",
   added_background: "About",
+  cleaned_chart: "Chart cleanup",
+  fixed_label: "Label fix",
+  updated_chart: "Chart replaced",
 };
 
 function when(iso: string): string {
