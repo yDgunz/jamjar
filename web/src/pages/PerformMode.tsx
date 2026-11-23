@@ -6,6 +6,7 @@ import { useFetch } from "../hooks/useFetch";
 import { transposeChartText } from "../utils/chordUtils";
 import { isChordPro, transposeChordPro } from "../utils/chordpro";
 import ChordSheet from "../components/ChordSheet";
+import NotebookSheet, { NotebookPage } from "../components/NotebookSheet";
 import PerformControls from "../components/PerformControls";
 import { usePerformMode } from "../hooks/usePerformMode";
 
@@ -49,7 +50,7 @@ export default function PerformMode() {
       onTouchStart={perform.handleTouchStart}
       onTouchEnd={perform.handleTouchEnd}
     >
-      <div ref={perform.contentRef}>
+      <div ref={perform.contentRef} className="flex min-h-full flex-col">
       {/* Header — auto-hides during scroll */}
       <header
         className={`sticky top-0 z-10 border-b border-gray-800 bg-gray-950/95 px-3 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 backdrop-blur transition-all duration-300 ${
@@ -90,21 +91,37 @@ export default function PerformMode() {
       </header>
 
       {/* Body */}
-      <div className={`p-4 sm:p-6 ${perform.fontClass}`}>
-        {hasSheet ? (
-          <div className="mx-auto max-w-3xl">
-            <ChordSheet text={sheetText} wrapText={perform.wrapText} lyricsOnly={perform.lyricsOnly} />
-          </div>
-        ) : (
-          <p className="text-gray-500">
-            No sheet content to display.{" "}
-            <Link to={`/songs/${songId}`} className="text-accent-400 hover:text-accent-300">
-              Add content
-            </Link>{" "}
-            first.
-          </p>
-        )}
-      </div>
+      {perform.notebook ? (
+        <NotebookPage title={song.name} subtitle={song.artist} fontClass={perform.fontClass}>
+          {hasSheet ? (
+            <NotebookSheet text={sheetText} wrapText={perform.wrapText} lyricsOnly={perform.lyricsOnly} />
+          ) : (
+            <p className="opacity-60">
+              No sheet content to display.{" "}
+              <Link to={`/songs/${songId}`} className="underline">
+                Add content
+              </Link>{" "}
+              first.
+            </p>
+          )}
+        </NotebookPage>
+      ) : (
+        <div className={`p-4 sm:p-6 ${perform.fontClass}`}>
+          {hasSheet ? (
+            <div className="mx-auto max-w-3xl">
+              <ChordSheet text={sheetText} wrapText={perform.wrapText} lyricsOnly={perform.lyricsOnly} />
+            </div>
+          ) : (
+            <p className="text-gray-500">
+              No sheet content to display.{" "}
+              <Link to={`/songs/${songId}`} className="text-accent-400 hover:text-accent-300">
+                Add content
+              </Link>{" "}
+              first.
+            </p>
+          )}
+        </div>
+      )}
       </div>
 
     </div>

@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* Handwriting for perform mode's notebook look (latin subset only, self-hosted so it works offline) */
+@import "@fontsource/kalam/latin-400.css";
+@import "@fontsource/kalam/latin-700.css";
 
 @theme {
   --color-accent-300: #6ee7b7; /* emerald-300 — link hover */
@@ -35,4 +38,114 @@ html {
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* ── Perform mode: notebook look ─────────────────────────────────────────────
+   A sheet of ruled paper with the chart written by hand (NotebookSheet.tsx).
+   --nb-rule is the rule spacing as a unitless line-height, so each row is one
+   rule tall at any font size; text set at a different size divides it by its
+   own scale to stay on the same grid. */
+.nb-page {
+  --nb-rule: 1.8;
+  --nb-ink: #1d2b4f;       /* blue-black ballpoint */
+  --nb-chord: #c2231b;     /* red felt-tip */
+  --nb-pencil: #6b7280;
+  --nb-margin: 1.6rem;
+  position: relative;
+  flex: 1;
+  width: 100%;
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 0 0.75rem 6rem calc(var(--nb-margin) + 0.6rem);
+  font-family: "Kalam", "Bradley Hand", "Segoe Print", cursive;
+  line-height: var(--nb-rule);
+  color: var(--nb-ink);
+  background-color: #f7f2e4;
+  background-image:
+    /* red margin line */
+    linear-gradient(to right, transparent var(--nb-margin), rgb(214 92 92 / 0.55) var(--nb-margin), rgb(214 92 92 / 0.55) calc(var(--nb-margin) + 1.5px), transparent calc(var(--nb-margin) + 1.5px)),
+    /* ruled lines, one per row */
+    linear-gradient(to bottom, transparent calc(100% - 1px), rgb(96 140 190 / 0.34) calc(100% - 1px)),
+    /* paper grain */
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.28 0 0 0 0 0.15 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 100% 100%, 100% calc(var(--nb-rule) * 1em), 240px 240px;
+  /* drop the rules so writing sits on them rather than floating between */
+  background-position: 0 0, 0 -0.6em, 0 0;
+}
+@media (min-width: 640px) {
+  .nb-page {
+    --nb-margin: 4rem;
+    padding-right: 2rem;
+    box-shadow: 0 0 2.5rem rgb(0 0 0 / 0.6);
+  }
+  /* punched holes, showing the desk through the paper */
+  .nb-page::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3.5rem;
+    background: radial-gradient(circle at 1.75rem 9rem, #030712 0 0.55rem, rgb(0 0 0 / 0.25) 0.6rem, transparent 0.68rem);
+    background-size: 100% 26rem;
+    pointer-events: none;
+  }
+}
+.nb-blank {
+  height: calc(var(--nb-rule) * 1em);
+}
+.nb-title {
+  font-size: 1.5em;
+  line-height: calc(var(--nb-rule) * 2 / 1.5);
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 0.06em;
+  text-underline-offset: 0.16em;
+}
+.nb-title-sub {
+  color: var(--nb-pencil);
+}
+/* Chords: bold red felt-tip, a touch larger than the lyrics */
+.nb-chord {
+  display: inline-block;
+  font-size: 1.12em;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--nb-chord);
+  /* felt-tip bleeds a little into the paper */
+  text-shadow: 0 0 0.03em rgb(194 35 27 / 0.55);
+}
+.nb-chord-row {
+  display: block;
+  height: calc(var(--nb-rule) * 1em);
+}
+/* The chord row sits a little low, close over the lyric it belongs to */
+.nb-chord-row .nb-chord {
+  position: relative;
+  top: 0.2em;
+}
+/* Section names ("Chorus"): boxed, the way you'd mark them in a margin */
+.nb-heading {
+  display: inline-block;
+  padding: 0 0.45em;
+  font-size: 0.82em;
+  line-height: calc(var(--nb-rule) / 0.82 - 0.5);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--nb-pencil);
+  border: 0.09em solid currentColor;
+  border-radius: 0.5em 0.35em 0.55em 0.3em / 0.35em 0.6em 0.3em 0.5em;
+  transform: rotate(-0.8deg);
+  vertical-align: baseline;
+}
+/* Tab staves stay fixed-width so the frets line up; two lines per rule */
+.nb-tab {
+  overflow-x: auto;
+  white-space: pre;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  line-height: calc(var(--nb-rule) / 2 / 0.8);
+  color: var(--nb-ink);
+  opacity: 0.85;
+}
+.nb-tab-odd {
+  padding-bottom: calc(var(--nb-rule) / 2 / 0.8 * 1em);
 }

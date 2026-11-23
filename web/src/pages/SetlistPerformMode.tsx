@@ -6,6 +6,7 @@ import { useFetch } from "../hooks/useFetch";
 import { transposeChartText } from "../utils/chordUtils";
 import { isChordPro, transposeChordPro } from "../utils/chordpro";
 import ChordSheet from "../components/ChordSheet";
+import NotebookSheet, { NotebookPage } from "../components/NotebookSheet";
 import PerformControls from "../components/PerformControls";
 import { usePerformMode } from "../hooks/usePerformMode";
 
@@ -68,7 +69,7 @@ export default function SetlistPerformMode() {
       onTouchStart={perform.handleTouchStart}
       onTouchEnd={perform.handleTouchEnd}
     >
-      <div ref={perform.contentRef}>
+      <div ref={perform.contentRef} className="flex min-h-full flex-col">
       {/* Header */}
       <header
         className={`sticky top-0 z-10 border-b border-gray-800 bg-gray-950/95 px-3 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 backdrop-blur transition-all duration-300 ${
@@ -136,34 +137,63 @@ export default function SetlistPerformMode() {
       </header>
 
       {/* Body */}
-      <div className={`p-4 sm:p-6 ${perform.fontClass}`}>
-        {hasSheet ? (
-          <div className="mx-auto max-w-3xl">
-            <ChordSheet text={sheetText} wrapText={perform.wrapText} lyricsOnly={perform.lyricsOnly} />
-          </div>
-        ) : (
-          <p className="text-gray-500">
-            No sheet content for this song.{" "}
-            <Link to={`/songs/${currentSong.song_id}`} className="text-accent-400 hover:text-accent-300">
-              Add content
-            </Link>{" "}
-            first.
-          </p>
-        )}
+      {perform.notebook ? (
+        <NotebookPage title={currentSong.song_name} subtitle={currentSong.artist} fontClass={perform.fontClass}>
+          {hasSheet ? (
+            <NotebookSheet text={sheetText} wrapText={perform.wrapText} lyricsOnly={perform.lyricsOnly} />
+          ) : (
+            <p className="opacity-60">
+              No sheet content for this song.{" "}
+              <Link to={`/songs/${currentSong.song_id}`} className="underline">
+                Add content
+              </Link>{" "}
+              first.
+            </p>
+          )}
 
-        {/* Next song preview */}
-        {currentIdx < songs.length - 1 && (
-          <div className="mt-12 border-t border-gray-800 pt-4">
-            <button
-              data-nav-btn
-              onClick={(e) => { e.stopPropagation(); goToSong(currentIdx + 1); }}
-              className="text-sm text-gray-500 hover:text-gray-300"
-            >
-              Up next: <span className="font-medium text-gray-400">{songs[currentIdx + 1].song_name}</span> &rsaquo;
-            </button>
-          </div>
-        )}
-      </div>
+          {/* Next song preview */}
+          {currentIdx < songs.length - 1 && (
+            <div className="mt-[3.6em]">
+              <button
+                data-nav-btn
+                onClick={(e) => { e.stopPropagation(); goToSong(currentIdx + 1); }}
+                className="opacity-70"
+              >
+                Up next: <span className="font-bold">{songs[currentIdx + 1].song_name}</span> &rsaquo;
+              </button>
+            </div>
+          )}
+        </NotebookPage>
+      ) : (
+        <div className={`p-4 sm:p-6 ${perform.fontClass}`}>
+          {hasSheet ? (
+            <div className="mx-auto max-w-3xl">
+              <ChordSheet text={sheetText} wrapText={perform.wrapText} lyricsOnly={perform.lyricsOnly} />
+            </div>
+          ) : (
+            <p className="text-gray-500">
+              No sheet content for this song.{" "}
+              <Link to={`/songs/${currentSong.song_id}`} className="text-accent-400 hover:text-accent-300">
+                Add content
+              </Link>{" "}
+              first.
+            </p>
+          )}
+
+          {/* Next song preview */}
+          {currentIdx < songs.length - 1 && (
+            <div className="mt-12 border-t border-gray-800 pt-4">
+              <button
+                data-nav-btn
+                onClick={(e) => { e.stopPropagation(); goToSong(currentIdx + 1); }}
+                className="text-sm text-gray-500 hover:text-gray-300"
+              >
+                Up next: <span className="font-medium text-gray-400">{songs[currentIdx + 1].song_name}</span> &rsaquo;
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       </div>
     </div>
   );
