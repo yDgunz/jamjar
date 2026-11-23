@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useParams, Link } from "react-router";
+import { useParams, Link, useLocation } from "react-router";
 import { api, recordSongActivity } from "../api";
 import FetchError from "../components/FetchError";
 import { useFetch } from "../hooks/useFetch";
@@ -12,6 +12,7 @@ import { usePerformMode } from "../hooks/usePerformMode";
 
 export default function PerformMode() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const songId = Number(id);
   const { data: song, loading, error: fetchError, refresh } = useFetch(
     () => api.getSong(songId),
@@ -61,6 +62,7 @@ export default function PerformMode() {
         <div className="flex items-center gap-2">
           <Link
             to={`/songs/${songId}`}
+            state={location.state}
             className="shrink-0 p-2 text-lg text-gray-400 hover:text-white"
             title="Back to song"
           >

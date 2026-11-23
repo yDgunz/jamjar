@@ -31,8 +31,11 @@ function SortableRow({
   item,
   onRemove,
   readOnly,
+  back,
 }: {
   item: SetlistSong;
+  /** Where the song page's back link should return to. */
+  back: { to: string; label: string };
   onRemove: () => void;
   readOnly?: boolean;
 }) {
@@ -81,6 +84,7 @@ function SortableRow({
       <div className="min-w-0 flex-1">
         <Link
           to={`/songs/${item.song_id}`}
+          state={{ from: back }}
           className="text-sm font-medium text-gray-200 hover:text-accent-400"
         >
           {item.song_name}
@@ -439,6 +443,7 @@ export default function SetlistDetail() {
                 <SortableRow
                   key={item.song_id}
                   item={item}
+                  back={{ to: `/setlists/${id}`, label: setlist?.name ?? "Setlist" }}
                   readOnly={!canEdit(user)}
                   onRemove={() => handleRemoveSong(item.position)}
                 />
