@@ -1,13 +1,29 @@
-const CHORD_RE = /^[A-G][#b]?(m|min|maj|dim|aug|sus[24]?|add[249]?|M|Maj)?[0-9]*(\/[A-G][#b]?)?$/;
+// A chord: root, any run of qualities/extensions (m7b5, maj9, 7#9, sus4, add11,
+// +, dim7, ø…), and an optional slash bass.
+const CHORD_RE = /^[A-G][#b]?(?:maj|Maj|min|dim|aug|sus|add|m|M|\+|°|ø|[0-9]|[#b](?=[0-9]))*(?:\/[A-G][#b]?)?$/;
 
+// Non-chord tokens that still belong on a chord line: separators, held-chord
+// marks, repeat counts and short annotations like {twice} or (repeat).
+const CHORD_LINE_EXTRA_RE =
+  /^(-+|\/+|\|+|%|\.{2,}|\*+|\(?(?:x\d+|\d+x)\)?|N\.?C\.?|\{[^}]*\}|\((?:repeat|twice|x\d+|\d+x)\))$/i;
+
+/**
+ * A chord, allowing the decorations chord charts put around them: wrapping
+ * parentheses, trailing * or _ (held), and hyphen-joined runs ("F/A-Bb-F/A").
+ */
 export function isChordToken(token: string): boolean {
-  return CHORD_RE.test(token);
+  const t = token.replace(/^\(+/, "").replace(/[)*_]+$/, "");
+  const parts = t.split("-").filter(Boolean);
+  return parts.length > 0 && parts.every((p) => CHORD_RE.test(p));
 }
 
 export function isChordLine(line: string): boolean {
   const tokens = line.trim().split(/\s+/);
   if (tokens.length === 0 || (tokens.length === 1 && tokens[0] === "")) return false;
-  return tokens.every((t) => CHORD_RE.test(t));
+  return (
+    tokens.every((t) => isChordToken(t) || CHORD_LINE_EXTRA_RE.test(t)) &&
+    tokens.some(isChordToken)
+  );
 }
 
 export function isHeaderLine(line: string): boolean {
