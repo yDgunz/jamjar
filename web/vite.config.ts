@@ -27,6 +27,8 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
+        // Precache the handwriting font too, so the notebook look works offline
+        globPatterns: ['**/*.{js,css,html,woff2}'],
         // No navigateFallback — use NetworkFirst for navigations instead,
         // so the browser always fetches fresh index.html from the server.
         // Hashed JS/CSS bundles are still precached and served instantly.

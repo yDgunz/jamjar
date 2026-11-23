@@ -7,6 +7,7 @@ const LS_FONT_KEY = "perform-font-size";
 const LS_SPEED_KEY = "perform-scroll-speed";
 const LS_WRAP_KEY = "perform-wrap-text";
 const LS_LYRICS_ONLY_KEY = "perform-lyrics-only";
+const LS_NOTEBOOK_KEY = "perform-notebook";
 
 function loadInt(key: string, def: number, max: number): number {
   const stored = localStorage.getItem(key);
@@ -25,6 +26,8 @@ export function usePerformMode() {
 
   const [wrapText, setWrapText] = useState(() => localStorage.getItem(LS_WRAP_KEY) !== "0");
   const [lyricsOnly, setLyricsOnly] = useState(() => localStorage.getItem(LS_LYRICS_ONLY_KEY) === "1");
+  // Alternative look: the chart handwritten on ruled paper
+  const [notebook, setNotebook] = useState(() => localStorage.getItem(LS_NOTEBOOK_KEY) === "1");
   const [headerVisible, setHeaderVisible] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -44,6 +47,8 @@ export function usePerformMode() {
   useEffect(() => { localStorage.setItem(LS_SPEED_KEY, String(speedIdx)); }, [speedIdx]);
   useEffect(() => { localStorage.setItem(LS_WRAP_KEY, wrapText ? "1" : "0"); }, [wrapText]);
   useEffect(() => { localStorage.setItem(LS_LYRICS_ONLY_KEY, lyricsOnly ? "1" : "0"); }, [lyricsOnly]);
+
+  useEffect(() => { localStorage.setItem(LS_NOTEBOOK_KEY, notebook ? "1" : "0"); }, [notebook]);
 
   // Screen wake lock
   useEffect(() => {
@@ -247,6 +252,7 @@ export function usePerformMode() {
 
     wrapText, setWrapText,
     lyricsOnly, setLyricsOnly,
+    notebook, setNotebook,
     headerVisible, setHeaderVisible,
     showSettings, setShowSettings,
     scrollRef, contentRef,

@@ -12,6 +12,7 @@ export default function PerformControls({ hasSheet, perform }: Props) {
     showSettings, setShowSettings,
     wrapText, setWrapText,
     lyricsOnly, setLyricsOnly,
+    notebook, setNotebook,
     fontIdx, setFontIdx,
     speedIdx, setSpeedIdx,
   } = perform;
@@ -84,6 +85,23 @@ export default function PerformControls({ hasSheet, perform }: Props) {
               </>
             )}
           </div>
+          <span className="mx-0.5 text-gray-800">|</span>
+        </>
+      )}
+      {hasSheet && (
+        <>
+          <button
+            onClick={(e) => { e.stopPropagation(); setNotebook((v) => !v); }}
+            aria-pressed={notebook}
+            className={`rounded-lg px-2 py-1.5 active:bg-gray-800 ${notebook ? "text-accent-400" : "text-gray-300"}`}
+            title={notebook ? "Switch to the standard look" : "Switch to the handwritten notebook look"}
+          >
+            {/* notebook with a pencil */}
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+              <path d="M10 17H5.5A1.5 1.5 0 0 1 4 15.5v-11A1.5 1.5 0 0 1 5.5 3h8A1.5 1.5 0 0 1 15 4.5V7M2.5 6.5h3M2.5 10h3M2.5 13.5h3" />
+              <path d="m12 17 .5-2.5 4.4-4.4a1.4 1.4 0 0 1 2 2l-4.4 4.4L12 17Z" />
+            </svg>
+          </button>
           <span className="mx-0.5 text-gray-800">|</span>
         </>
       )}
