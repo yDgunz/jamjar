@@ -9,7 +9,7 @@ const TOOLS = [
 /** Header shared by the full-screen tools, with a back arrow and a switcher between them. */
 export default function ToolsHeader({ active }: { active: (typeof TOOLS)[number]["label"] }) {
   return (
-    <header className="border-b border-gray-800 px-3 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5">
+    <header className="border-b border-gray-800 px-3 pt-[max(0.625rem,var(--safe-top))] pb-2.5">
       <div className="flex items-center gap-2">
         <Link to="/" className="shrink-0 p-2 text-lg text-gray-400 hover:text-white" title="Back">
           &larr;
