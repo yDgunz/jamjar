@@ -260,6 +260,9 @@ export interface Song {
   created_by_name: string | null;
   /** Whether the song has a chart (list responses leave `sheet` empty) */
   has_sheet: boolean;
+  /** Guitar tab (intros, riffs, solos), separate from the chart; empty in list responses */
+  tab: string;
+  has_tab: boolean;
   /** When the song was added (UTC "YYYY-MM-DD HH:MM:SS") */
   created_at: string | null;
   updated_by_name: string | null;
@@ -673,6 +676,13 @@ export const api = {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(details),
+    }),
+
+  setSongTab: (songId: number, tab: string) =>
+    fetchJson<Song>(`${BASE}/songs/${songId}/tab`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tab }),
     }),
 
   fetchLyrics: (songId: number) =>
