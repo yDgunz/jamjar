@@ -8,7 +8,7 @@ export interface BreadcrumbItem {
 
 export default function Breadcrumb({ items, right }: { items: BreadcrumbItem[]; right?: ReactNode }) {
   return (
-    <nav className="mb-3 flex items-center gap-1.5 text-sm text-gray-500">
+    <nav className="mb-3 hidden items-center sm:flex gap-1.5 text-sm text-gray-500">
       {items.map((item, i) => (
         <span key={i} className="flex items-center gap-1.5">
           {i > 0 && (

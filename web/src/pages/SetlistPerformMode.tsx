@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useParams, Link } from "react-router";
+import { useParams, Link, useNavigate, useLocation } from "react-router";
 import { api, recordSongActivity } from "../api";
 import FetchError from "../components/FetchError";
 import { useFetch } from "../hooks/useFetch";
@@ -12,6 +12,12 @@ import { usePerformMode } from "../hooks/usePerformMode";
 
 export default function SetlistPerformMode() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const navigate = useNavigate();
+  // Leaving Perform mode pops it off history, so Back afterwards doesn't land here again
+  const exit = (e: React.MouseEvent) => {
+    if (location.key !== "default") { e.preventDefault(); navigate(-1); }
+  };
   const setlistId = Number(id);
   const { data: fetchedData, loading, error: fetchError, refresh } = useFetch(
     () => Promise.all([api.getSetlist(setlistId), api.getSetlistSongs(setlistId)]),
@@ -80,6 +86,7 @@ export default function SetlistPerformMode() {
         <div className="flex items-center gap-1">
           <Link
             to={`/setlists/${setlistId}`}
+            onClick={exit}
             className="shrink-0 p-2 text-lg text-gray-400 hover:text-white"
             title="Back to setlist"
           >

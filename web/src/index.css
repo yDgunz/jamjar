@@ -15,11 +15,19 @@ html {
   background-color: theme(--color-gray-950);
 }
 
-/* Where page content can start at the top. iOS Home Screen apps are always drawn
-   under the status bar, and iOS blurs/fades a band of content below it, so on
-   devices with a top inset we add that band (capped at 2.5rem). Zero elsewhere. */
+/* Where page content can start at the top: below the notch/status bar inset, and,
+   in the iOS Home Screen app, below the band iOS blurs and fades at the top of the
+   page (about 35pt, measured from screenshots). That band is reported as no inset, so
+   it is added explicitly; -webkit-touch-callout limits it to iOS. */
 :root {
-  --safe-top: calc(env(safe-area-inset-top) + min(2.5rem, env(safe-area-inset-top)));
+  --safe-top: env(safe-area-inset-top);
+}
+@media (display-mode: standalone) {
+  @supports (-webkit-touch-callout: none) {
+    :root {
+      --safe-top: calc(env(safe-area-inset-top) + 2.25rem);
+    }
+  }
 }
 
 /* Tailwind v4 dropped the pointer cursor from buttons; restore it for anything clickable */

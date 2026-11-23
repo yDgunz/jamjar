@@ -283,12 +283,12 @@ export default function SessionDetail() {
 
   return (
     <div>
-      <Link to="/sessions" className="-ml-1 inline-flex items-center text-[15px] text-accent-400 active:opacity-70">
+      <Link to="/sessions" className="-ml-1 hidden items-center sm:inline-flex text-[15px] text-accent-400 active:opacity-70">
         <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" /></svg>
         Recordings
       </Link>
 
-      <div className="mt-2 flex items-start gap-2">
+      <div className="flex items-start gap-2 sm:mt-2">
         <div className="min-w-0 flex-1">
           {editingName && canEdit(user) ? (
             <input

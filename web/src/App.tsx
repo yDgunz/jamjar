@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from "react-router";
+import { useBack, parentPath } from "./hooks/useBack";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { api, isSuperAdmin, ApiError } from "./api";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -198,6 +199,9 @@ function Layout({ children }: { children: React.ReactNode }) {
   const desktopMoreRef = useRef<HTMLDivElement>(null);
 
   const isActive = (to: string) => location.pathname.startsWith(to);
+  // Detail pages get a Back button in the bottom bar (no top breadcrumb on phones)
+  const parent = parentPath(location.pathname);
+  const goBack = useBack(parent ?? "/songs");
   const moreActive = ["/tuner", "/metronome", "/practice", "/admin"].some((p) => location.pathname.startsWith(p));
 
   // Close the menu on navigation
@@ -269,6 +273,18 @@ function Layout({ children }: { children: React.ReactNode }) {
       {/* Bottom tab bar for mobile */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-white/[0.07] bg-gray-950/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg sm:hidden">
         <div className="flex items-stretch justify-around">
+          {parent && (
+            <button
+              onClick={goBack}
+              className="flex flex-1 flex-col items-center gap-0.5 pb-1.5 pt-2 text-gray-300 active:text-white"
+              aria-label="Back"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-6 w-6">
+                <path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
+              </svg>
+              <span className="text-[11px] font-medium">Back</span>
+            </button>
+          )}
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
