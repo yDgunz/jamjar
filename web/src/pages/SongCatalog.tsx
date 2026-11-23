@@ -4,8 +4,7 @@ import { api, formatRelative, formatShortDate, canEdit, localSongActivity } from
 import type { Song } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
-import GroupSelector from "../components/GroupSelector";
-import InlineSelect from "../components/InlineSelect";
+import FilterChip from "../components/FilterChip";
 import ListItemCard, { ListRows } from "../components/ListItemCard";
 import PageHeader, { HeaderIconButton, PlusIcon } from "../components/PageHeader";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
@@ -15,12 +14,12 @@ import { useFetch } from "../hooks/useFetch";
 
 type SortKey = "opened" | "performed" | "recorded" | "added" | "takes";
 
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: "opened", label: "Recently opened" },
-  { key: "performed", label: "Recently performed" },
-  { key: "recorded", label: "Recently recorded" },
-  { key: "added", label: "Recently added" },
-  { key: "takes", label: "Most recorded" },
+const SORT_OPTIONS: { key: SortKey; label: string; short: string }[] = [
+  { key: "opened", label: "Recently opened", short: "Opened" },
+  { key: "performed", label: "Recently performed", short: "Performed" },
+  { key: "recorded", label: "Recently recorded", short: "Recorded" },
+  { key: "added", label: "Recently added", short: "Added" },
+  { key: "takes", label: "Most recorded", short: "Most takes" },
 ];
 
 const SORT_KEYS = SORT_OPTIONS.map((o) => o.key) as string[];
@@ -219,17 +218,40 @@ export default function SongCatalog() {
 
       <SearchInput value={query} onChange={setQuery} placeholder="Search songs, artists, lyrics" />
 
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-sm text-gray-400">
-        <InlineSelect
+      {/* One scrollable row of chips: sort first, then filters (highlighted when set) */}
+      <div className="no-scrollbar -mx-4 mt-3 flex items-center gap-2 overflow-x-auto px-4 pb-1">
+        <FilterChip
+          value={sortBy}
+          options={SORT_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
+          onChange={setSortBy}
+          ariaLabel="Sort songs"
+          display={(v) => SORT_OPTIONS.find((o) => o.key === v)?.short ?? ""}
+          icon={
+            <svg className="h-3.5 w-3.5 shrink-0 opacity-70" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+              <path fillRule="evenodd" d="M2.24 6.8a.75.75 0 0 0 1.06-.04l1.95-2.1v8.59a.75.75 0 0 0 1.5 0V4.66l1.95 2.1a.75.75 0 1 0 1.1-1.02l-3.25-3.5a.75.75 0 0 0-1.1 0L2.2 5.74a.75.75 0 0 0 .04 1.06Zm8 6.4a.75.75 0 0 0-.04 1.06l3.25 3.5a.75.75 0 0 0 1.1 0l3.25-3.5a.75.75 0 1 0-1.1-1.02l-1.95 2.1V6.75a.75.75 0 0 0-1.5 0v8.59l-1.95-2.1a.75.75 0 0 0-1.06-.04Z" clipRule="evenodd" />
+            </svg>
+          }
+        />
+        {multiGroup && (
+          <FilterChip
+            value={groupFilter === null ? "" : String(groupFilter)}
+            options={[{ value: "", label: "All bands" }, ...user!.groups.map((g) => ({ value: String(g.id), label: g.name }))]}
+            onChange={(v) => setGroupFilter(v ? Number(v) : null)}
+            ariaLabel="Filter by band"
+            defaultValue=""
+            placeholder="Band"
+          />
+        )}
+        <FilterChip
           value={artistFilter}
-          options={[
-            { value: "", label: "All artists" },
-            ...artists.map(([a, n]) => ({ value: a, label: `${a} (${n})` })),
-          ]}
+          options={[{ value: "", label: "All artists" }, ...artists.map(([a, n]) => ({ value: a, label: `${a} (${n})` }))]}
           onChange={setArtistFilter}
           ariaLabel="Filter by artist"
+          display={(v) => v}
+          defaultValue=""
+          placeholder="Artist"
         />
-        <InlineSelect
+        <FilterChip
           value={recordedFilter}
           options={[
             { value: "any", label: "Recorded or not" },
@@ -238,8 +260,10 @@ export default function SongCatalog() {
           ]}
           onChange={setRecordedFilter}
           ariaLabel="Filter by recordings"
+          defaultValue="any"
+          placeholder="Recorded"
         />
-        <InlineSelect
+        <FilterChip
           value={activityFilter}
           options={[
             { value: "any", label: "Any activity" },
@@ -248,36 +272,17 @@ export default function SongCatalog() {
           ]}
           onChange={setActivityFilter}
           ariaLabel="Filter by whether you've opened the song"
+          defaultValue="any"
+          placeholder="Activity"
         />
-        {filtersOn && (
+        {(filtersOn || groupFilter !== null) && (
           <button
-            onClick={() => { setArtistFilter(""); setRecordedFilter("any"); setActivityFilter("any"); }}
-            className="py-1 text-accent-400 hover:text-accent-300"
+            onClick={() => { setArtistFilter(""); setRecordedFilter("any"); setActivityFilter("any"); setGroupFilter(null); }}
+            className="shrink-0 px-1 text-sm text-gray-400 hover:text-gray-200"
           >
             Clear
           </button>
         )}
-      </div>
-
-      <div className="flex items-center justify-between gap-2 text-sm text-gray-400">
-        <span>
-          {results.length} song{results.length !== 1 ? "s" : ""}
-        </span>
-        <div className="flex min-w-0 items-center gap-4">
-          <GroupSelector
-            groups={user?.groups ?? []}
-            value={groupFilter}
-            onChange={setGroupFilter}
-            allLabel="All bands"
-            variant="subtle"
-          />
-          <InlineSelect
-            value={sortBy}
-            options={SORT_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
-            onChange={setSortBy}
-            ariaLabel="Sort songs"
-          />
-        </div>
       </div>
 
       <FormModal
