@@ -285,6 +285,34 @@ export interface Job {
   error: string | null;
 }
 
+export interface DriveInfo {
+  configured: boolean;
+  service_account_email: string | null;
+}
+
+export interface DriveFolder {
+  id: number;
+  folder_id: string;
+  name: string;
+  group_id: number | null;
+  group_name: string | null;
+  created_at: string;
+}
+
+export interface DriveFile {
+  id: string;
+  name: string;
+  /** Subfolder names below the linked folder */
+  path: string[];
+  size: number;
+  created_time: string | null;
+  modified_time: string | null;
+  suggested_date: string | null;
+  status: "new" | "imported" | "skipped" | "duplicate";
+  session_id: number | null;
+  session_name: string | null;
+}
+
 export interface UploadInitResponse {
   upload_url: string | null;
   r2_key: string | null;
@@ -821,6 +849,36 @@ export const api = {
   },
 
   getJob: (jobId: string) => fetchJson<Job>(`${BASE}/jobs/${jobId}`),
+
+  driveInfo: () => fetchJson<DriveInfo>(`${BASE}/drive`),
+  driveFolders: () => fetchJson<DriveFolder[]>(`${BASE}/drive/folders`),
+  driveAddFolder: (url: string, groupId: number | null) =>
+    fetchJson<DriveFolder>(`${BASE}/drive/folders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, group_id: groupId }),
+    }),
+  driveSetFolderGroup: (folderId: number, groupId: number | null) =>
+    fetchJson<DriveFolder>(`${BASE}/drive/folders/${folderId}/group`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_id: groupId }),
+    }),
+  driveRemoveFolder: (folderId: number) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/drive/folders/${folderId}`, { method: "DELETE" }),
+  driveFiles: (folderId: number) => fetchJson<DriveFile[]>(`${BASE}/drive/folders/${folderId}/files`),
+  driveImport: (fileId: string, groupId: number, opts: { single?: boolean } = {}) =>
+    fetchJson<Job>(`${BASE}/drive/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_id: fileId, group_id: groupId, ...opts }),
+    }),
+  driveSkip: (fileId: string, fileName: string, skipped: boolean) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/drive/skip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_id: fileId, file_name: fileName, skipped }),
+    }),
 
   // Setlists
   listSetlists: () => fetchJson<Setlist[]>(`${BASE}/setlists`),

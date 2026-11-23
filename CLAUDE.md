@@ -58,6 +58,7 @@ Audio Engine (FFmpeg) → decoding, conversion, extraction
 | `output.py` | Output filename generation, segment export orchestration |
 | `db.py` | SQLite schema, `Database` class with user/group/session/track/song CRUD |
 | `track_ops.py` | Merge/split track operations: re-export, renumber |
+| `gdrive.py` | Read-only Google Drive client via a service account (JWT → token, list folder audio recursively, stream downloads); `get_drive_client()` is None when unconfigured |
 | `storage.py` | Storage abstraction: `LocalStorage` (filesystem) and `R2Storage` (Cloudflare R2), incl. `list_objects()` for usage stats |
 | `api.py` | FastAPI app, auth middleware, Pydantic models, REST endpoints, audio streaming |
 
@@ -140,6 +141,7 @@ created_at                    used_at (nullable)
 - `song_activity (user_id, song_id, last_opened_at, last_performed_at)`: per-user "recently opened/performed" timestamps (UTC), CASCADE on user/song delete, merged (latest wins) on song merge. Recorded by the song page (opened) and Perform mode (performed)
 - `songs.background` / `background_sources`: a short written history of the song ("About" tab) with a JSON list of `{title, url}` sources. Written offline by Claude from web sources and stored as static content through the API (the server never calls an LLM); filled from the merged song on a song merge
 - `curation_runs (id, summary, items JSON, created_at)`: log of the scheduled library-curation routine (a daily Claude session that adds songs and fills in videos/histories through the API). `items` is a list of `{song_id, song_name, action}` with action `added_song`/`added_lesson`/`added_backing_track`/`added_background`
+- `drive_folders (id, folder_id UNIQUE, name, group_id nullable = mixed bands, created_by)`: Drive folders shared with the service account; `drive_imports (drive_file_id PK, file_name, status imported|skipped|duplicate, session_id SET NULL, group_id, created_by)`: which Drive files were already handled, so they aren't offered again
 - `song_links → songs`: many-to-one, CASCADE delete. Reference videos (how-to lessons, backing tracks) shared by every band that plays the song; moved over by song merges
 - `share_links → tracks`: one-to-one, CASCADE delete
 - `share_links → users`: many-to-one (nullable), SET NULL on delete
@@ -154,6 +156,7 @@ All `/api` endpoints require authentication (JWT cookie or API key header). Role
 
 **Auth:** `POST /api/auth/login` | `POST /api/auth/logout` | `GET /api/auth/me` | `PUT /api/auth/password`
 **Sessions:** `GET /api/sessions` | `GET /api/sessions/{id}` | `GET /api/sessions/{id}/tracks` | `GET /api/sessions/{id}/audio` | `PUT /api/sessions/{id}/name` | `PUT /api/sessions/{id}/notes` | `PUT /api/sessions/{id}/date` | `PUT /api/sessions/{id}/group` (admin) | `DELETE /api/sessions/{id}` (admin) | `POST /api/sessions/{id}/reprocess` (admin; `{threshold, min_duration, single}` to re-detect, or `{segments: [[start, end], ...]}` to split by hand) | `POST /api/sessions/upload/init` (admin, returns presigned URL + job) | `POST /api/sessions/upload/complete` (admin, starts processing after R2 upload) | `POST /api/sessions/upload` (admin, direct multipart fallback, returns 202 + job)
+**Google Drive import** (admin): `GET /api/drive` (`{configured, service_account_email}`) | `GET /api/drive/folders` | `POST /api/drive/folders` (`{url, group_id?}`; folder must be shared with the service account) | `PUT /api/drive/folders/{id}/group` | `DELETE /api/drive/folders/{id}` (imports are kept) | `GET /api/drive/folders/{id}/files` (audio in the folder and subfolders, newest first, with `status` new/imported/skipped/duplicate and `suggested_date`) | `POST /api/drive/import` (`{file_id, group_id, name?, date?, single?, force?, threshold?}`, 202 + job like an upload; duplicates by duration fail the job and mark the file `duplicate`) | `POST /api/drive/skip` (`{file_id, file_name?, skipped}`). UI: Recordings → Upload → Import from Google Drive (`/import/drive`)
 **Jobs:** `GET /api/jobs/{id}` — poll for upload progress (status: pending → processing → completed/failed)
 **Tracks:** `POST /api/tracks/{id}/tag` | `DELETE /api/tracks/{id}/tag` | `PUT /api/tracks/{id}/notes` | `GET /api/tracks/{id}/audio` | `POST /api/tracks/{id}/merge` (admin) | `POST /api/tracks/{id}/split` (admin) | `PUT /api/tracks/{id}/trim` (admin) | `POST /api/tracks/{id}/share` | `DELETE /api/tracks/{id}/share`
 **Share (public):** `GET /share/{token}` | `GET /api/share/{token}/audio`
@@ -330,6 +333,7 @@ All configuration is via `JAM_*` environment variables. Defaults match pre-confi
 | `JAM_SMTP_PASSWORD` | *(empty)* | SMTP password |
 | `JAM_SMTP_FROM` | *(empty)* | From address for emails (falls back to SMTP_USER) |
 | `JAM_APP_URL` | `http://localhost:5173` | Public URL of the app (used in invite links) |
+| `JAM_GOOGLE_SERVICE_ACCOUNT` | *(empty)* | Google service account JSON key (raw JSON, base64 JSON, or a file path) for Drive import; Drive import is hidden/503 when unset. Needs the Google Drive API enabled on its project |
 | `JAM_ACCESS_REQUEST_EMAIL` | *(empty)* | Email address for access request notifications (falls back to `JAM_SMTP_FROM`) |
 
 Path values stored in the DB are relative to `JAM_DATA_DIR`. The `config.resolve_path()` method resolves them to absolute at runtime. Already-absolute paths (from old DBs) pass through unchanged.
