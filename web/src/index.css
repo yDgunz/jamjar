@@ -26,3 +26,13 @@ html {
   0%, 100% { height: 30%; }
   50% { height: 100%; }
 }
+
+/* Horizontal chip rows scroll without showing a scrollbar */
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
