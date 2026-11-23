@@ -1647,6 +1647,24 @@ class Database:
         )
         self.conn.commit()
 
+    def fail_interrupted_jobs(self, stale_pending_hours: int = 2) -> int:
+        """Fail jobs a previous server process left unfinished.
+
+        'processing' jobs can't still be running after a restart. 'pending' jobs are
+        only failed once stale: a presigned upload stays pending while the browser
+        uploads straight to storage, which a restart doesn't interrupt.
+        """
+        cur = self.conn.execute(
+            "UPDATE jobs SET status = 'failed',"
+            " error = 'Interrupted by a server restart. Re-split the recording to try again.',"
+            " updated_at = datetime('now')"
+            " WHERE status = 'processing'"
+            " OR (status = 'pending' AND created_at < datetime('now', ?))",
+            (f"-{stale_pending_hours} hours",),
+        )
+        self.conn.commit()
+        return cur.rowcount
+
     def fail_job(self, job_id: str, error: str):
         self.conn.execute(
             "UPDATE jobs SET status = 'failed', error = ?,"
