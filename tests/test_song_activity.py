@@ -79,3 +79,14 @@ def test_merge_keeps_latest_activity(tmp_path: Path):
         "last_opened_at": "2026-02-01 00:00:00",
         "last_performed_at": "2026-02-02 00:00:00",
     }
+
+
+def test_song_response_includes_created_at(client):  # noqa: F811
+    from jam_session_processor import api as _api
+
+    gid = _api._db.create_group("G")
+    sid = _api._db._get_or_create_song("New One", gid)
+    body = client.get(f"/api/songs/{sid}", headers={"x-api-key": "test-api-key"}).json()
+    assert body["created_at"] and len(body["created_at"]) == 19
+    listed = client.get("/api/songs", headers={"x-api-key": "test-api-key"}).json()
+    assert listed[0]["created_at"] == body["created_at"]

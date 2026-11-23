@@ -270,6 +270,7 @@ class Song:
     updated_at: str | None = None
     background: str = ""
     background_sources: str = ""  # JSON list of {title, url}
+    created_at: str | None = None
 
 
 @dataclass
@@ -1312,7 +1313,7 @@ class Database:
                       COUNT(t.id) as take_count,
                       MIN(ses.date) as first_date, MAX(ses.date) as last_date,
                       s.created_by, s.updated_by, s.updated_at,
-                      s.background, s.background_sources
+                      s.background, s.background_sources, s.created_at
                FROM songs s
                LEFT JOIN tracks t ON t.song_id = s.id{take_filter}
                LEFT JOIN sessions ses ON t.session_id = ses.id

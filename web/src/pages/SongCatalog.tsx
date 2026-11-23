@@ -13,12 +13,13 @@ import SearchInput from "../components/SearchInput";
 import { useAuth } from "../context/AuthContext";
 import { useFetch } from "../hooks/useFetch";
 
-type SortKey = "opened" | "performed" | "recorded" | "takes";
+type SortKey = "opened" | "performed" | "recorded" | "added" | "takes";
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: "opened", label: "Recently opened" },
   { key: "performed", label: "Recently performed" },
   { key: "recorded", label: "Recently recorded" },
+  { key: "added", label: "Recently added" },
   { key: "takes", label: "Most recorded" },
 ];
 
@@ -97,6 +98,7 @@ export default function SongCatalog() {
       opened: (a, b) => byRecent(a.last_opened_at, b.last_opened_at, a.name, b.name),
       performed: (a, b) => byRecent(a.last_performed_at, b.last_performed_at, a.name, b.name),
       recorded: (a, b) => byRecent(a.last_date, b.last_date, a.name, b.name),
+      added: (a, b) => byRecent(a.created_at, b.created_at, a.name, b.name),
       takes: (a, b) => b.take_count - a.take_count || a.name.localeCompare(b.name),
     };
     // When searching, title/artist matches come before lyric-only matches
@@ -224,6 +226,7 @@ export default function SongCatalog() {
               const when =
                 sortBy === "opened" ? (song.last_opened_at ? `opened ${formatRelative(song.last_opened_at)}` : null)
                 : sortBy === "performed" ? (song.last_performed_at ? `performed ${formatRelative(song.last_performed_at)}` : null)
+                : sortBy === "added" ? (song.created_at ? `added ${formatRelative(song.created_at)}` : null)
                 : song.last_date ? `recorded ${formatShortDate(song.last_date)}` : null;
               const meta = [
                 song.artist,
