@@ -577,6 +577,8 @@ class SongResponse(BaseModel):
     created_by_name: str | None = None
     updated_by_name: str | None = None
     updated_at: str | None = None
+    # When the song was added to the catalog (UTC "YYYY-MM-DD HH:MM:SS")
+    created_at: str | None = None
     links: list[SongLinkResponse] = []
     # Short written history of the song ("About" tab); null when there is none
     background: SongBackground | None = None

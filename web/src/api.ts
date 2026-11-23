@@ -258,6 +258,8 @@ export interface Song {
   first_date: string | null;
   last_date: string | null;
   created_by_name: string | null;
+  /** When the song was added (UTC "YYYY-MM-DD HH:MM:SS") */
+  created_at: string | null;
   updated_by_name: string | null;
   updated_at: string | null;
 }
