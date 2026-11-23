@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { isChordToken, parseSheet } from "../utils/sheetParser";
+import { isChordToken, isHeaderLine, parseSheet } from "../utils/sheetParser";
 import { isChordPro, parseChordProLine } from "../utils/chordpro";
 
 /**
@@ -24,6 +24,7 @@ function toRows(text: string): Row[] {
     return text.split("\n").map((line): Row => {
       const parsed = parseChordProLine(line);
       if (parsed.type === "paired") return { type: "paired", segments: parsed.segments };
+      if (parsed.type === "text" && isHeaderLine(parsed.text)) return { type: "header", text: parsed.text };
       return parsed;
     });
   }
@@ -90,6 +91,40 @@ function Words({ text, seed, chords }: { text: string; seed: string; chords?: bo
 function isMostlyChords(text: string): boolean {
   const words = text.split(/\s+|\|/).filter((p) => p && !p.endsWith(":"));
   return words.length > 0 && words.filter(isChordToken).length / words.length >= 0.6;
+}
+
+/** "Verse 2" / "[Chorus (x2)]" → "verse 2" / "chorus": the name a progression line would use. */
+function sectionKey(label: string): string {
+  return label.replace(/^\s*\[|\]\s*$/g, "").replace(/\(.*?\)/g, "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * Charts often open with the progressions spelled out ("Verse: C | Em | Am | F").
+ * Collect them by section name so each section heading further down can repeat
+ * its progression, instead of it only being at the top of the page.
+ */
+function findProgressions(rows: Row[]): Map<string, string> {
+  const found = new Map<string, string>();
+  for (const row of rows) {
+    if (row.type !== "text") continue;
+    const m = /^\s*([^:|]{1,30}):\s*(\S.*)$/.exec(row.text);
+    if (!m || !isMostlyChords(m[2])) continue;
+    const key = sectionKey(m[1]);
+    if (!found.has(key)) found.set(key, m[2].trim());
+  }
+  return found;
+}
+
+/** The progression to show beside the heading at `index`, if its section doesn't already spell out chords. */
+function progressionFor(rows: Row[], index: number, progressions: Map<string, string>): string | undefined {
+  if (progressions.size === 0) return undefined;
+  for (let i = index + 1; i < rows.length && rows[i].type !== "header"; i++) {
+    const r = rows[i];
+    if (r.type === "paired" || r.type === "chords" || (r.type === "text" && isMostlyChords(r.text))) return undefined;
+  }
+  const key = sectionKey((rows[index] as { text: string }).text);
+  // "Verse 2" uses its own progression if there is one, otherwise the one for "Verse"
+  return progressions.get(key) ?? progressions.get(key.replace(/\s*\d+$/, ""));
 }
 
 /** Chord-over-lyric line that can wrap at any word (same grouping as ChordSheet's PairedLine). */
@@ -163,6 +198,7 @@ interface NotebookSheetProps {
 
 export default function NotebookSheet({ text, wrapText, lyricsOnly }: NotebookSheetProps) {
   const rows = toRows(text);
+  const progressions = lyricsOnly ? new Map<string, string>() : findProgressions(rows);
   const wrap = wrapText ? "whitespace-pre-wrap" : "whitespace-pre";
 
   return (
@@ -172,12 +208,20 @@ export default function NotebookSheet({ text, wrapText, lyricsOnly }: NotebookSh
         switch (row.type) {
           case "empty":
             return <div key={i} className="nb-blank" />;
-          case "header":
+          case "header": {
+            const progression = progressionFor(rows, i, progressions);
             return (
-              <div key={i} className="whitespace-pre">
+              <div key={i} className={progression ? wrap : "whitespace-pre"}>
                 <span className="nb-heading">{row.text.trim().replace(/^\[|\]$/g, "")}</span>
+                {progression && (
+                  <>
+                    {"  "}
+                    <Words text={progression} seed={seed} chords />
+                  </>
+                )}
               </div>
             );
+          }
           case "tab": {
             if (lyricsOnly) return null;
             // Tab lines are half a rule tall; pad an odd count so what follows is back on the lines

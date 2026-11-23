@@ -26,8 +26,8 @@ export function usePerformMode() {
 
   const [wrapText, setWrapText] = useState(() => localStorage.getItem(LS_WRAP_KEY) !== "0");
   const [lyricsOnly, setLyricsOnly] = useState(() => localStorage.getItem(LS_LYRICS_ONLY_KEY) === "1");
-  // Alternative look: the chart handwritten on ruled paper
-  const [notebook, setNotebook] = useState(() => localStorage.getItem(LS_NOTEBOOK_KEY) === "1");
+  // The chart handwritten on ruled paper (the default), or the standard dark look
+  const [notebook, setNotebook] = useState(() => localStorage.getItem(LS_NOTEBOOK_KEY) !== "0");
   const [headerVisible, setHeaderVisible] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
 
