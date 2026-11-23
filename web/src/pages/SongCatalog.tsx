@@ -267,7 +267,7 @@ export default function SongCatalog() {
           value={activityFilter}
           options={[
             { value: "any", label: "Any activity" },
-            { value: "yes", label: "Opened or played" },
+            { value: "yes", label: "Opened or performed" },
             { value: "no", label: "Never opened" },
           ]}
           onChange={setActivityFilter}
