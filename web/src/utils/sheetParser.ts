@@ -61,8 +61,14 @@ export function extractSegments(chordLine: string, lyricLine: string): Segment[]
   return segments;
 }
 
+/** A line of guitar tablature, e.g. "e|---3---|" or "B|-0-1-3-". */
+export function isTabLine(line: string): boolean {
+  return /^\s*[eEBGDAa]\s?[|:]/.test(line) && (line.match(/-/g) ?? []).length >= 4;
+}
+
 export type ParsedLine =
   | { type: "paired"; segments: Segment[] }
+  | { type: "tab"; text: string }
   | { type: "chords-only"; text: string }
   | { type: "header"; text: string }
   | { type: "text"; text: string }
@@ -79,6 +85,13 @@ export function parseSheet(text: string): ParsedLine[] {
     if (line.trim() === "") {
       result.push({ type: "empty" });
       i++;
+    } else if (isTabLine(line)) {
+      // Keep a run of tab lines together so the staff lines up
+      const block: string[] = [];
+      while (i < lines.length && isTabLine(lines[i])) block.push(lines[i++]);
+      // A beat-count line under the staff ("1 & 2 & 3 & 4 &") belongs with it
+      while (i < lines.length && /^[\s\d&+.|]+$/.test(lines[i]) && /\d/.test(lines[i])) block.push(lines[i++]);
+      result.push({ type: "tab", text: block.join("\n") });
     } else if (isHeaderLine(line)) {
       result.push({ type: "header", text: line });
       i++;
