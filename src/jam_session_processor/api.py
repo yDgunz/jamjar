@@ -1504,6 +1504,331 @@ async def upload_session(request: Request, file: UploadFile):
     )
 
 
+# --- Google Drive import ---
+
+
+class DriveFolderRequest(BaseModel):
+    url: Annotated[str, Field(max_length=500)]
+    group_id: int | None = None
+
+
+class DriveFolderGroupRequest(BaseModel):
+    group_id: int | None = None
+
+
+class DriveImportRequest(BaseModel):
+    file_id: ShortStr
+    group_id: int
+    name: NameStr | None = None
+    date: ShortStr | None = None
+    single: bool = False
+    force: bool = False
+    threshold: float | None = None
+
+
+class DriveSkipRequest(BaseModel):
+    file_id: ShortStr
+    file_name: NameStr = ""
+    skipped: bool = True
+
+
+def _drive_client_or_503():
+    from jam_session_processor.gdrive import get_drive_client
+
+    client = get_drive_client()
+    if not client:
+        raise HTTPException(
+            status_code=503,
+            detail="Google Drive import is not set up (JAM_GOOGLE_SERVICE_ACCOUNT is missing)",
+        )
+    return client
+
+
+def _drive_http_error(e) -> HTTPException:
+    if e.status in (403, 404):
+        email = _drive_client_or_503().email
+        return HTTPException(
+            status_code=400,
+            detail=f"JamJar can't see that in Google Drive. Share it with {email} and try again.",
+        )
+    return HTTPException(status_code=502, detail=str(e))
+
+
+def _visible_drive_folder(request: Request, folder_pk: int) -> dict:
+    folder = get_db().get_drive_folder(folder_pk)
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    group_ids = _get_group_ids(request)
+    if group_ids is not None and folder["group_id"] is not None:
+        if folder["group_id"] not in group_ids:
+            raise HTTPException(status_code=404, detail="Folder not found")
+    return folder
+
+
+@app.get("/api/drive")
+def drive_info(request: Request):
+    """Whether Drive import is configured, and the address to share folders with."""
+    _require_role(request, "admin")
+    from jam_session_processor.gdrive import get_drive_client
+
+    client = get_drive_client()
+    return {
+        "configured": client is not None,
+        "service_account_email": client.email if client else None,
+    }
+
+
+@app.get("/api/drive/folders")
+def list_drive_folders(request: Request):
+    _require_role(request, "admin")
+    group_ids = _get_group_ids(request)
+    folders = get_db().list_drive_folders()
+    if group_ids is not None:
+        folders = [f for f in folders if f["group_id"] is None or f["group_id"] in group_ids]
+    return folders
+
+
+@app.post("/api/drive/folders")
+def add_drive_folder(req: DriveFolderRequest, request: Request):
+    """Link a Drive folder (shared with the service account) so its recordings can be imported."""
+    _require_role(request, "admin")
+    from jam_session_processor.gdrive import FOLDER_MIME, DriveError, parse_folder_id
+
+    client = _drive_client_or_503()
+    folder_id = parse_folder_id(req.url)
+    if not folder_id:
+        raise HTTPException(
+            status_code=400, detail="That doesn't look like a Google Drive folder link"
+        )
+    if req.group_id is not None:
+        _require_group_access(request, req.group_id)
+    db = get_db()
+    if any(f["folder_id"] == folder_id for f in db.list_drive_folders()):
+        raise HTTPException(status_code=409, detail="That folder is already linked")
+    try:
+        meta = client.get_file(folder_id)
+    except DriveError as e:
+        raise _drive_http_error(e)
+    if meta.get("mimeType") != FOLDER_MIME:
+        raise HTTPException(status_code=400, detail="That link is a file, not a folder")
+    user_id = request.state.user.id if request.state.user else None
+    pk = db.add_drive_folder(folder_id, meta.get("name", ""), req.group_id, user_id)
+    return db.get_drive_folder(pk)
+
+
+@app.put("/api/drive/folders/{folder_pk}/group")
+def set_drive_folder_group(folder_pk: int, req: DriveFolderGroupRequest, request: Request):
+    _require_role(request, "admin")
+    _visible_drive_folder(request, folder_pk)
+    if req.group_id is not None:
+        _require_group_access(request, req.group_id)
+    db = get_db()
+    db.update_drive_folder_group(folder_pk, req.group_id)
+    return db.get_drive_folder(folder_pk)
+
+
+@app.delete("/api/drive/folders/{folder_pk}")
+def remove_drive_folder(folder_pk: int, request: Request):
+    """Unlink a folder. Recordings already imported from it are kept."""
+    _require_role(request, "admin")
+    _visible_drive_folder(request, folder_pk)
+    get_db().delete_drive_folder(folder_pk)
+    return {"ok": True}
+
+
+@app.get("/api/drive/folders/{folder_pk}/files")
+def list_drive_folder_files(folder_pk: int, request: Request):
+    """Audio files in a linked folder (and its subfolders), newest first, with import status."""
+    _require_role(request, "admin")
+    from jam_session_processor.gdrive import DriveError
+    from jam_session_processor.metadata import parse_date_from_filename
+
+    folder = _visible_drive_folder(request, folder_pk)
+    client = _drive_client_or_503()
+    try:
+        files = client.list_audio(folder["folder_id"])
+    except DriveError as e:
+        raise _drive_http_error(e)
+    db = get_db()
+    imports = db.get_drive_imports([f["id"] for f in files])
+    group_ids = _get_group_ids(request)
+    out = []
+    for f in files:
+        imp = imports.get(f["id"])
+        # Hide which recording another band's import became
+        if imp and group_ids is not None and imp["group_id"] not in group_ids:
+            imp = {**imp, "session_id": None, "session_name": None}
+        parsed = parse_date_from_filename(Path(f["name"]).stem)
+        out.append(
+            {
+                "id": f["id"],
+                "name": f["name"],
+                "path": f["path"],
+                "size": f["size"],
+                "created_time": f.get("createdTime"),
+                "modified_time": f.get("modifiedTime"),
+                "suggested_date": parsed.strftime("%Y-%m-%d") if parsed else None,
+                "status": imp["status"] if imp else "new",
+                "session_id": imp["session_id"] if imp else None,
+                "session_name": imp["session_name"] if imp else None,
+            }
+        )
+    out.sort(key=lambda f: f["created_time"] or "", reverse=True)
+    return out
+
+
+def _import_from_drive(
+    job_id: str,
+    session_id: int,
+    file_id: str,
+    file_name: str,
+    dest: Path,
+    group_id: int,
+    threshold: float,
+    single: bool,
+    force: bool,
+    user_id: int | None,
+):
+    """Background job: download a Drive file, check for duplicates, then process it."""
+    from jam_session_processor.gdrive import get_drive_client
+    from jam_session_processor.metadata import extract_metadata
+
+    db = get_db()
+    try:
+        client = get_drive_client()
+        if not client:
+            raise RuntimeError("Google Drive import is not set up")
+        db.update_job_progress(job_id, "Downloading from Google Drive...")
+        last = [0]
+
+        def progress(n: int):
+            if n - last[0] >= 10 * 1024 * 1024:
+                last[0] = n
+                db.update_job_progress(
+                    job_id, f"Downloading from Google Drive ({n // 1_000_000} MB)..."
+                )
+
+        client.download(file_id, dest, on_progress=progress)
+        if not force:
+            meta = extract_metadata(dest)
+            dup = (
+                db.find_duplicate_session(
+                    group_id, meta.duration_seconds, exclude_session_id=session_id
+                )
+                if meta.duration_seconds
+                else None
+            )
+            if dup:
+                dest.unlink(missing_ok=True)
+                db.delete_session(session_id)
+                db.set_drive_import(file_id, "duplicate", file_name, dup.id, group_id, user_id)
+                db.fail_job(
+                    job_id,
+                    "Already in JamJar: a recording with the same length exists"
+                    f" ('{dup.name}', {dup.date})",
+                )
+                return
+    except Exception as e:
+        logger.exception("Drive import failed for %s", file_id)
+        dest.unlink(missing_ok=True)
+        db.delete_session(session_id)
+        db.clear_drive_import(file_id)
+        db.fail_job(job_id, f"Google Drive download failed: {e}")
+        return
+    _process_upload(job_id, session_id, dest, group_id, threshold, single)
+
+
+@app.post("/api/drive/import", response_model=JobResponse, status_code=202)
+async def import_from_drive(req: DriveImportRequest, request: Request):
+    """Import one Drive file as a recording. Returns a job to poll, like an upload."""
+    _require_role(request, "admin")
+    _require_group_access(request, req.group_id)
+    from jam_session_processor.gdrive import DriveError
+    from jam_session_processor.metadata import parse_date_from_filename
+
+    client = _drive_client_or_503()
+    db = get_db()
+    if not db.get_group(req.group_id):
+        raise HTTPException(status_code=400, detail="Group not found")
+    existing = db.get_drive_imports([req.file_id]).get(req.file_id)
+    if existing and existing["status"] == "imported" and existing["session_id"] and not req.force:
+        raise HTTPException(status_code=409, detail="That file has already been imported")
+    try:
+        meta = await asyncio.get_event_loop().run_in_executor(None, client.get_file, req.file_id)
+    except DriveError as e:
+        raise _drive_http_error(e)
+    name = Path(meta.get("name") or "recording").name
+    ext = Path(name).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type '{ext}'")
+    cfg = get_config()
+    size = int(meta.get("size") or 0)
+    if size > cfg.max_upload_mb * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"File is larger than {cfg.max_upload_mb} MB")
+
+    dest = cfg.input_dir / "drive" / req.file_id / name
+    source_rel = cfg.make_relative(dest)
+    if req.date:
+        date_str = req.date
+    else:
+        parsed = parse_date_from_filename(Path(name).stem)
+        date_str = (
+            parsed.strftime("%Y-%m-%d") if parsed else (meta.get("createdTime") or "")[:10] or None
+        )
+    user_id = request.state.user.id if request.state.user else None
+    session_id = db.create_session(
+        source_rel, group_id=req.group_id, date=date_str, created_by=user_id
+    )
+    if req.name:
+        db.update_session_name(session_id, req.name, updated_by=user_id)
+    db.set_drive_import(req.file_id, "imported", name, session_id, req.group_id, user_id)
+    job_id = uuid4().hex[:16]
+    job = db.create_job(job_id, req.group_id, session_id=session_id)
+    if user_id:
+        db.log_activity(user_id, req.group_id, "upload", f"Google Drive: {name}")
+
+    threshold = req.threshold if req.threshold is not None else -20.0
+    asyncio.get_event_loop().run_in_executor(
+        None,
+        _import_from_drive,
+        job_id,
+        session_id,
+        req.file_id,
+        name,
+        dest,
+        req.group_id,
+        threshold,
+        req.single,
+        req.force,
+        user_id,
+    )
+    return JobResponse(
+        id=job.id,
+        type=job.type,
+        group_id=job.group_id,
+        status=job.status,
+        progress=job.progress,
+        session_id=job.session_id,
+        error=job.error,
+    )
+
+
+@app.post("/api/drive/skip")
+def skip_drive_file(req: DriveSkipRequest, request: Request):
+    """Hide (or un-hide) a Drive file from the import list without importing it."""
+    _require_role(request, "admin")
+    db = get_db()
+    existing = db.get_drive_imports([req.file_id]).get(req.file_id)
+    if existing and existing["status"] == "imported":
+        raise HTTPException(status_code=409, detail="That file has already been imported")
+    if req.skipped:
+        user_id = request.state.user.id if request.state.user else None
+        db.set_drive_import(req.file_id, "skipped", req.file_name, created_by=user_id)
+    else:
+        db.clear_drive_import(req.file_id)
+    return {"ok": True}
+
+
 # --- Track endpoints ---
 
 

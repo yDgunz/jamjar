@@ -308,6 +308,16 @@ export default function SessionList() {
         onConfirm={duplicateDetected ? () => doUpload(true) : handleUpload}
         onCancel={() => setUploadModalOpen(false)}
       >
+        <button
+          type="button"
+          onClick={() => navigate("/import/drive")}
+          className="flex w-full items-center justify-between rounded-md bg-gray-800 px-3 py-2 text-left text-sm text-gray-200 hover:bg-gray-700"
+        >
+          <span>Import from Google Drive</span>
+          <svg className="h-4 w-4 text-gray-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+            <path fillRule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+          </svg>
+        </button>
         <div>
           <input
             type="file"

@@ -22,6 +22,7 @@ services:
       - JAM_SMTP_PASSWORD=${JAM_SMTP_PASSWORD:-}
       - JAM_SMTP_FROM=${JAM_SMTP_FROM:-}
       - JAM_APP_URL=${JAM_APP_URL:-}
+      - JAM_GOOGLE_SERVICE_ACCOUNT=${JAM_GOOGLE_SERVICE_ACCOUNT:-}
     restart: unless-stopped
     healthcheck:
       test:

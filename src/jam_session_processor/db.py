@@ -83,6 +83,28 @@ CREATE TABLE IF NOT EXISTS song_activity (
     PRIMARY KEY (user_id, song_id)
 );
 
+-- Google Drive folders shared with the app's service account, for importing recordings.
+-- group_id is the band imports default to (NULL = choose per file).
+CREATE TABLE IF NOT EXISTS drive_folders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    folder_id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL DEFAULT '',
+    group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- One row per Drive file that was imported, skipped, or found to duplicate a recording.
+CREATE TABLE IF NOT EXISTS drive_imports (
+    drive_file_id TEXT PRIMARY KEY,
+    file_name TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,  -- imported | skipped | duplicate
+    session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+    group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Log of the scheduled library-curation routine (new songs, videos, histories).
 -- items is a JSON list of {song_id, song_name, action}.
 CREATE TABLE IF NOT EXISTS curation_runs (
@@ -509,6 +531,83 @@ class Database:
         )
         self.conn.commit()
 
+    # --- Google Drive import ---
+
+    def add_drive_folder(
+        self, folder_id: str, name: str, group_id: int | None, created_by: int | None
+    ) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO drive_folders (folder_id, name, group_id, created_by) VALUES (?, ?, ?, ?)",
+            (folder_id, name, group_id, created_by),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def list_drive_folders(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT f.id, f.folder_id, f.name, f.group_id, g.name AS group_name, f.created_at"
+            " FROM drive_folders f LEFT JOIN groups g ON g.id = f.group_id ORDER BY f.name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_drive_folder(self, folder_pk: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT f.id, f.folder_id, f.name, f.group_id, g.name AS group_name, f.created_at"
+            " FROM drive_folders f LEFT JOIN groups g ON g.id = f.group_id WHERE f.id = ?",
+            (folder_pk,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def update_drive_folder_group(self, folder_pk: int, group_id: int | None):
+        self.conn.execute(
+            "UPDATE drive_folders SET group_id = ? WHERE id = ?", (group_id, folder_pk)
+        )
+        self.conn.commit()
+
+    def delete_drive_folder(self, folder_pk: int):
+        self.conn.execute("DELETE FROM drive_folders WHERE id = ?", (folder_pk,))
+        self.conn.commit()
+
+    def get_drive_imports(self, file_ids: list[str]) -> dict[str, dict]:
+        if not file_ids:
+            return {}
+        out: dict[str, dict] = {}
+        for i in range(0, len(file_ids), 500):
+            chunk = file_ids[i : i + 500]
+            rows = self.conn.execute(
+                "SELECT d.drive_file_id, d.status, d.session_id, d.group_id, s.name AS session_name"
+                " FROM drive_imports d LEFT JOIN sessions s ON s.id = d.session_id"
+                f" WHERE d.drive_file_id IN ({','.join('?' * len(chunk))})",
+                chunk,
+            ).fetchall()
+            out.update({r["drive_file_id"]: dict(r) for r in rows})
+        return out
+
+    def set_drive_import(
+        self,
+        drive_file_id: str,
+        status: str,
+        file_name: str = "",
+        session_id: int | None = None,
+        group_id: int | None = None,
+        created_by: int | None = None,
+    ):
+        self.conn.execute(
+            "INSERT INTO drive_imports"
+            " (drive_file_id, file_name, status, session_id, group_id, created_by)"
+            " VALUES (?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(drive_file_id) DO UPDATE SET status = excluded.status,"
+            " file_name = excluded.file_name, session_id = excluded.session_id,"
+            " group_id = excluded.group_id, created_by = excluded.created_by,"
+            " created_at = datetime('now')",
+            (drive_file_id, file_name, status, session_id, group_id, created_by),
+        )
+        self.conn.commit()
+
+    def clear_drive_import(self, drive_file_id: str):
+        self.conn.execute("DELETE FROM drive_imports WHERE drive_file_id = ?", (drive_file_id,))
+        self.conn.commit()
+
     def storage_references(self) -> tuple[list[dict], list[dict]]:
         """Every session's source file and every track's audio path, for storage stats."""
         sessions = self.conn.execute(
@@ -527,8 +626,7 @@ class Database:
 
     def list_curation_runs(self, limit: int = 50) -> list[dict]:
         rows = self.conn.execute(
-            "SELECT id, summary, items, created_at FROM curation_runs"
-            " ORDER BY id DESC LIMIT ?",
+            "SELECT id, summary, items, created_at FROM curation_runs ORDER BY id DESC LIMIT ?",
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]

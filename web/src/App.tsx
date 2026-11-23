@@ -8,6 +8,7 @@ import { MiniPlayer, PlayerProvider, usePlayer } from "./context/PlayerContext";
 import Login from "./pages/Login";
 import SessionList from "./pages/SessionList";
 import SessionDetail from "./pages/SessionDetail";
+import DriveImport from "./pages/DriveImport";
 import SongCatalog from "./pages/SongCatalog";
 import SongHistory from "./pages/SongHistory";
 import PerformMode from "./pages/PerformMode";
@@ -314,6 +315,7 @@ function AuthenticatedApp() {
             <Routes>
               <Route path="/sessions" element={<SessionList />} />
               <Route path="/sessions/:id" element={<SessionDetail />} />
+              <Route path="/import/drive" element={<DriveImport />} />
               <Route path="/songs" element={<SongCatalog />} />
               <Route path="/songs/:id" element={<SongHistory />} />
               <Route path="/setlists" element={<SetlistList />} />
