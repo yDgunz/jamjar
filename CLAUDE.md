@@ -142,7 +142,7 @@ created_at                    used_at (nullable)
 - `songs.background` / `background_sources`: a short written history of the song ("About" tab) with a JSON list of `{title, url}` sources. Written offline by Claude from web sources and stored as static content through the API (the server never calls an LLM); filled from the merged song on a song merge
 - `curation_runs (id, summary, items JSON, created_at)`: log of the scheduled library-curation routine (a daily Claude session that adds songs and fills in videos/histories through the API). `items` is a list of `{song_id, song_name, action}` with action `added_song`/`added_lesson`/`added_backing_track`/`added_background`/`cleaned_chart` (metadata clutter removed from a chart)/`fixed_label` (wrong or misspelled name/artist corrected)/`updated_chart`
 - `drive_folders (id, folder_id UNIQUE, name, group_id nullable = mixed bands, created_by)`: Drive folders shared with the service account; `drive_imports (drive_file_id PK, file_name, status imported|skipped|duplicate, session_id SET NULL, group_id, created_by)`: which Drive files were already handled, so they aren't offered again
-- `song_links → songs`: many-to-one, CASCADE delete. Reference videos (how-to lessons, backing tracks) shared by every band that plays the song; moved over by song merges
+- `song_links → songs`: many-to-one, CASCADE delete. Reference videos (how-to lessons, backing tracks, and `other` = the original recording, ideally the official music video, shown as "Original") shared by every band that plays the song; moved over by song merges
 - `share_links → tracks`: one-to-one, CASCADE delete
 - `share_links → users`: many-to-one (nullable), SET NULL on delete
 - `invite_tokens → users`: many-to-one, CASCADE delete

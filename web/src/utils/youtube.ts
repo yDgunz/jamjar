@@ -34,5 +34,5 @@ export function youTubeStart(url: string): number {
 export const LINK_KIND_LABEL = {
   lesson: "How-to",
   backing_track: "Backing track",
-  other: "Video",
+  other: "Original",
 } as const;
