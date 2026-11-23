@@ -1,11 +1,14 @@
 import asyncio
+import functools
 import hmac
 import html
 import json
 import logging
 import os as _os
 import re as _re_mod
+import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlparse
@@ -36,7 +39,66 @@ from jam_session_processor.email import send_access_request_email as _send_acces
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Jam Session Processor", version="0.1.0")
+# --- Background job lifecycle ---
+# Processing runs in executor threads. A restart (e.g. a deploy) kills those threads,
+# which used to leave jobs "processing" forever. On startup we fail any such leftovers;
+# on shutdown we wait for in-flight jobs to finish first (docker-compose gives the
+# container a matching stop_grace_period).
+
+_active_jobs = 0
+_active_jobs_lock = threading.Lock()
+
+
+def _tracked_job(fn):
+    """Count a background job as in flight while it runs."""
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        global _active_jobs
+        with _active_jobs_lock:
+            _active_jobs += 1
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            with _active_jobs_lock:
+                _active_jobs -= 1
+
+    return wrapper
+
+
+def active_job_count() -> int:
+    with _active_jobs_lock:
+        return _active_jobs
+
+
+async def _wait_for_jobs(grace_seconds: float, poll: float = 1.0) -> bool:
+    """Wait until no background job is running, up to `grace_seconds`. True if drained."""
+    deadline = time.monotonic() + grace_seconds
+    logged = False
+    while active_job_count() > 0:
+        if time.monotonic() >= deadline:
+            logger.warning("Shutting down with %d job(s) still running", active_job_count())
+            return False
+        if not logged:
+            logger.info("Waiting for %d processing job(s) to finish", active_job_count())
+            logged = True
+        await asyncio.sleep(poll)
+    return True
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    try:
+        n = get_db().fail_interrupted_jobs()
+        if n:
+            logger.warning("Marked %d job(s) interrupted by the last restart as failed", n)
+    except Exception:
+        logger.exception("Could not clean up interrupted jobs")
+    yield
+    await _wait_for_jobs(float(_os.environ.get("JAM_SHUTDOWN_GRACE_SEC", "270")))
+
+
+app = FastAPI(title="Jam Session Processor", version="0.1.0", lifespan=_lifespan)
 
 # --- Request field length limits ---
 # Applied to every string field in request models so oversized input is rejected
@@ -892,6 +954,7 @@ def get_session_tracks(session_id: int, request: Request):
     return [_track_response(t) for t in db.get_tracks_for_session(session_id)]
 
 
+@_tracked_job
 def _process_reprocess(
     job_id: str,
     session_id: int,
@@ -1069,6 +1132,7 @@ def get_job(job_id: str, request: Request):
     )
 
 
+@_tracked_job
 def _process_upload(
     job_id: str,
     session_id: int,
@@ -1679,6 +1743,7 @@ def list_drive_folder_files(folder_pk: int, request: Request):
     return out
 
 
+@_tracked_job
 def _import_from_drive(
     job_id: str,
     session_id: int,

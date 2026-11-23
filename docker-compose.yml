@@ -24,6 +24,9 @@ services:
       - JAM_APP_URL=${JAM_APP_URL:-}
       - JAM_GOOGLE_SERVICE_ACCOUNT=${JAM_GOOGLE_SERVICE_ACCOUNT:-}
     restart: unless-stopped
+    # Let in-flight processing jobs finish on deploys/restarts (the app waits up to
+    # JAM_SHUTDOWN_GRACE_SEC=270s for them before exiting)
+    stop_grace_period: 5m
     healthcheck:
       test:
         - CMD

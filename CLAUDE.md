@@ -334,6 +334,7 @@ All configuration is via `JAM_*` environment variables. Defaults match pre-confi
 | `JAM_SMTP_FROM` | *(empty)* | From address for emails (falls back to SMTP_USER) |
 | `JAM_APP_URL` | `http://localhost:5173` | Public URL of the app (used in invite links) |
 | `JAM_GOOGLE_SERVICE_ACCOUNT` | *(empty)* | Google service account JSON key (raw JSON, base64 JSON, or a file path) for Drive import; Drive import is hidden/503 when unset. Needs the Google Drive API enabled on its project |
+| `JAM_SHUTDOWN_GRACE_SEC` | `270` | On shutdown (deploys, restarts) wait up to this long for in-flight processing jobs to finish; keep below the compose `stop_grace_period` (5m) |
 | `JAM_ACCESS_REQUEST_EMAIL` | *(empty)* | Email address for access request notifications (falls back to `JAM_SMTP_FROM`) |
 
 Path values stored in the DB are relative to `JAM_DATA_DIR`. The `config.resolve_path()` method resolves them to absolute at runtime. Already-absolute paths (from old DBs) pass through unchanged.
@@ -344,6 +345,7 @@ Path values stored in the DB are relative to `JAM_DATA_DIR`. The `config.resolve
 - **Song detection:** Energy-based, not silence-based. A 15-second smoothing window and minimum duration filter distinguish actual songs from brief noodling between them.
 - **Default threshold:** -20 dB with 120s minimum duration. For louder rooms or more noodling, raise the threshold (e.g., -15). For quieter recordings, lower it (e.g., -25).
 - **Performance:** ffmpeg handles all decoding and segment export at the C level. A 1.5hr session processes in ~10 seconds.
+- **Background jobs & restarts:** processing runs in executor threads that a restart would kill. Job functions are wrapped with `_tracked_job`; on shutdown the app's lifespan waits for in-flight jobs (`JAM_SHUTDOWN_GRACE_SEC`, compose `stop_grace_period: 5m`), and on startup `fail_interrupted_jobs()` fails any job still `processing` (or `pending` for >2h, i.e. an abandoned presigned upload) with an "interrupted by a server restart" error so nothing hangs
 - **Database:** SQLite — no server, portable, lives in the project directory. `Database.conn` is a per-thread connection (FastAPI runs sync endpoints in a thread pool; a single shared `sqlite3` connection fails under concurrent requests)
 - **Backend API:** FastAPI — serves JSON endpoints and static audio files
 - **Frontend:** React + TypeScript + Tailwind via Vite — clean separation from backend
