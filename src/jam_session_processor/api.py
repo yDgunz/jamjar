@@ -1,5 +1,6 @@
 import asyncio
 import functools
+import gzip
 import hmac
 import html
 import json
@@ -124,7 +125,61 @@ def health():
     return {"status": "ok", "db": "ok"}
 
 
+class JSONGzipMiddleware:
+    """Gzip JSON responses when the client accepts it.
+
+    Deliberately limited to application/json: audio is streamed with Range
+    requests, which compressing would break.
+    """
+
+    def __init__(self, app, minimum_size: int = 1024):
+        self.app = app
+        self.minimum_size = minimum_size
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        accepts = any(
+            k == b"accept-encoding" and b"gzip" in v.lower() for k, v in scope.get("headers", [])
+        )
+        if not accepts:
+            return await self.app(scope, receive, send)
+
+        start: dict | None = None
+        chunks: list[bytes] = []
+        passthrough = False
+
+        async def wrapped(message):
+            nonlocal start, passthrough
+            if message["type"] == "http.response.start":
+                headers = {k.lower(): v for k, v in message.get("headers", [])}
+                ctype = headers.get(b"content-type", b"")
+                if ctype.startswith(b"application/json") and b"content-encoding" not in headers:
+                    start = message
+                    return
+                passthrough = True
+                return await send(message)
+            if passthrough or start is None:
+                return await send(message)
+            chunks.append(message.get("body", b""))
+            if message.get("more_body"):
+                return
+            body = b"".join(chunks)
+            headers = [
+                (k, v) for k, v in start.get("headers", []) if k.lower() != b"content-length"
+            ]
+            if len(body) >= self.minimum_size:
+                body = gzip.compress(body, compresslevel=6)
+                headers += [(b"content-encoding", b"gzip"), (b"vary", b"Accept-Encoding")]
+            headers.append((b"content-length", str(len(body)).encode()))
+            await send({**start, "headers": headers})
+            await send({"type": "http.response.body", "body": body})
+
+        await self.app(scope, receive, wrapped)
+
+
 cfg = get_config()
+app.add_middleware(JSONGzipMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cfg.cors_origins,
@@ -639,6 +694,7 @@ class SongResponse(BaseModel):
     created_by_name: str | None = None
     updated_by_name: str | None = None
     updated_at: str | None = None
+    has_sheet: bool = False
     # When the song was added to the catalog (UTC "YYYY-MM-DD HH:MM:SS")
     created_at: str | None = None
     links: list[SongLinkResponse] = []
@@ -793,6 +849,7 @@ def _song_response(
     d["background"] = (
         SongBackground(text=bg_text, sources=json.loads(bg_sources or "[]")) if bg_text else None
     )
+    d["has_sheet"] = bool((song.sheet or "").strip())
     d["links"] = [
         SongLinkResponse(
             id=link["id"],
@@ -2323,15 +2380,41 @@ def _get_song_with_access(db: Database, song_id: int, request: Request):
 
 
 @app.get("/api/songs", response_model=list[SongResponse])
-def list_songs(request: Request, group_id: int | None = None):
+def list_songs(request: Request, group_id: int | None = None, summary: bool = False):
+    """All songs the caller can see. `summary=true` leaves out the chart text and
+    written history (the bulk of the payload) for list views; `has_sheet` still says
+    whether a chart exists."""
     db = get_db()
     group_ids = _get_group_ids(request)
     if group_id is not None:
-        if group_id not in group_ids:
+        if group_ids is not None and group_id not in group_ids:
             raise HTTPException(status_code=403, detail="No access to this group")
         group_ids = [group_id]
     activity = db.get_song_activity(request.state.user.id) if request.state.user else {}
-    return [_song_response(s, request, activity) for s in db.list_songs(group_ids)]
+    out = []
+    for s in db.list_songs(group_ids):
+        r = _song_response(s, request, activity)
+        if summary:
+            r.sheet = ""
+            r.background = None
+        out.append(r)
+    return out
+
+
+@app.get("/api/songs/search")
+def search_song_lyrics(request: Request, q: str = ""):
+    """Songs whose chart/lyrics contain `q` (case-insensitive), with the first matching line."""
+    q = q.strip().lower()
+    if len(q) < 2:
+        return []
+    group_ids = _get_group_ids(request)
+    out = []
+    for s in get_db().list_songs(group_ids):
+        for line in (s.sheet or "").split("\n"):
+            if q in line.lower():
+                out.append({"id": s.id, "line": line.strip()[:200]})
+                break
+    return out
 
 
 class CreateSongRequest(BaseModel):

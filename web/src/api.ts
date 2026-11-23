@@ -258,6 +258,8 @@ export interface Song {
   first_date: string | null;
   last_date: string | null;
   created_by_name: string | null;
+  /** Whether the song has a chart (list responses leave `sheet` empty) */
+  has_sheet: boolean;
   /** When the song was added (UTC "YYYY-MM-DD HH:MM:SS") */
   created_at: string | null;
   updated_by_name: string | null;
@@ -647,8 +649,12 @@ export const api = {
   sessionAudioUrl: (sessionId: number) => `${BASE}/sessions/${sessionId}/audio`,
 
   // Songs
+  /** Songs for lists and pickers: charts and histories are left out (see `has_sheet`). */
   listSongs: (groupId?: number) =>
-    fetchJson<Song[]>(`${BASE}/songs${groupId != null ? `?group_id=${groupId}` : ""}`),
+    fetchJson<Song[]>(`${BASE}/songs?summary=true${groupId != null ? `&group_id=${groupId}` : ""}`),
+  /** Songs whose chart/lyrics contain `q`, with the first matching line. */
+  searchLyrics: (q: string) =>
+    fetchJson<{ id: number; line: string }[]>(`${BASE}/songs/search?q=${encodeURIComponent(q)}`),
 
   createSong: (name: string, groupId: number, artist?: string) =>
     fetchJson<Song>(`${BASE}/songs`, {

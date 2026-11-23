@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, formatRelative, formatShortDate, canEdit, localSongActivity } from "../api";
 import type { Song } from "../api";
@@ -25,6 +25,19 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 
 const SORT_KEYS = SORT_OPTIONS.map((o) => o.key) as string[];
 
+type RecordedFilter = "any" | "yes" | "no";
+type ActivityFilter = "any" | "yes" | "no";
+const PAGE = 50;
+
+function stored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const v = localStorage.getItem(key);
+    return v && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 /** Newest of the server timestamp and the locally remembered one. */
 function latest(a: string | null | undefined, b: string | undefined): string | null {
   if (!a) return b ?? null;
@@ -40,12 +53,11 @@ function byRecent(a: string | null, b: string | null, an: string, bn: string): n
   return an.localeCompare(bn);
 }
 
-function matches(song: Song, q: string): "name" | "lyrics" | null {
+function matches(song: Song, q: string, lyricHits: Map<number, string>): "name" | "lyrics" | null {
   if (song.name.toLowerCase().includes(q) || (song.artist ?? "").toLowerCase().includes(q)) {
     return "name";
   }
-  if ((song.sheet ?? "").toLowerCase().includes(q)) return "lyrics";
-  return null;
+  return lyricHits.has(song.id) ? "lyrics" : null;
 }
 
 export default function SongCatalog() {
@@ -65,6 +77,16 @@ export default function SongCatalog() {
     if (stored) { const n = Number(stored); if (!isNaN(n)) return n; }
     return null;
   });
+  const [artistFilter, setArtistFilter] = useState<string>(() => localStorage.getItem("song-artist-filter") ?? "");
+  const [recordedFilter, setRecordedFilter] = useState<RecordedFilter>(() =>
+    stored("song-recorded-filter", ["any", "yes", "no"] as const, "any"),
+  );
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>(() =>
+    stored("song-activity-filter", ["any", "yes", "no"] as const, "any"),
+  );
+  const [shown, setShown] = useState(PAGE);
+  const [lyricHits, setLyricHits] = useState<Map<number, string>>(new Map());
+  const sentinel = useRef<HTMLDivElement>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newArtist, setNewArtist] = useState("");
@@ -78,7 +100,36 @@ export default function SongCatalog() {
     else localStorage.removeItem("group-filter");
   }, [groupFilter]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem("song-artist-filter", artistFilter);
+      localStorage.setItem("song-recorded-filter", recordedFilter);
+      localStorage.setItem("song-activity-filter", activityFilter);
+    } catch { /* storage unavailable */ }
+  }, [artistFilter, recordedFilter, activityFilter]);
+
   const q = query.trim().toLowerCase();
+
+  // Lyrics live on the server (the list leaves charts out); look them up as you type
+  useEffect(() => {
+    if (q.length < 2) { setLyricHits(new Map()); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      api.searchLyrics(q)
+        .then((hits) => { if (!cancelled) setLyricHits(new Map(hits.map((h) => [h.id, h.line]))); })
+        .catch(() => {});
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [q]);
+
+  // Artists with song counts, most songs first
+  const artists = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of songs ?? []) {
+      if (s.artist) counts.set(s.artist, (counts.get(s.artist) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [songs]);
 
   const results = useMemo(() => {
     const local = localSongActivity();
@@ -88,8 +139,15 @@ export default function SongCatalog() {
         last_opened_at: latest(s.last_opened_at, local[s.id]?.opened),
         last_performed_at: latest(s.last_performed_at, local[s.id]?.performed),
       },
-      hit: q ? matches(s, q) : ("name" as const),
+      hit: q ? matches(s, q, lyricHits) : ("name" as const),
     }));
+    if (artistFilter) list = list.filter((r) => r.song.artist === artistFilter);
+    if (recordedFilter !== "any") list = list.filter((r) => (r.song.take_count > 0) === (recordedFilter === "yes"));
+    if (activityFilter !== "any") {
+      list = list.filter(
+        (r) => Boolean(r.song.last_opened_at || r.song.last_performed_at) === (activityFilter === "yes"),
+      );
+    }
     if (groupFilter !== null) {
       list = list.filter((r) => (r.song.groups ?? []).some((g) => g.id === groupFilter) || r.song.group_id === groupFilter);
     }
@@ -105,7 +163,22 @@ export default function SongCatalog() {
     return list.sort((a, b) =>
       (q ? Number(a.hit === "lyrics") - Number(b.hit === "lyrics") : 0) || cmp[sortBy](a.song, b.song),
     );
-  }, [songs, sortBy, groupFilter, q]);
+  }, [songs, sortBy, groupFilter, q, lyricHits, artistFilter, recordedFilter, activityFilter]);
+
+  // Show the list a page at a time; load more as the bottom comes into view
+  useEffect(() => { setShown(PAGE); }, [sortBy, groupFilter, q, artistFilter, recordedFilter, activityFilter]);
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) setShown((n) => n + PAGE); },
+      { rootMargin: "600px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [results.length, shown]);
+
+  const filtersOn = Boolean(artistFilter) || recordedFilter !== "any" || activityFilter !== "any";
 
   const defaultGroupId = user && user.groups.length === 1 ? user.groups[0].id : null;
 
@@ -146,7 +219,47 @@ export default function SongCatalog() {
 
       <SearchInput value={query} onChange={setQuery} placeholder="Search songs, artists, lyrics" />
 
-      <div className="mt-2 flex items-center justify-between gap-2 text-sm text-gray-400">
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-sm text-gray-400">
+        <InlineSelect
+          value={artistFilter}
+          options={[
+            { value: "", label: "All artists" },
+            ...artists.map(([a, n]) => ({ value: a, label: `${a} (${n})` })),
+          ]}
+          onChange={setArtistFilter}
+          ariaLabel="Filter by artist"
+        />
+        <InlineSelect
+          value={recordedFilter}
+          options={[
+            { value: "any", label: "Recorded or not" },
+            { value: "yes", label: "Recorded" },
+            { value: "no", label: "Not recorded" },
+          ]}
+          onChange={setRecordedFilter}
+          ariaLabel="Filter by recordings"
+        />
+        <InlineSelect
+          value={activityFilter}
+          options={[
+            { value: "any", label: "Any activity" },
+            { value: "yes", label: "Opened or played" },
+            { value: "no", label: "Never opened" },
+          ]}
+          onChange={setActivityFilter}
+          ariaLabel="Filter by whether you've opened the song"
+        />
+        {filtersOn && (
+          <button
+            onClick={() => { setArtistFilter(""); setRecordedFilter("any"); setActivityFilter("any"); }}
+            className="py-1 text-accent-400 hover:text-accent-300"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between gap-2 text-sm text-gray-400">
         <span>
           {results.length} song{results.length !== 1 ? "s" : ""}
         </span>
@@ -209,8 +322,10 @@ export default function SongCatalog() {
         </p>
       ) : results.length === 0 ? (
         <div className="mt-8 text-center">
-          <p className="text-gray-400">No songs match “{query.trim()}”.</p>
-          {canEdit(user) && (
+          <p className="text-gray-400">
+            {q ? <>No songs match “{query.trim()}”{filtersOn ? " with these filters" : ""}.</> : "No songs match these filters."}
+          </p>
+          {q && canEdit(user) && (
             <button
               onClick={() => openCreate(query.trim())}
               className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-accent-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-500"
@@ -222,7 +337,7 @@ export default function SongCatalog() {
       ) : (
         <div className="mt-1">
           <ListRows>
-            {results.map(({ song, hit }) => {
+            {results.slice(0, shown).map(({ song, hit }) => {
               const when =
                 sortBy === "opened" ? (song.last_opened_at ? `opened ${formatRelative(song.last_opened_at)}` : null)
                 : sortBy === "performed" ? (song.last_performed_at ? `performed ${formatRelative(song.last_performed_at)}` : null)
@@ -242,7 +357,7 @@ export default function SongCatalog() {
                 >
                   {(meta || hit === "lyrics") && (
                     <div className="mt-0.5 truncate text-sm text-gray-400">
-                      {hit === "lyrics" && q ? <span className="text-accent-400">lyrics match</span> : null}
+                      {hit === "lyrics" && q ? <span className="text-accent-400">“{lyricHits.get(song.id)}”</span> : null}
                       {hit === "lyrics" && q && meta ? " · " : null}
                       {meta}
                     </div>
@@ -251,6 +366,7 @@ export default function SongCatalog() {
               );
             })}
           </ListRows>
+          {shown < results.length && <div ref={sentinel} className="h-10" aria-hidden />}
         </div>
       )}
     </div>
