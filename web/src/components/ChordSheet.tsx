@@ -161,8 +161,10 @@ function PairedLine({ segments }: { segments: { chord?: string; text?: string }[
         <span key={g} className="inline-block whitespace-nowrap align-top">
           {group.map((u, j) => (
             <span key={j} className="inline-block whitespace-pre align-top">
-              <span className="block pr-1 text-[0.85em] font-semibold text-accent-400">
-                {u.chord || "\u00A0"}
+              {/* A chordless piece adds no width (a zero-width space keeps the row's height),
+                  so a word split by a chord ("t|hrones") doesn't open a gap */}
+              <span className={`block text-[0.85em] font-semibold text-accent-400 ${u.chord ? "pr-1" : ""}`}>
+                {u.chord || "\u200B"}
               </span>
               <span className="block">{u.text || "\u00A0"}</span>
             </span>
