@@ -1,4 +1,4 @@
-import { isChordToken, parseSheet } from "../utils/sheetParser";
+import { isChordToken, parseSheet, tidyBlankLines } from "../utils/sheetParser";
 import { isChordPro, parseChordProLine } from "../utils/chordpro";
 
 interface ChordSheetProps {
@@ -7,7 +7,9 @@ interface ChordSheetProps {
   lyricsOnly?: boolean;
 }
 
-export default function ChordSheet({ text, wrapText, lyricsOnly }: ChordSheetProps) {
+export default function ChordSheet({ text: rawText, wrapText, lyricsOnly }: ChordSheetProps) {
+  // Never show more than one blank line in a row, whatever the chart's text contains
+  const text = tidyBlankLines(rawText);
   if (isChordPro(text)) {
     return <ChordProSheet text={text} wrapText={wrapText} lyricsOnly={lyricsOnly} />;
   }

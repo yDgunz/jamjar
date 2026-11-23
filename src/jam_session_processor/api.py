@@ -2501,7 +2501,10 @@ def fetch_lyrics(song_id: int, request: Request):
     if not lyrics:
         raise HTTPException(status_code=404, detail="Lyrics not found")
     # Append to existing sheet content
-    new_sheet = f"{song.sheet}\n\n{lyrics}".strip() if song.sheet else lyrics
+    # Exactly one blank line between the chart and the lyrics, however either ends
+    new_sheet = (
+        f"{song.sheet.rstrip()}\n\n{lyrics.strip()}" if song.sheet.strip() else lyrics.strip()
+    )
     lyrics_user_id = request.state.user.id if request.state.user else None
     db.update_song_details(song.id, new_sheet, song.notes, song.artist, updated_by=lyrics_user_id)
     updated = db.get_song(song.id, _get_group_ids(request))
