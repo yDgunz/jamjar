@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, isSuperAdmin } from "../api";
 import type { AdminUser, AdminGroup, Role, UsageStats, ServerHealth } from "../api";
 import CurationHistory from "../components/CurationHistory";
+import StorageUsage from "../components/StorageUsage";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
@@ -9,7 +10,7 @@ import { AdminSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
 
 const ROLES: Role[] = ["readonly", "editor", "admin", "superadmin"];
-type Tab = "users" | "groups" | "usage" | "library" | "health";
+type Tab = "users" | "groups" | "usage" | "library" | "storage" | "health";
 
 const EVENT_LABELS: Record<string, string> = {
   login: "Logins",
@@ -332,6 +333,7 @@ export default function Admin() {
     { key: "groups", label: "Groups" },
     { key: "usage", label: "Usage" },
     { key: "library", label: "Library" },
+    { key: "storage", label: "Storage" },
     { key: "health", label: "Server Health" },
   ];
 
@@ -557,6 +559,13 @@ export default function Admin() {
             What the daily library routine added: new songs, how-to and backing-track videos, and About histories.
           </p>
           <CurationHistory />
+        </section>
+      )}
+
+      {/* === File storage Tab === */}
+      {tab === "storage" && (
+        <section>
+          <StorageUsage />
         </section>
       )}
 

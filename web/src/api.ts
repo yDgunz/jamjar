@@ -344,6 +344,32 @@ export interface UsageStatsActivity {
   created_at: string;
 }
 
+export interface StorageUsage {
+  backend: "r2" | "local";
+  bucket: string | null;
+  total_objects: number;
+  total_bytes: number;
+  recordings_source_bytes: number;
+  recordings_track_bytes: number;
+  prefixes: { prefix: string; objects: number; bytes: number }[];
+  /** Files in storage that no session or track points at */
+  orphans: { objects: number; bytes: number };
+  /** DB paths with no file in storage */
+  missing_files: number;
+  recordings: {
+    id: number;
+    name: string;
+    date: string | null;
+    group_name: string | null;
+    duration_sec: number | null;
+    source_bytes: number | null;
+    track_bytes: number;
+    track_count: number;
+    total_bytes: number;
+  }[];
+  computed_at: string;
+}
+
 export interface CurationRun {
   id: number;
   summary: string;
@@ -940,6 +966,9 @@ export const api = {
     ),
 
   adminGetUsageStats: () => fetchJson<UsageStats>(`${BASE}/admin/stats`),
+
+  adminGetStorageUsage: (refresh = false) =>
+    fetchJson<StorageUsage>(`${BASE}/admin/storage${refresh ? "?refresh=true" : ""}`),
 
   adminGetCurationRuns: () => fetchJson<CurationRun[]>(`${BASE}/admin/curation-runs`),
 

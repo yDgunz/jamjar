@@ -51,6 +51,10 @@ class Storage(Protocol):
         """Return a presigned PUT URL for direct upload, or None for local backend."""
         ...
 
+    def list_objects(self) -> list[tuple[str, int]]:
+        """(key, size_bytes) for every stored file."""
+        ...
+
 
 class LocalStorage:
     """Storage backend using the local filesystem.
@@ -93,6 +97,20 @@ class LocalStorage:
 
     def presigned_put_url(self, key: str, content_type: str, ttl: int = 900) -> str | None:
         return None
+
+    _AUDIO_EXTS = {".m4a", ".mp3", ".wav", ".aac", ".flac", ".ogg", ".aif", ".aiff", ".mp4"}
+
+    def list_objects(self) -> list[tuple[str, int]]:
+        """(key, size_bytes) for every audio file under the data, input and output dirs."""
+        cfg = get_config()
+        found: dict[Path, tuple[Path, int]] = {}
+        for root in (cfg.data_dir, cfg.input_dir, cfg.output_dir):
+            if not root.is_dir():
+                continue
+            for f in root.rglob("*"):
+                if f.suffix.lower() in self._AUDIO_EXTS and f.is_file():
+                    found.setdefault(f.resolve(), (f, f.stat().st_size))
+        return [(cfg.make_relative(f), size) for f, size in found.values()]
 
 
 class R2Storage:
@@ -165,6 +183,13 @@ class R2Storage:
         new_path = cfg.resolve_path(new_key)
         if old_path.exists() and old_path != new_path:
             old_path.rename(new_path)
+
+    def list_objects(self) -> list[tuple[str, int]]:
+        """(key, size_bytes) for every object in the bucket."""
+        out: list[tuple[str, int]] = []
+        for page in self._client.get_paginator("list_objects_v2").paginate(Bucket=self._bucket):
+            out.extend((o["Key"], o["Size"]) for o in page.get("Contents", []))
+        return out
 
     def exists(self, key: str) -> bool:
         try:
