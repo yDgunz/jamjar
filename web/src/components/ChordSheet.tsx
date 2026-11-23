@@ -75,6 +75,13 @@ function LegacySheet({ text, lyricsOnly }: { text: string; lyricsOnly?: boolean 
                 {line.text}
               </div>
             );
+          case "tab":
+            if (lyricsOnly) return null;
+            return (
+              <pre key={i} className="my-1 overflow-x-auto whitespace-pre font-mono text-[0.8em] leading-snug text-gray-300">
+                {line.text}
+              </pre>
+            );
           case "chords-only":
             if (lyricsOnly) return null;
             return (
