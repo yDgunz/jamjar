@@ -2949,6 +2949,86 @@ def _get_storage_info() -> dict:
     return {"backend": backend}
 
 
+_storage_usage_cache: dict = {}
+_STORAGE_USAGE_TTL = 600  # listing a bucket is slow-ish; cache for 10 minutes
+
+
+def _compute_storage_usage() -> dict:
+    from jam_session_processor.storage import get_storage
+
+    config = get_config()
+    storage = get_storage()
+    objects = dict(storage.list_objects())
+    sessions, tracks = get_db().storage_references()
+
+    prefixes: dict[str, dict] = {}
+    for key, size in objects.items():
+        top = key.split("/", 1)[0] if "/" in key else "(root)"
+        p = prefixes.setdefault(top, {"prefix": top, "objects": 0, "bytes": 0})
+        p["objects"] += 1
+        p["bytes"] += size
+
+    tracks_by_session: dict[int, list[str]] = {}
+    for t in tracks:
+        if t["audio_path"]:
+            tracks_by_session.setdefault(t["session_id"], []).append(t["audio_path"])
+
+    referenced: set[str] = set()
+    missing = 0
+    recordings = []
+    for s in sessions:
+        src = s["source_file"] or ""
+        track_paths = tracks_by_session.get(s["id"], [])
+        referenced.update([src, *track_paths])
+        missing += sum(1 for k in [src, *track_paths] if k and k not in objects)
+        source_bytes = objects.get(src)
+        track_bytes = sum(objects.get(k, 0) for k in track_paths)
+        recordings.append(
+            {
+                "id": s["id"],
+                "name": s["name"],
+                "date": s["date"],
+                "group_name": s["group_name"],
+                "duration_sec": s["duration_sec"],
+                "source_bytes": source_bytes,
+                "track_bytes": track_bytes,
+                "track_count": len(track_paths),
+                "total_bytes": (source_bytes or 0) + track_bytes,
+            }
+        )
+    recordings.sort(key=lambda r: r["total_bytes"], reverse=True)
+    orphans = [(k, v) for k, v in objects.items() if k not in referenced]
+
+    return {
+        "backend": "r2" if storage.is_remote else "local",
+        "bucket": config.r2_bucket or None,
+        "total_objects": len(objects),
+        "total_bytes": sum(objects.values()),
+        "recordings_source_bytes": sum(r["source_bytes"] or 0 for r in recordings),
+        "recordings_track_bytes": sum(r["track_bytes"] for r in recordings),
+        "prefixes": sorted(prefixes.values(), key=lambda p: p["bytes"], reverse=True),
+        "orphans": {"objects": len(orphans), "bytes": sum(v for _, v in orphans)},
+        "missing_files": missing,
+        "recordings": recordings,
+        "computed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+
+@app.get("/api/admin/storage")
+def admin_storage_usage(request: Request, refresh: bool = False):
+    """File storage usage (R2 bucket or local disk), with a per-recording breakdown."""
+    _require_role(request, "superadmin")
+    cached = _storage_usage_cache.get("value")
+    if refresh or not cached or time.time() - _storage_usage_cache["at"] > _STORAGE_USAGE_TTL:
+        try:
+            cached = _compute_storage_usage()
+        except Exception as e:
+            logger.warning("Storage usage listing failed", exc_info=True)
+            raise HTTPException(status_code=502, detail=f"Could not list storage: {e}")
+        _storage_usage_cache.update(value=cached, at=time.time())
+    return cached
+
+
 @app.get("/api/admin/server-health")
 def admin_server_health(request: Request):
     _require_role(request, "superadmin")

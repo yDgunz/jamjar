@@ -509,6 +509,15 @@ class Database:
         )
         self.conn.commit()
 
+    def storage_references(self) -> tuple[list[dict], list[dict]]:
+        """Every session's source file and every track's audio path, for storage stats."""
+        sessions = self.conn.execute(
+            "SELECT s.id, s.name, s.date, s.source_file, s.duration_sec, g.name AS group_name"
+            " FROM sessions s LEFT JOIN groups g ON g.id = s.group_id"
+        ).fetchall()
+        tracks = self.conn.execute("SELECT session_id, audio_path FROM tracks").fetchall()
+        return [dict(r) for r in sessions], [dict(r) for r in tracks]
+
     def add_curation_run(self, summary: str, items_json: str) -> int:
         cur = self.conn.execute(
             "INSERT INTO curation_runs (summary, items) VALUES (?, ?)", (summary, items_json)
