@@ -258,7 +258,7 @@ export default function SessionList() {
       <div className="space-y-5">
         {monthGroups.map(([month, group]) => (
           <section key={month}>
-            <h2 className="sticky top-0 z-10 -mx-4 bg-gray-950/95 px-4 py-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500 backdrop-blur sm:mx-0 sm:px-0">
+            <h2 className="sticky top-[env(safe-area-inset-top)] z-10 -mx-4 bg-gray-950/95 px-4 py-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500 backdrop-blur sm:mx-0 sm:px-0">
               {formatMonthHeader(month)}
             </h2>
             <ListRows>
