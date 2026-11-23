@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router";
 import { useMetronome, MIN_BPM, MAX_BPM } from "../hooks/useMetronome";
+import ToolsHeader from "../components/ToolsHeader";
 
 const LS_BPM_KEY = "metronome-bpm";
 const LS_TIME_SIG_KEY = "metronome-time-sig";
@@ -64,31 +64,7 @@ export default function Metronome() {
   return (
     <div className="flex min-h-dvh flex-col bg-gray-950 text-gray-100">
       {/* Header */}
-      <header className="border-b border-gray-800 px-3 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5">
-        <div className="flex items-center gap-2">
-          <Link
-            to="/"
-            className="shrink-0 p-2 text-lg text-gray-400 hover:text-white"
-            title="Back"
-          >
-            &larr;
-          </Link>
-          <div className="flex flex-1 justify-center">
-            <div className="inline-flex rounded-lg bg-gray-900 p-0.5 text-sm">
-              <Link
-                to="/tuner"
-                className="rounded-md px-4 py-1.5 text-gray-400 transition hover:text-gray-200"
-              >
-                Tuner
-              </Link>
-              <span className="rounded-md bg-gray-700 px-4 py-1.5 font-medium text-white">
-                Metronome
-              </span>
-            </div>
-          </div>
-          <div className="w-10 shrink-0" />
-        </div>
-      </header>
+      <ToolsHeader active="Metronome" />
 
       {/* Body */}
       <div className="flex flex-1 flex-col items-center justify-center gap-8 px-4 pb-[env(safe-area-inset-bottom)]">

@@ -17,6 +17,7 @@ import SetlistDetail from "./pages/SetlistDetail";
 import SetlistPerformMode from "./pages/SetlistPerformMode";
 import Tuner from "./pages/Tuner";
 import Metronome from "./pages/Metronome";
+import Practice from "./pages/Practice";
 import Admin from "./pages/Admin";
 import AcceptInvite from "./pages/AcceptInvite";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -176,6 +177,7 @@ function MoreMenu({ onChangePassword }: { onChangePassword: () => void }) {
       <div className="px-4 pb-2 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Tools</div>
       <NavLink to="/tuner" className={row}>Tuner</NavLink>
       <NavLink to="/metronome" className={row}>Metronome</NavLink>
+      <NavLink to="/practice" className={row}>Practice</NavLink>
       <div className="mt-2 border-t border-white/[0.07] px-4 pb-2 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
         {user?.name || user?.email}
       </div>
@@ -196,7 +198,7 @@ function Layout({ children }: { children: React.ReactNode }) {
   const desktopMoreRef = useRef<HTMLDivElement>(null);
 
   const isActive = (to: string) => location.pathname.startsWith(to);
-  const moreActive = ["/tuner", "/metronome", "/admin"].some((p) => location.pathname.startsWith(p));
+  const moreActive = ["/tuner", "/metronome", "/practice", "/admin"].some((p) => location.pathname.startsWith(p));
 
   // Close the menu on navigation
   useEffect(() => { setMoreOpen(false); }, [location.pathname]);
@@ -308,6 +310,7 @@ function AuthenticatedApp() {
         <Route path="/setlists/:id/perform" element={<SetlistPerformMode />} />
         <Route path="/tuner" element={<Tuner />} />
         <Route path="/metronome" element={<Metronome />} />
+        <Route path="/practice" element={<Practice />} />
 
         {/* Normal layout routes */}
         <Route path="*" element={
