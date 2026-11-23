@@ -695,6 +695,9 @@ class SongResponse(BaseModel):
     updated_by_name: str | None = None
     updated_at: str | None = None
     has_sheet: bool = False
+    # Guitar tablature (intros, riffs, solos), separate from the chords/lyrics chart
+    tab: str = ""
+    has_tab: bool = False
     # When the song was added to the catalog (UTC "YYYY-MM-DD HH:MM:SS")
     created_at: str | None = None
     links: list[SongLinkResponse] = []
@@ -850,6 +853,7 @@ def _song_response(
         SongBackground(text=bg_text, sources=json.loads(bg_sources or "[]")) if bg_text else None
     )
     d["has_sheet"] = bool((song.sheet or "").strip())
+    d["has_tab"] = bool((song.tab or "").strip())
     d["links"] = [
         SongLinkResponse(
             id=link["id"],
@@ -2396,6 +2400,7 @@ def list_songs(request: Request, group_id: int | None = None, summary: bool = Fa
         r = _song_response(s, request, activity)
         if summary:
             r.sheet = ""
+            r.tab = ""
             r.background = None
         out.append(r)
     return out
@@ -2652,6 +2657,21 @@ def delete_song_link(song_id: int, link_id: int, request: Request):
     if not link or link["song_id"] != song_id:
         raise HTTPException(status_code=404, detail="Link not found")
     db.delete_song_link(link_id)
+    return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
+
+
+class SetSongTabRequest(BaseModel):
+    tab: SheetStr
+
+
+@app.put("/api/songs/{song_id}/tab", response_model=SongResponse)
+def set_song_tab(song_id: int, req: SetSongTabRequest, request: Request):
+    """Set (or clear, with an empty string) a song's guitar tab."""
+    db = get_db()
+    _get_song_with_access(db, song_id, request)
+    _require_role(request, "editor")
+    user_id = request.state.user.id if request.state.user else None
+    db.set_song_tab(song_id, req.tab.strip("\n"), updated_by=user_id)
     return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
 
 

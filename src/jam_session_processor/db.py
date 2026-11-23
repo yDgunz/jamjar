@@ -271,6 +271,7 @@ class Song:
     background: str = ""
     background_sources: str = ""  # JSON list of {title, url}
     created_at: str | None = None
+    tab: str = ""
 
 
 @dataclass
@@ -472,6 +473,10 @@ class Database:
             self.conn.execute(
                 "ALTER TABLE songs ADD COLUMN background_sources TEXT NOT NULL DEFAULT ''"
             )
+            self.conn.commit()
+        if "tab" not in song_cols:
+            # Guitar tablature (intros, riffs, solos), kept apart from the chords/lyrics chart
+            self.conn.execute("ALTER TABLE songs ADD COLUMN tab TEXT NOT NULL DEFAULT ''")
             self.conn.commit()
 
         # Shared song catalog: every song is linked to its home band.
@@ -1313,7 +1318,7 @@ class Database:
                       COUNT(t.id) as take_count,
                       MIN(ses.date) as first_date, MAX(ses.date) as last_date,
                       s.created_by, s.updated_by, s.updated_at,
-                      s.background, s.background_sources, s.created_at
+                      s.background, s.background_sources, s.created_at, s.tab
                FROM songs s
                LEFT JOIN tracks t ON t.song_id = s.id{take_filter}
                LEFT JOIN sessions ses ON t.session_id = ses.id
@@ -1406,6 +1411,13 @@ class Database:
             " updated_by = ?, updated_at = datetime('now')"
             " WHERE id = ?",
             (artist, sheet, notes, updated_by, song_id),
+        )
+        self.conn.commit()
+
+    def set_song_tab(self, song_id: int, tab: str, updated_by: int | None = None):
+        self.conn.execute(
+            "UPDATE songs SET tab = ?, updated_by = ?, updated_at = datetime('now') WHERE id = ?",
+            (tab, updated_by, song_id),
         )
         self.conn.commit()
 
@@ -1538,6 +1550,7 @@ class Database:
                 """UPDATE songs SET
                        artist = CASE WHEN artist = '' THEN ? ELSE artist END,
                        sheet = CASE WHEN sheet = '' THEN ? ELSE sheet END,
+                       tab = CASE WHEN tab = '' THEN ? ELSE tab END,
                        background_sources = CASE WHEN background = ''
                                             THEN ? ELSE background_sources END,
                        background = CASE WHEN background = '' THEN ? ELSE background END,
@@ -1546,6 +1559,7 @@ class Database:
                 (
                     merge["artist"],
                     merge["sheet"],
+                    merge["tab"],
                     merge["background_sources"],
                     merge["background"],
                     keep_id,

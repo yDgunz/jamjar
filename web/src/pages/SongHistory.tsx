@@ -10,6 +10,7 @@ import EditableField from "../components/EditableField";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import SongAbout from "../components/SongAbout";
+import SongTab from "../components/SongTab";
 import SongVideos from "../components/SongVideos";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
@@ -135,7 +136,8 @@ export default function SongHistory() {
   const [fetchingLyrics, setFetchingLyrics] = useState(false);
   const [editingSheet, setEditingSheet] = useState(false);
   const [sheetInput, setSheetInput] = useState("");
-  const [tab, setTab] = useState<"chart" | "takes" | "about" | null>(null);
+  const [tab, setTab] = useState<"chart" | "takes" | "tab" | "about" | null>(null);
+  const [editingTab, setEditingTab] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [editingNotesField, setEditingNotesField] = useState(false);
   const [addingVideo, setAddingVideo] = useState(false);
@@ -317,6 +319,8 @@ export default function SongHistory() {
   if (!song) return <p className="text-red-400">Song not found.</p>;
 
   const activeTab = tab ?? (song.sheet || takes.length === 0 ? "chart" : "takes");
+  // With four tabs the row gets tight on phones; the Edit button drops to its icon
+  const manyTabs = Boolean((song.tab || tab === "tab") && song.background);
   const multiGroup = user != null && user.groups.length > 1;
   const songGroups = song.groups ?? [];
   const bandNames = songGroups.length ? songGroups.map((g) => g.name).join(", ") : song.group_name;
@@ -339,6 +343,7 @@ export default function SongHistory() {
   if (canEdit(user)) {
     sheetActions.push({ actions: [
       { label: song.sheet ? "Edit chart" : "Add chart", onClick: () => { setTab("chart"); setEditingSheet(true); } },
+      { label: song.tab ? "Edit tab" : "Add tab", hint: "riffs & solos", onClick: () => { setTab("tab"); setEditingTab(true); } },
       {
         label: "Fetch lyrics",
         hint: song.artist ? "lrclib.net" : "needs artist",
@@ -410,23 +415,29 @@ export default function SongHistory() {
 
       <div className="mt-4 flex items-center gap-2">
         <div className="flex flex-1 rounded-lg bg-white/[0.08] p-0.5 text-sm font-medium">
-          {(song.background ? (["chart", "takes", "about"] as const) : (["chart", "takes"] as const)).map((t) => (
+          {([
+            "chart",
+            "takes",
+            ...(song.tab || tab === "tab" ? (["tab"] as const) : []),
+            ...(song.background ? (["about"] as const) : []),
+          ] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={`flex-1 whitespace-nowrap rounded-md px-1.5 py-1.5 sm:px-2 transition ${activeTab === t ? "bg-gray-600 text-white shadow" : "text-gray-400"}`}
             >
-              {t === "chart" ? "Chart" : t === "about" ? "About" : `Takes${takes.length ? ` (${takes.length})` : ""}`}
+              {t === "chart" ? "Chart" : t === "about" ? "About" : t === "tab" ? "Tab" : `Takes${takes.length ? ` (${takes.length})` : ""}`}
             </button>
           ))}
         </div>
         {sheetActions.length > 0 && (
           <button
             onClick={() => setActionsOpen(true)}
+            aria-label="Edit"
             className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white/[0.08] px-3 py-2 text-sm font-medium text-gray-200 transition hover:bg-white/[0.14] active:bg-white/[0.14]"
           >
             <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z" /><path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5Z" /></svg>
-            Edit
+            <span className={manyTabs ? "hidden sm:inline" : ""}>Edit</span>
           </button>
         )}
         {song.sheet && (
@@ -542,6 +553,15 @@ export default function SongHistory() {
             </div>
           ))}
         </div>
+      ) : activeTab === "tab" && (song.tab || editingTab) ? (
+        <SongTab
+          key={song.id}
+          song={song}
+          canEdit={canEdit(user) === true}
+          editing={editingTab}
+          onEditingChange={(e) => { setEditingTab(e); if (!e && !song.tab) setTab("chart"); }}
+          onSaved={setSong}
+        />
       ) : activeTab === "about" && song.background ? (
         <SongAbout background={song.background} />
       ) : takes.length === 0 ? (
