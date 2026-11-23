@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams, Link, useNavigate } from "react-router";
+import { useParams, Link, useNavigate, useLocation } from "react-router";
 import { api, formatLongDate, formatShortDate, canEdit, canAdmin, recordSongActivity } from "../api";
 import type { Song, SongLink, SongLinkKind, SongTrack } from "../api";
 import ActionSheet, { MoreButton } from "../components/ActionSheet";
@@ -120,6 +120,9 @@ export default function SongHistory() {
   const { user } = useAuth();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Pages that link here (e.g. a setlist) pass where "back" should go
+  const backTo = (location.state as { from?: { to: string; label: string } } | null)?.from;
   const songId = Number(id);
   const [song, setSong] = useState<Song | null>(null);
   const [takes, setTakes] = useState<SongTrack[]>([]);
@@ -372,9 +375,9 @@ export default function SongHistory() {
 
   return (
     <div>
-      <Link to="/songs" className="-ml-1 inline-flex items-center text-[15px] text-accent-400 active:opacity-70">
+      <Link to={backTo?.to ?? "/songs"} className="-ml-1 inline-flex items-center text-[15px] text-accent-400 active:opacity-70">
         <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" /></svg>
-        Songs
+        <span className="max-w-[16rem] truncate">{backTo?.label ?? "Songs"}</span>
       </Link>
 
       <div className="mt-2 flex items-start gap-2">
@@ -443,6 +446,7 @@ export default function SongHistory() {
         {song.sheet && (
           <Link
             to={`/songs/${songId}/perform`}
+            state={location.state}
             className="shrink-0 rounded-lg bg-accent-600 px-3 py-2 sm:px-4 text-sm font-semibold text-white transition hover:bg-accent-500 active:bg-accent-700"
           >
             Perform
