@@ -30,8 +30,10 @@ self.onmessage = async (e: MessageEvent<RenderRequest>) => {
       adjustPageHeight: true,
       breaks: "auto",
       footer: "none",
-      pageMarginLeft: 20,
-      pageMarginRight: 20,
+      // Margins in screen px whatever the zoom; the left one leaves room for the
+      // brace and bar numbers that sit outside the staff.
+      pageMarginLeft: Math.round((28 * 100) / scale),
+      pageMarginRight: Math.round((16 * 100) / scale),
       pageMarginTop: 20,
     });
     const loaded =
