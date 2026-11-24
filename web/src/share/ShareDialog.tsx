@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import type { ShareKind, ShareLink } from "../api";
-import { describeExpiry, expiryChoices } from "./expiry";
+import { describeExpiry, expiryChoices, fullShareUrl } from "./expiry";
 
 /** What someone opening the link gets, per kind. */
 const SHOWS: Record<ShareKind, string> = {
@@ -18,22 +18,28 @@ const NOUN: Record<ShareKind, string> = {
   song: "song",
 };
 
-export function fullShareUrl(link: ShareLink) {
-  return `${window.location.origin}${link.url}`;
-}
-
 /**
  * Create, copy, re-time or revoke the public link for one track, recording,
  * setlist or song.
  */
-export default function ShareDialog({
-  open,
+export default function ShareDialog(props: {
+  open: boolean;
+  kind: ShareKind;
+  id: number;
+  title: string;
+  onClose: () => void;
+}) {
+  // Mounted fresh each time it opens, so it starts from a clean state
+  if (!props.open) return null;
+  return <ShareDialogBody {...props} />;
+}
+
+function ShareDialogBody({
   kind,
   id,
   title,
   onClose,
 }: {
-  open: boolean;
   kind: ShareKind;
   id: number;
   title: string;
@@ -48,11 +54,7 @@ export default function ShareDialog({
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
     let cancelled = false;
-    setLoading(true);
-    setError("");
-    setCopied(false);
     api.lookupShare(kind, id).then(
       (r) => {
         if (cancelled) return;
@@ -68,16 +70,13 @@ export default function ShareDialog({
       },
     );
     return () => { cancelled = true; };
-  }, [open, kind, id]);
+  }, [kind, id]);
 
   useEffect(() => {
-    if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
+  }, [onClose]);
 
   const live = link && !link.expired ? link : null;
 

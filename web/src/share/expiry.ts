@@ -1,4 +1,10 @@
 import { parseUtc } from "../api";
+import type { ShareLink } from "../api";
+
+/** The full public address of a share link. */
+export function fullShareUrl(link: ShareLink) {
+  return `${window.location.origin}${link.url}`;
+}
 
 /** Expiry choices offered when sharing; null = never expires. */
 export const EXPIRY_CHOICES: { days: number | null; label: string }[] = [

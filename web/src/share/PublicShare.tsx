@@ -66,13 +66,17 @@ function formatDuration(sec: number) {
 /** Public page for a share link: a take, a recording, a setlist (and its charts) or a song. */
 export default function PublicShare() {
   const { token = "", songId } = useParams();
+  // Keyed by token so a different link starts from a clean state
+  return <PublicSharePage key={token} token={token} songId={songId} />;
+}
+
+function PublicSharePage({ token, songId }: { token: string; songId?: string }) {
   const [data, setData] = useState<PublicShareData | null>(null);
-  const [song, setSong] = useState<PublicSong | null>(null);
+  const [loadedSong, setLoadedSong] = useState<{ id: string; song: PublicSong } | null>(null);
   const [error, setError] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setError(null);
     getJson<PublicShareData>(`/api/share/${encodeURIComponent(token)}`).then(
       (d) => { if (!cancelled) setData(d); },
       (e) => { if (!cancelled) setError(e instanceof LoadError ? e.status : 0); },
@@ -82,16 +86,16 @@ export default function PublicShare() {
 
   // A chart opened from a shared setlist
   useEffect(() => {
-    if (!songId) { setSong(null); return; }
+    if (!songId) return;
     let cancelled = false;
-    setSong(null);
     getJson<PublicSong>(`/api/share/${encodeURIComponent(token)}/songs/${encodeURIComponent(songId)}`).then(
-      (s) => { if (!cancelled) setSong(s); },
+      (s) => { if (!cancelled) setLoadedSong({ id: songId, song: s }); },
       (e) => { if (!cancelled) setError(e instanceof LoadError ? e.status : 0); },
     );
     window.scrollTo(0, 0);
     return () => { cancelled = true; };
   }, [token, songId]);
+  const song = songId && loadedSong?.id === songId ? loadedSong.song : null;
 
   const title =
     song?.name ?? data?.track?.title ?? data?.session?.name ?? data?.setlist?.name ?? data?.song?.name;

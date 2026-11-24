@@ -7,8 +7,8 @@ import FetchError from "../components/FetchError";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import Modal, { Toast } from "../components/Modal";
 import { useAuth } from "../context/AuthContext";
-import { describeExpiry, expiryChoices } from "../share/expiry";
-import { fullShareUrl } from "../share/ShareDialog";
+import { describeExpiry, expiryChoices, fullShareUrl } from "../share/expiry";
+
 
 const KIND_LABEL: Record<ShareKind, string> = {
   track: "Take",
@@ -26,11 +26,12 @@ export default function SharedLinks() {
   const [revoking, setRevoking] = useState<ShareLink | null>(null);
   const [showExpired, setShowExpired] = useState(false);
 
-  const load = useCallback(() => {
-    setError(null);
-    api.listShares().then(setLinks, (e) => setError(e instanceof Error ? e.message : String(e)));
-  }, []);
-  useEffect(load, [load]);
+  const fetchLinks = useCallback(
+    () => api.listShares().then(setLinks, (e) => setError(e instanceof Error ? e.message : String(e))),
+    [],
+  );
+  useEffect(() => { fetchLinks(); }, [fetchLinks]);
+  const retry = () => { setError(null); fetchLinks(); };
 
   const replace = (link: ShareLink) =>
     setLinks((prev) => prev?.map((l) => (l.id === link.id ? link : l)) ?? null);
@@ -66,7 +67,7 @@ export default function SharedLinks() {
     }
   };
 
-  if (error) return <div><PageHeader title="Shared links" /><FetchError error={error} onRetry={load} /></div>;
+  if (error) return <div><PageHeader title="Shared links" /><FetchError error={error} onRetry={retry} /></div>;
   if (!links) return <ListSkeleton />;
 
   const active = links.filter((l) => !l.expired);
