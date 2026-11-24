@@ -32,8 +32,8 @@ self.onmessage = async (e: MessageEvent<RenderRequest>) => {
       footer: "none",
       // Margins in screen px whatever the zoom; the left one leaves room for the
       // brace and bar numbers that sit outside the staff.
-      pageMarginLeft: Math.round((28 * 100) / scale),
-      pageMarginRight: Math.round((16 * 100) / scale),
+      pageMarginLeft: Math.round((14 * 100) / scale),
+      pageMarginRight: Math.round((10 * 100) / scale),
       pageMarginTop: 20,
     });
     const loaded =
