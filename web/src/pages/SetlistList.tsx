@@ -3,8 +3,7 @@ import { useNavigate } from "react-router";
 import { api, formatShortDate, canEdit } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
-import GroupSelector from "../components/GroupSelector";
-import InlineSelect from "../components/InlineSelect";
+import { BandChip, FilterBar, SortChip } from "../components/FilterChip";
 import ListItemCard, { ListRows } from "../components/ListItemCard";
 import PageHeader, { HeaderIconButton, PlusIcon } from "../components/PageHeader";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
@@ -109,21 +108,15 @@ export default function SetlistList() {
           </HeaderIconButton>
         )}
       />
-      <div className="mb-1 flex items-center justify-end gap-4 text-sm text-gray-400">
-        <GroupSelector
-          groups={user?.groups ?? []}
-          value={groupFilter}
-          onChange={setGroupFilter}
-          allLabel="All bands"
-          variant="subtle"
-        />
-        <InlineSelect
+      <FilterBar onClear={groupFilter !== null ? () => setGroupFilter(null) : undefined}>
+        <SortChip
           value={sortBy}
           options={sortOptions.map((o) => ({ value: o.key, label: o.label }))}
           onChange={setSortBy}
           ariaLabel="Sort setlists"
         />
-      </div>
+        <BandChip groups={user?.groups ?? []} value={groupFilter} onChange={setGroupFilter} />
+      </FilterBar>
 
       <FormModal
         open={creating && canEdit(user) === true}
@@ -165,25 +158,23 @@ export default function SetlistList() {
           No setlists yet. Create one to start organizing songs for gigs.
         </p>
       ) : (
+        <div className="mt-1">
         <ListRows>
           {sorted.map((sl) => (
             <ListItemCard
               key={sl.id}
               to={`/setlists/${sl.id}`}
-              title={<>
-                {sl.name}
-                {user && user.groups.length > 1 && !groupFilter && sl.group_name && (
-                  <span className="ml-2 text-sm font-normal text-gray-500">{sl.group_name}</span>
-                )}
-              </>}
+              title={sl.name}
               right={<span className="text-gray-500">{sl.date ? formatShortDate(sl.date) : ""}</span>}
             >
-              <div className="mt-0.5 text-sm text-gray-400">
+              <div className="mt-0.5 truncate text-sm text-gray-400">
+                {user && user.groups.length > 1 && !groupFilter && sl.group_name ? `${sl.group_name} · ` : ""}
                 {sl.song_count} song{sl.song_count !== 1 ? "s" : ""}
               </div>
             </ListItemCard>
           ))}
         </ListRows>
+        </div>
       )}
     </div>
   );

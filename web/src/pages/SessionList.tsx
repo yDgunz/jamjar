@@ -4,8 +4,7 @@ import { api, ApiError, formatShortDate, canAdmin, SESSION_KINDS, SESSION_KIND_L
 import type { Session, SessionKind } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
-import GroupSelector from "../components/GroupSelector";
-import InlineSelect from "../components/InlineSelect";
+import FilterChip, { BandChip, FilterBar, SortChip } from "../components/FilterChip";
 import KindBadge from "../components/KindBadge";
 import ListItemCard, { ListRows } from "../components/ListItemCard";
 import PageHeader, { HeaderIconButton } from "../components/PageHeader";
@@ -230,29 +229,34 @@ export default function SessionList() {
         )}
       />
       <SearchInput value={filter} onChange={setFilter} placeholder="Search recordings or songs" />
-      <div className="mt-2 flex items-center justify-end gap-4 text-sm text-gray-400">
-        <GroupSelector
-          groups={user?.groups ?? []}
-          value={groupFilter}
-          onChange={setGroupFilter}
-          allLabel="All bands"
-          variant="subtle"
-        />
-        <InlineSelect
-          value={kindFilter}
-          options={[
-            { value: "all", label: "All types" },
-            ...SESSION_KINDS.map((k) => ({ value: k, label: SESSION_KIND_LABEL[k] })),
-          ] as { value: SessionKind | "all"; label: string }[]}
-          onChange={setKindFilter}
-          ariaLabel="Filter by recording type"
-        />
-        <InlineSelect
-          value={sortBy}
-          options={[{ value: "date", label: "By date recorded" }, { value: "uploaded", label: "By date added" }] as { value: SortBy; label: string }[]}
-          onChange={setSortBy}
-          ariaLabel="Sort recordings"
-        />
+      <div className="mt-3">
+        <FilterBar
+          onClear={groupFilter !== null || kindFilter !== "all"
+            ? () => { setGroupFilter(null); setKindFilter("all"); }
+            : undefined}
+        >
+          <SortChip
+            value={sortBy}
+            options={[
+              { value: "date", label: "Date recorded", short: "Recorded" },
+              { value: "uploaded", label: "Date added", short: "Added" },
+            ] as { value: SortBy; label: string; short: string }[]}
+            onChange={setSortBy}
+            ariaLabel="Sort recordings"
+          />
+          <BandChip groups={user?.groups ?? []} value={groupFilter} onChange={setGroupFilter} />
+          <FilterChip
+            value={kindFilter}
+            options={[
+              { value: "all", label: "All types" },
+              ...SESSION_KINDS.map((k) => ({ value: k, label: SESSION_KIND_LABEL[k] })),
+            ] as { value: SessionKind | "all"; label: string }[]}
+            onChange={setKindFilter}
+            ariaLabel="Filter by recording type"
+            defaultValue="all"
+            placeholder="Type"
+          />
+        </FilterBar>
       </div>
       {(sessions ?? []).length === 0 && (
         <p className="mt-6 text-gray-400">
@@ -261,10 +265,10 @@ export default function SessionList() {
       )}
       {(sessions ?? []).length > 0 && filtered.length === 0 && (
         <p className="mt-8 text-center text-gray-400">
-          {filter.trim() ? `No recordings match “${filter.trim()}”.` : "No recordings of this type."}
+          {filter.trim() ? `No recordings match “${filter.trim()}”.` : "No recordings match these filters."}
         </p>
       )}
-      <div className="space-y-5">
+      <div className="mt-1 space-y-2">
         {monthGroups.map(([month, group]) => (
           <section key={month}>
             <h2 className="sticky top-[var(--safe-top)] z-10 -mx-4 bg-gray-950/95 px-4 py-1.5 text-[13px] font-semibold uppercase tracking-wide text-gray-500 backdrop-blur sm:mx-0 sm:px-0">
@@ -277,6 +281,7 @@ export default function SessionList() {
                 let songs = names.slice(0, 3).join(", ");
                 if (names.length > 3) songs += ` +${names.length - 3}`;
                 if (untagged > 0) songs += (songs ? " · " : "") + `${untagged} untagged`;
+                if (multiGroup && !groupFilter && s.group_name) songs = s.group_name + (songs ? " · " : "") + songs;
                 const shownDate = sortBy === "uploaded" ? s.created_at : s.date;
                 return (
                   <ListItemCard
@@ -285,9 +290,6 @@ export default function SessionList() {
                     title={<>
                       {s.name || `Session ${s.id}`}
                       <KindBadge kind={s.kind} className="ml-2" />
-                      {multiGroup && !groupFilter && s.group_name && (
-                        <span className="ml-2 text-sm font-normal text-gray-500">{s.group_name}</span>
-                      )}
                     </>}
                     right={
                       s.active_job_id ? (
