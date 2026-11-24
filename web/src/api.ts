@@ -236,6 +236,9 @@ export interface SongGroup {
 
 export type SongLinkKind = "lesson" | "backing_track" | "other";
 
+/** Why a video was marked as bad (the nightly routine looks for a replacement) */
+export type VideoFlagReason = "wrong_song" | "wrong_instrument" | "poor_quality" | "unavailable" | "other";
+
 export interface SongLink {
   id: number;
   kind: SongLinkKind;
@@ -425,7 +428,7 @@ export interface StorageUsage {
 export interface CurationRun {
   id: number;
   summary: string;
-  /** action: added_song | added_lesson | added_backing_track | added_background */
+  /** action: added_song | added_lesson | replaced_video | cleaned_chart | ... */
   items: { song_id: number | null; song_name: string; action: string }[];
   created_at: string;
 }
@@ -765,6 +768,14 @@ export const api = {
 
   deleteSongLink: (songId: number, linkId: number) =>
     fetchJson<Song>(`${BASE}/songs/${songId}/links/${linkId}`, { method: "DELETE" }),
+
+  /** Mark a video as bad: removed now, replaced by the nightly routine */
+  flagSongLink: (songId: number, linkId: number, reason: VideoFlagReason) =>
+    fetchJson<Song>(`${BASE}/songs/${songId}/links/${linkId}/flag`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    }),
 
   deleteSong: (songId: number) =>
     fetchJson<{ ok: boolean }>(`${BASE}/songs/${songId}`, { method: "DELETE" }),
