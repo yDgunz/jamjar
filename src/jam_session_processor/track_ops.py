@@ -305,6 +305,8 @@ def _renumber_tracks(
             new_rel = cfg.make_relative(new_path)
             storage.rename(track.audio_path, new_rel)
             db.update_track(track.id, track_number=expected_num, audio_path=new_rel)
+            # Same audio under a new name: its transcript is still good
+            db.rename_transcript_audio(track.id, track.audio_path, new_rel)
 
 
 LOSSLESS_EXTENSIONS = {".wav", ".flac"}

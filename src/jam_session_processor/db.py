@@ -1343,6 +1343,14 @@ class Database:
         )
         self.conn.commit()
 
+    def rename_transcript_audio(self, track_id: int, old_path: str, new_path: str):
+        """Keep a track's transcript current when its audio file is only renamed."""
+        self.conn.execute(
+            "UPDATE track_transcripts SET audio_path = ? WHERE track_id = ? AND audio_path = ?",
+            (new_path, track_id, old_path),
+        )
+        self.conn.commit()
+
     def set_split_state(self, session_id: int, state: str):
         self.conn.execute("UPDATE sessions SET split_state = ? WHERE id = ?", (state, session_id))
         self.conn.commit()
