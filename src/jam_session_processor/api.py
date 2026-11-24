@@ -895,8 +895,9 @@ class JobResponse(BaseModel):
 
 
 class ReprocessRequest(BaseModel):
-    threshold: float = -20.0
-    min_duration: int = 120
+    # Accepted and ignored: detection sets its level from each recording itself
+    threshold: float | None = None
+    min_duration: int | None = None
     single: bool = False
     # Manual split: explicit [start_sec, end_sec] songs instead of detection
     segments: list[tuple[float, float]] | None = Field(default=None, max_length=200)
@@ -905,6 +906,7 @@ class ReprocessRequest(BaseModel):
 class UploadInitRequest(BaseModel):
     filename: FilenameStr
     group_id: int | None = None
+    # Accepted and ignored: detection sets its level from each recording itself
     threshold: float | None = None
     single: bool = False
     force: bool = False
@@ -920,6 +922,7 @@ class UploadInitResponse(BaseModel):
 class UploadCompleteRequest(BaseModel):
     job_id: ShortStr
     session_id: int
+    # Accepted and ignored: detection sets its level from each recording itself
     threshold: float | None = None
     single: bool = False
     force: bool = False
@@ -1224,8 +1227,6 @@ def get_session_tracks(session_id: int, request: Request):
 def _process_reprocess(
     job_id: str,
     session_id: int,
-    threshold: float,
-    min_duration: int,
     single: bool,
     manual_segments: list[tuple[float, float]] | None = None,
 ):
@@ -1284,11 +1285,7 @@ def _process_reprocess(
             segments = [(0.0, meta.duration_seconds)]
         else:
             db.update_job_progress(job_id, "Detecting songs...")
-            result = detect_songs(
-                source,
-                energy_threshold_db=threshold,
-                min_song_duration_sec=min_duration,
-            )
+            result = detect_songs(source)
             segments = result.segments if result.segments else []
 
         if segments:
@@ -1358,8 +1355,6 @@ async def reprocess_session(session_id: int, req: ReprocessRequest, request: Req
         _process_reprocess,
         job.id,
         session_id,
-        req.threshold,
-        req.min_duration,
         req.single,
         segments,
     )
@@ -1405,7 +1400,6 @@ def _process_upload(
     session_id: int,
     source: Path,
     group_id: int,
-    threshold: float,
     single: bool,
     r2_key: str | None = None,
     force: bool = False,
@@ -1475,7 +1469,7 @@ def _process_upload(
             segments = [(0.0, meta.duration_seconds)]
         else:
             db.update_job_progress(job_id, "Detecting songs...")
-            result = detect_songs(source, energy_threshold_db=threshold)
+            result = detect_songs(source)
             segments = result.segments
 
         if segments:
@@ -1646,7 +1640,6 @@ async def upload_complete(req: UploadCompleteRequest, request: Request):
 
     cfg = get_config()
     source = cfg.resolve_path(r2_key)
-    threshold = req.threshold if req.threshold is not None else -20.0
     single = req.single
     force = req.force
 
@@ -1661,7 +1654,6 @@ async def upload_complete(req: UploadCompleteRequest, request: Request):
         session.id,
         source,
         session.group_id,
-        threshold,
         single,
         r2_key,
         force,
@@ -1769,9 +1761,7 @@ async def upload_session(request: Request, file: UploadFile):
 
     source = dest.resolve()
 
-    # Parse optional threshold and single-song mode
-    threshold_str = request.query_params.get("threshold")
-    threshold = float(threshold_str) if threshold_str else -20.0
+    # Single-song mode (a "threshold" query param from old clients is ignored)
     single = request.query_params.get("single") == "true"
     force = request.query_params.get("force") == "true"
 
@@ -1823,9 +1813,7 @@ async def upload_session(request: Request, file: UploadFile):
         db.log_activity(request.state.user.id, group_id, "upload", safe_filename)
 
     loop = asyncio.get_event_loop()
-    loop.run_in_executor(
-        None, _process_upload, job_id, session_id, source, group_id, threshold, single
-    )
+    loop.run_in_executor(None, _process_upload, job_id, session_id, source, group_id, single)
 
     return JobResponse(
         id=job.id,
@@ -1857,6 +1845,7 @@ class DriveImportRequest(BaseModel):
     date: ShortStr | None = None
     single: bool = False
     force: bool = False
+    # Accepted and ignored: detection sets its level from each recording itself
     threshold: float | None = None
 
 
@@ -2019,7 +2008,6 @@ def _import_from_drive(
     file_name: str,
     dest: Path,
     group_id: int,
-    threshold: float,
     single: bool,
     force: bool,
     user_id: int | None,
@@ -2070,7 +2058,7 @@ def _import_from_drive(
         db.clear_drive_import(file_id)
         db.fail_job(job_id, f"Google Drive download failed: {e}")
         return
-    _process_upload(job_id, session_id, dest, group_id, threshold, single)
+    _process_upload(job_id, session_id, dest, group_id, single)
 
 
 @app.post("/api/drive/import", response_model=JobResponse, status_code=202)
@@ -2122,7 +2110,6 @@ async def import_from_drive(req: DriveImportRequest, request: Request):
     if user_id:
         db.log_activity(user_id, req.group_id, "upload", f"Google Drive: {name}")
 
-    threshold = req.threshold if req.threshold is not None else -20.0
     asyncio.get_event_loop().run_in_executor(
         None,
         _import_from_drive,
@@ -2132,7 +2119,6 @@ async def import_from_drive(req: DriveImportRequest, request: Request):
         name,
         dest,
         req.group_id,
-        threshold,
         req.single,
         req.force,
         user_id,

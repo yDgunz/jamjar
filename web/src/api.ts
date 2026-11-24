@@ -681,11 +681,11 @@ export const api = {
       }),
     }),
 
-  reprocessSession: (sessionId: number, threshold: number, minDuration: number, single?: boolean) =>
+  reprocessSession: (sessionId: number, single?: boolean) =>
     fetchJson<Job>(`${BASE}/sessions/${sessionId}/reprocess`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ threshold, min_duration: minDuration, ...(single ? { single: true } : {}) }),
+      body: JSON.stringify(single ? { single: true } : {}),
     }),
 
   /** Replace a recording's tracks with hand-marked [start, end] songs (seconds). */
@@ -815,7 +815,6 @@ export const api = {
   uploadSession: (
     file: File,
     groupId?: number,
-    threshold?: number,
     single?: boolean,
     force?: boolean,
     onProgress?: (pct: number) => void,
@@ -824,7 +823,6 @@ export const api = {
     form.append("file", file);
     const params = new URLSearchParams();
     if (groupId !== undefined) params.set("group_id", String(groupId));
-    if (threshold !== undefined) params.set("threshold", String(threshold));
     if (single) params.set("single", "true");
     if (force) params.set("force", "true");
     const qs = params.toString();
@@ -871,7 +869,6 @@ export const api = {
   initUpload: (
     filename: string,
     groupId?: number,
-    threshold?: number,
     single?: boolean,
     force?: boolean,
   ) =>
@@ -881,7 +878,6 @@ export const api = {
       body: JSON.stringify({
         filename,
         ...(groupId !== undefined && { group_id: groupId }),
-        ...(threshold !== undefined && { threshold }),
         ...(single && { single: true }),
         ...(force && { force: true }),
       }),
@@ -890,7 +886,6 @@ export const api = {
   completeUpload: (
     jobId: string,
     sessionId: number,
-    threshold?: number,
     single?: boolean,
     force?: boolean,
   ) =>
@@ -900,7 +895,6 @@ export const api = {
       body: JSON.stringify({
         job_id: jobId,
         session_id: sessionId,
-        ...(threshold !== undefined && { threshold }),
         ...(single && { single: true }),
         ...(force && { force: true }),
       }),

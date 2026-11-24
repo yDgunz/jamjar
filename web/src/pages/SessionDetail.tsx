@@ -35,7 +35,6 @@ export default function SessionDetail() {
   const [notesInput, setNotesInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [threshold, setThreshold] = useState<number | string>(20);
   const [reprocessOpen, setReprocessOpen] = useState(false);
   const [singleSong, setSingleSong] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -170,8 +169,7 @@ export default function SessionDetail() {
   const handleReprocess = async () => {
     setReprocessOpen(false);
     try {
-      const thresholdNum = threshold === "" ? 20 : Number(threshold);
-      const job = await api.reprocessSession(sessionId, -thresholdNum, 120, singleSong || undefined);
+      const job = await api.reprocessSession(sessionId, singleSong || undefined);
       // Update session with active job to trigger polling
       if (session) {
         setSession({ ...session, active_job_id: job.id });
@@ -506,28 +504,6 @@ export default function SessionDetail() {
           />
           <span className="text-sm text-gray-300">Single song recording</span>
         </label>
-        {!singleSong && (
-        <div>
-          <label className="block text-xs font-medium text-gray-400 mb-1">
-            Threshold (dB)
-          </label>
-          <div className="flex items-center gap-1.5">
-            <span className="text-sm text-gray-400">&minus;</span>
-            <input
-              type="number"
-              value={threshold}
-              onChange={(e) => setThreshold(e.target.value === "" ? "" : Number(e.target.value))}
-              min={0}
-              step={1}
-              className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
-            />
-            <span className="text-sm text-gray-500">dB</span>
-          </div>
-          <p className="mt-1 text-xs text-gray-500">
-            Higher = more tracks, lower = fewer tracks
-          </p>
-        </div>
-        )}
       </FormModal>
       <FormModal
         open={moveOpen}

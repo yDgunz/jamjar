@@ -39,7 +39,9 @@ def test_generate_output_name_no_timestamps():
 
 
 def test_export_segments_creates_files(fake_session_file, tmp_output_dir):
-    result = detect_songs(fake_session_file, energy_threshold_db=-40, min_song_duration_sec=3)
+    result = detect_songs(
+        fake_session_file, min_song_duration_sec=3, smoothing_sec=1, max_gap_sec=2
+    )
     exported = export_segments(fake_session_file, result.segments, tmp_output_dir)
     assert len(exported) == len(result.segments)
     for p in exported:
