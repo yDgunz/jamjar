@@ -263,6 +263,9 @@ export interface Song {
   /** Guitar tab (intros, riffs, solos), separate from the chart; empty in list responses */
   tab: string;
   has_tab: boolean;
+  /** Notated sheet music (an uploaded MusicXML file), drawn by ScoreViewer */
+  score_format: "mxl" | "musicxml" | null;
+  score_version: string | null;
   /** When the song was added (UTC "YYYY-MM-DD HH:MM:SS") */
   created_at: string | null;
   updated_by_name: string | null;
@@ -684,6 +687,17 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tab }),
     }),
+
+  songScoreUrl: (songId: number) => `${BASE}/songs/${songId}/score`,
+
+  uploadSongScore: (songId: number, file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return fetchJson<Song>(`${BASE}/songs/${songId}/score`, { method: "PUT", body });
+  },
+
+  deleteSongScore: (songId: number) =>
+    fetchJson<Song>(`${BASE}/songs/${songId}/score`, { method: "DELETE" }),
 
   fetchLyrics: (songId: number) =>
     fetchJson<{ lyrics: string; song: Song }>(`${BASE}/songs/${songId}/fetch-lyrics`, {

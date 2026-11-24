@@ -95,6 +95,20 @@ jam-session upload "path/to/recording.m4a" -s https://jam-jar.app -g <group-name
 - The server processes each file in the background (song detection + track export). On a VPS this can take a few minutes per file.
 - Duplicate filenames within the same group are rejected (409 error).
 
+## Importing a piano-repertoire score library
+
+`scripts/import-piano-library.py` copies a piano-repertoire library (its `data/scores` folder: `index.json` plus one `.mxl`/`.musicxml` per piece) into a JamJar group through the API. Each piece becomes a song (title → name, composer → artist) with the file attached as its score.
+
+```bash
+# Dry run: prints what would be created or attached, changes nothing
+python scripts/import-piano-library.py ~/code/piano-repertoir/data/scores -s https://jam-jar.app -g Solo
+
+# Do it
+python scripts/import-piano-library.py ~/code/piano-repertoir/data/scores -s https://jam-jar.app -g Solo --apply
+```
+
+The API key comes from `--api-key`, `$JAM_API_KEY`, or `JAM_API_KEY` in `./.env`. It is safe to re-run: a same-named song already in the group is reused (its artist, chart and notes are untouched), a piece whose score is already on the server is skipped, and a song that already has a different score is left alone and reported. Status, tags, difficulty, tempo and recorded takes are not imported.
+
 ## Cleaning up stale local recordings
 
 When R2 storage is enabled, source recordings are uploaded to R2 during processing and the local copies should be deleted automatically. If local copies accumulate (e.g., from a bug or interrupted processing), you can reclaim disk space with the cleanup script.

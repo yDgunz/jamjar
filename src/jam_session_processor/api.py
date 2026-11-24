@@ -698,6 +698,10 @@ class SongResponse(BaseModel):
     # Guitar tablature (intros, riffs, solos), separate from the chords/lyrics chart
     tab: str = ""
     has_tab: bool = False
+    # Notated sheet music (an uploaded MusicXML file): "mxl" | "musicxml", or null.
+    # `score_version` is the file's content hash and changes when it is replaced.
+    score_format: str | None = None
+    score_version: str | None = None
     # When the song was added to the catalog (UTC "YYYY-MM-DD HH:MM:SS")
     created_at: str | None = None
     links: list[SongLinkResponse] = []
@@ -854,6 +858,9 @@ def _song_response(
     )
     d["has_sheet"] = bool((song.sheet or "").strip())
     d["has_tab"] = bool((song.tab or "").strip())
+    score_path = d.pop("score_path", None)
+    d["score_format"] = Path(score_path).suffix.lstrip(".") if score_path else None
+    d["score_version"] = Path(score_path).stem.rpartition("-")[2] if score_path else None
     d["links"] = [
         SongLinkResponse(
             id=link["id"],
@@ -2514,9 +2521,13 @@ def fetch_lyrics(song_id: int, request: Request):
 @app.delete("/api/songs/{song_id}")
 def delete_song(song_id: int, request: Request):
     db = get_db()
-    _get_song_with_access(db, song_id, request)
+    song = _get_song_with_access(db, song_id, request)
     _require_role(request, "admin")
     db.delete_song(song_id)
+    if song.score_path:
+        from jam_session_processor.storage import get_storage
+
+        get_storage().delete(song.score_path)
     return {"ok": True}
 
 
@@ -2745,14 +2756,133 @@ def merge_songs(req: MergeSongsRequest, request: Request):
     """Fold a duplicate song into another: takes, setlist entries and group links
     move to `keep_id`, which keeps its own chart/artist unless empty."""
     db = get_db()
-    _get_song_with_access(db, req.keep_id, request)
-    _get_song_with_access(db, req.merge_id, request)
+    keep = _get_song_with_access(db, req.keep_id, request)
+    merged = _get_song_with_access(db, req.merge_id, request)
     _require_role(request, "admin")
     try:
         db.merge_songs(req.keep_id, req.merge_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if keep.score_path and merged.score_path:
+        # The kept song's score won; the merged song's file has no owner now
+        from jam_session_processor.storage import get_storage
+
+        get_storage().delete(merged.score_path)
     return _song_response(db.get_song(req.keep_id, _get_group_ids(request)), request)
+
+
+# --- Song score (notated sheet music) endpoints ---
+
+MAX_SCORE_BYTES = 20 * 1024 * 1024
+SCORE_MEDIA_TYPES = {
+    ".mxl": "application/vnd.recordare.musicxml",
+    ".musicxml": "application/vnd.recordare.musicxml+xml",
+}
+
+
+def _score_format(filename: str, data: bytes) -> str:
+    """Return the stored extension for an uploaded score, or raise 400 if it isn't MusicXML."""
+    import io
+    import zipfile
+
+    ext = Path(filename).suffix.lower()
+    if ext == ".mxl":
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                ok = "META-INF/container.xml" in zf.namelist()
+        except zipfile.BadZipFile:
+            ok = False
+        if not ok:
+            raise HTTPException(status_code=400, detail="Not a valid compressed MusicXML file")
+        return ".mxl"
+    if ext in (".musicxml", ".xml"):
+        if b"<score-partwise" not in data and b"<score-timewise" not in data:
+            raise HTTPException(status_code=400, detail="Not a valid MusicXML file")
+        return ".musicxml"
+    raise HTTPException(
+        status_code=400,
+        detail=f"Invalid file type '{ext}'. Allowed: .mxl, .musicxml, .xml",
+    )
+
+
+@app.put("/api/songs/{song_id}/score", response_model=SongResponse)
+async def upload_song_score(song_id: int, request: Request, file: UploadFile):
+    """Attach (or replace) a MusicXML score on a song."""
+    import hashlib
+
+    from jam_session_processor.storage import get_storage
+
+    db = get_db()
+    song = _get_song_with_access(db, song_id, request)
+    _require_role(request, "editor")
+
+    if file.size is not None and file.size > MAX_SCORE_BYTES:
+        raise HTTPException(status_code=413, detail="Score too large. Maximum size is 20 MB.")
+    data = await file.read(MAX_SCORE_BYTES + 1)
+    if len(data) > MAX_SCORE_BYTES:
+        raise HTTPException(status_code=413, detail="Score too large. Maximum size is 20 MB.")
+    ext = _score_format(file.filename or "", data)
+
+    # Content hash in the key: a replaced score never collides with a cached copy.
+    digest = hashlib.sha256(data).hexdigest()[:16]
+    cfg = get_config()
+    dest = cfg.data_dir / "scores" / f"{song_id}-{digest}{ext}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    key = cfg.make_relative(dest)
+    storage = get_storage()
+    storage.put(key, dest)
+
+    user_id = request.state.user.id if request.state.user else None
+    db.set_song_score(song_id, key, updated_by=user_id)
+    if song.score_path and song.score_path != key:
+        storage.delete(song.score_path)
+    return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
+
+
+@app.get("/api/songs/{song_id}/score")
+def get_song_score(song_id: int, request: Request):
+    """Return the song's MusicXML score file. Rendered client-side."""
+    from jam_session_processor.storage import get_storage
+
+    db = get_db()
+    song = _get_song_with_access(db, song_id, request)
+    if not song.score_path:
+        raise HTTPException(status_code=404, detail="Song has no score")
+    cfg = get_config()
+    local = cfg.resolve_path(song.score_path)
+    try:
+        local = get_storage().get(song.score_path, local)
+    except Exception:
+        logger.exception("Failed to fetch score %s", song.score_path)
+        raise HTTPException(status_code=404, detail="Score file not found")
+    if not local.exists():
+        raise HTTPException(status_code=404, detail="Score file not found")
+    # Scores are user-supplied XML: never let a browser render one as a document.
+    return FileResponse(
+        local,
+        media_type=SCORE_MEDIA_TYPES.get(local.suffix, "application/octet-stream"),
+        headers={
+            "Content-Disposition": f'attachment; filename="score{local.suffix}"',
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "Cache-Control": "private, max-age=0, must-revalidate",
+        },
+    )
+
+
+@app.delete("/api/songs/{song_id}/score", response_model=SongResponse)
+def delete_song_score(song_id: int, request: Request):
+    from jam_session_processor.storage import get_storage
+
+    db = get_db()
+    song = _get_song_with_access(db, song_id, request)
+    _require_role(request, "editor")
+    if song.score_path:
+        user_id = request.state.user.id if request.state.user else None
+        db.set_song_score(song_id, None, updated_by=user_id)
+        get_storage().delete(song.score_path)
+    return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
 
 
 # --- Setlist endpoints ---
@@ -3260,7 +3390,16 @@ def admin_delete_group(group_id: int, request: Request):
     group = db.get_group(group_id)
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
+    scores_before = db.score_paths()
     db.delete_group(group_id)
+    # Songs only this group played went with it: remove their score files too
+    removed = scores_before - db.score_paths()
+    if removed:
+        from jam_session_processor.storage import get_storage
+
+        storage = get_storage()
+        for path in removed:
+            storage.delete(path)
     return {"ok": True}
 
 
@@ -3495,6 +3634,7 @@ def _compute_storage_usage() -> dict:
             }
         )
     recordings.sort(key=lambda r: r["total_bytes"], reverse=True)
+    referenced.update(get_db().score_paths())
     orphans = [(k, v) for k, v in objects.items() if k not in referenced]
 
     return {
