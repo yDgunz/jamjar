@@ -37,6 +37,34 @@ html {
   50% { height: 100%; }
 }
 
+/* Waveform shown while a recording is being split (SplitProgress) */
+.split-bar {
+  transition: height 0.5s ease, background-color 0.4s ease, opacity 0.4s ease;
+}
+/* Before the songs are known: a ripple runs along the bars (staggered by animation-delay) */
+.split-bar-scan {
+  animation: split-scan 2.2s ease-in-out infinite;
+}
+/* The song being cut right now */
+.split-bar-cutting {
+  animation: split-cutting 0.9s ease-in-out infinite;
+  animation-delay: 0s !important;
+}
+@keyframes split-scan {
+  0%, 100% { transform: scaleY(0.45); opacity: 0.3; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+@keyframes split-cutting {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .split-bar-scan,
+  .split-bar-cutting {
+    animation: none;
+  }
+}
+
 /* Horizontal chip rows scroll without showing a scrollbar */
 @layer utilities {
   .no-scrollbar {

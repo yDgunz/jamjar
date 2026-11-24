@@ -1,7 +1,7 @@
 import math
 import struct
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_MIN_SONG_DURATION_SEC = 90
@@ -36,6 +36,8 @@ DEFAULT_FORMAT = AAC
 class SplitResult:
     segments: list[tuple[float, float]]  # list of (start_sec, end_sec)
     total_duration_sec: float
+    # Loudness (dB) per second of the recording; drawn as a waveform while processing
+    rms_profile: list[float] = field(default_factory=list)
 
 
 def compute_rms_profile(file_path: Path) -> list[float]:
@@ -113,7 +115,9 @@ def detect_songs(
     total_duration = len(rms_profile) * WINDOW_SEC
     threshold = playing_threshold_db(rms_profile)
     if threshold is None:
-        return SplitResult(segments=[], total_duration_sec=float(total_duration))
+        return SplitResult(
+            segments=[], total_duration_sec=float(total_duration), rms_profile=rms_profile
+        )
     smoothed = smooth_profile(rms_profile, smoothing_sec)
 
     # Find contiguous regions above the threshold
@@ -160,7 +164,9 @@ def detect_songs(
         end_sec = min(float(total_duration), end_idx * WINDOW_SEC + min(padding_sec, after))
         segments.append((start_sec, end_sec))
 
-    return SplitResult(segments=segments, total_duration_sec=float(total_duration))
+    return SplitResult(
+        segments=segments, total_duration_sec=float(total_duration), rms_profile=rms_profile
+    )
 
 
 def export_segment(

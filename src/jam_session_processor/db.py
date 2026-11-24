@@ -2,6 +2,7 @@ import json
 import re
 import sqlite3
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -185,6 +186,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     progress TEXT NOT NULL DEFAULT '',
     session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
     error TEXT,
+    detail TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -362,6 +364,8 @@ class Job:
     error: str | None
     created_at: str
     updated_at: str
+    # JSON: structured progress for the processing screen (see update_job_progress)
+    detail: str | None = None
 
 
 @dataclass
@@ -541,6 +545,10 @@ class Database:
             self.conn.execute(
                 "ALTER TABLE sessions ADD COLUMN split_state TEXT NOT NULL DEFAULT ''"
             )
+            self.conn.commit()
+        job_cols = {row["name"] for row in self.conn.execute("PRAGMA table_info(jobs)").fetchall()}
+        if "detail" not in job_cols:
+            self.conn.execute("ALTER TABLE jobs ADD COLUMN detail TEXT")
             self.conn.commit()
         transcript_cols = {
             row["name"]
@@ -2249,11 +2257,37 @@ class Database:
             return None
         return Job(**row)
 
-    def update_job_progress(self, job_id: str, progress: str):
+    def update_job_progress(self, job_id: str, progress: str, detail: dict | None = None):
+        """Set the job's progress text and, optionally, structured progress.
+
+        `detail` is merged into what earlier steps stored (so e.g. the detected
+        segments stay while tracks are exported); a key set to None is removed.
+        The first call with a detail stamps `started_at` (epoch seconds), which
+        is when the work itself began rather than when the job row was created.
+        """
+        if detail is None:
+            self.conn.execute(
+                "UPDATE jobs SET status = 'processing', progress = ?,"
+                " updated_at = datetime('now') WHERE id = ?",
+                (progress, job_id),
+            )
+            self.conn.commit()
+            return
+        row = self.conn.execute("SELECT detail FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        try:
+            merged = json.loads(row["detail"]) if row and row["detail"] else {}
+        except ValueError:
+            merged = {}
+        merged.setdefault("started_at", time.time())
+        for key, value in detail.items():
+            if value is None:
+                merged.pop(key, None)
+            else:
+                merged[key] = value
         self.conn.execute(
-            "UPDATE jobs SET status = 'processing', progress = ?,"
+            "UPDATE jobs SET status = 'processing', progress = ?, detail = ?,"
             " updated_at = datetime('now') WHERE id = ?",
-            (progress, job_id),
+            (progress, json.dumps(merged), job_id),
         )
         self.conn.commit()
 
