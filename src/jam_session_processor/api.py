@@ -1095,6 +1095,7 @@ def _process_session_merge(job_id: str, session_id: int, other_ids: list[int], u
             on_progress=lambda msg: db.update_job_progress(job_id, msg),
             updated_by=user_id,
         )
+        db.set_split_state(session_id, "")
         db.complete_job(job_id, session_id)
     except Exception as e:
         logger.exception("Merging recordings failed")
@@ -1305,6 +1306,8 @@ def _process_reprocess(
                 if storage.is_remote:
                     storage.put(rel_path, audio_path.resolve())
 
+        # Only a detected split is refined later from what is sung (see refine.py)
+        db.set_split_state(session_id, "" if manual_segments or single else "auto")
         db.complete_job(job_id, session_id)
         _tag_after_processing(session_id)
     except Exception as e:
@@ -1493,6 +1496,7 @@ def _process_upload(
                 if storage.is_remote:
                     storage.put(rel_path, audio_path.resolve())
 
+        db.set_split_state(session_id, "" if single else "auto")
         db.complete_job(job_id, session_id)
         _tag_after_processing(session_id)
     except Exception as e:
@@ -2208,8 +2212,9 @@ def merge_tracks_endpoint(track_id: int, req: MergeRequest, request: Request):
     from jam_session_processor.track_ops import merge_tracks
 
     db = get_db()
-    _get_track_with_access(db, track_id, request)
+    touched, _ = _get_track_with_access(db, track_id, request)
     _require_role(request, "admin")
+    db.set_split_state(touched.session_id, "")  # cut by hand from here on
     try:
         tracks = merge_tracks(db, track_id, req.other_track_id)
     except ValueError as e:
@@ -2225,8 +2230,9 @@ def split_track_endpoint(track_id: int, req: SplitRequest, request: Request):
     from jam_session_processor.track_ops import split_track
 
     db = get_db()
-    _get_track_with_access(db, track_id, request)
+    touched, _ = _get_track_with_access(db, track_id, request)
     _require_role(request, "admin")
+    db.set_split_state(touched.session_id, "")  # cut by hand from here on
     try:
         tracks = split_track(db, track_id, req.split_at_sec)
     except ValueError as e:
@@ -2241,8 +2247,9 @@ def trim_track_endpoint(track_id: int, req: TrimRequest, request: Request):
     from jam_session_processor.track_ops import trim_track
 
     db = get_db()
-    _get_track_with_access(db, track_id, request)
+    touched, _ = _get_track_with_access(db, track_id, request)
     _require_role(request, "admin")
+    db.set_split_state(touched.session_id, "")  # cut by hand from here on
     try:
         track = trim_track(db, track_id, start_delta=req.start_delta, end_delta=req.end_delta)
     except ValueError as e:

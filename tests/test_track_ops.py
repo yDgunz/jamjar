@@ -278,3 +278,17 @@ def test_trim_end_past_session_fails(mock_export, db, session_with_tracks):
     db.update_session_duration(sid, 900.0)
     with pytest.raises(ValueError, match="past end of recording"):
         trim_track(db, tids[2], end_delta=10.0)
+
+
+@patch("jam_session_processor.track_ops.export_segment", side_effect=_mock_export)
+def test_split_keeps_transcripts_of_renumbered_tracks(mock_export, db, session_with_tracks):
+    sid, tids, _ = session_with_tracks
+    for tid in tids:
+        db.save_transcript(tid, db.get_track(tid).audio_path, "fake", "some words")
+
+    split_track(db, tids[0], 150.0)
+
+    # Only the two halves need transcribing: tracks 2 and 3 were merely renamed
+    pending = {row["id"] for row in db.tracks_needing_transcript()}
+    tracks = db.get_tracks_for_session(sid)
+    assert pending == {tracks[0].id, tracks[1].id}

@@ -52,22 +52,25 @@ def compute_rms_profile(file_path: Path) -> list[float]:
         "s16le",
         "-",
     ]
-    proc = subprocess.run(cmd, capture_output=True)
-    raw = proc.stdout
-
     samples_per_window = ANALYSIS_SAMPLE_RATE * WINDOW_SEC
     bytes_per_window = samples_per_window * 2  # 16-bit = 2 bytes
     rms_db_values = []
 
-    for offset in range(0, len(raw) - bytes_per_window + 1, bytes_per_window):
-        chunk = raw[offset : offset + bytes_per_window]
-        samples = struct.unpack(f"<{samples_per_window}h", chunk)
-        mean_sq = sum(s * s for s in samples) / samples_per_window
-        if mean_sq > 0:
-            rms_db = 10 * math.log10(mean_sq / (32768 * 32768))
-        else:
-            rms_db = -100.0
-        rms_db_values.append(rms_db)
+    # Read a second at a time: holding a 3-hour recording's PCM in memory (and Python's
+    # copies of it) cost the server hundreds of MB it never gave back
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as proc:
+        while True:
+            chunk = proc.stdout.read(bytes_per_window)
+            if len(chunk) < bytes_per_window:
+                break
+            samples = struct.unpack(f"<{samples_per_window}h", chunk)
+            mean_sq = sum(s * s for s in samples) / samples_per_window
+            if mean_sq > 0:
+                rms_db = 10 * math.log10(mean_sq / (32768 * 32768))
+            else:
+                rms_db = -100.0
+            rms_db_values.append(rms_db)
+        proc.stdout.read()  # drain a trailing partial second so ffmpeg can exit
 
     return rms_db_values
 

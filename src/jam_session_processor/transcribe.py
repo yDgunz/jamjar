@@ -13,6 +13,7 @@ import logging
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from jam_session_processor.song_match import clean_transcript
@@ -31,6 +32,15 @@ def model_name() -> str:
 def is_available() -> bool:
     """True when the speech-to-text library is installed."""
     return importlib.util.find_spec("faster_whisper") is not None
+
+
+@dataclass
+class Transcript:
+    text: str
+    # [start_sec, end_sec, text, compression_ratio] per phrase, times from the track start
+    segments: list[list]
+    # loudness (dB) of each second of the track
+    levels: list[int]
 
 
 class Transcriber:
@@ -73,8 +83,15 @@ class Transcriber:
 
     def transcribe(self, path: Path) -> str:
         """Rough transcript of the vocals in an audio file ('' when nothing is sung)."""
+        return self.transcribe_timed(path).text
+
+    def transcribe_timed(self, path: Path) -> Transcript:
+        """The transcript with the time of each phrase, and the track's loudness."""
+        import numpy as np
+
         whisper = self._load()
-        segments: list[tuple[str, float]] = []
+        segments: list[list] = []
+        levels: list[int] = []
         offset = 0.0
         while True:
             audio = self._decode(path, offset)
@@ -87,8 +104,20 @@ class Transcriber:
                 temperature=0.0,
                 condition_on_previous_text=False,
             )
-            segments.extend((s.text, s.compression_ratio) for s in found)
+            segments.extend(
+                [
+                    round(offset + s.start, 1),
+                    round(offset + s.end, 1),
+                    s.text.strip(),
+                    round(s.compression_ratio, 2),
+                ]
+                for s in found
+            )
+            seconds = audio[: len(audio) // SAMPLE_RATE * SAMPLE_RATE].reshape(-1, SAMPLE_RATE)
+            mean_sq = np.maximum((seconds.astype(np.float64) ** 2).mean(axis=1), 1e-10)
+            levels.extend(int(round(v)) for v in 10 * np.log10(mean_sq))
             if len(audio) < CHUNK_SEC * SAMPLE_RATE:
                 break
             offset += CHUNK_SEC
-        return clean_transcript(segments)
+        text = clean_transcript([(s[2], s[3]) for s in segments])
+        return Transcript(text=text, segments=segments, levels=levels)

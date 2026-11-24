@@ -1,3 +1,4 @@
+import json
 import re
 import sqlite3
 import threading
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     duration_sec REAL,
     notes TEXT DEFAULT '',
     kind TEXT NOT NULL DEFAULT '',
+    split_state TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -240,6 +242,8 @@ CREATE TABLE IF NOT EXISTS track_transcripts (
     audio_path TEXT NOT NULL,
     model TEXT NOT NULL,
     text TEXT NOT NULL,
+    segments TEXT,
+    levels TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -306,6 +310,9 @@ class Session:
     updated_by: int | None = None
     updated_at: str | None = None
     kind: str = ""
+    # How the tracks were cut: "auto" (detected, not yet refined from the transcripts),
+    # "refined" (detected, then split/merged by song) or "" (by hand, or before this existed)
+    split_state: str = ""
 
 
 @dataclass
@@ -530,6 +537,19 @@ class Database:
         if "kind" not in session_cols:
             self.conn.execute("ALTER TABLE sessions ADD COLUMN kind TEXT NOT NULL DEFAULT ''")
             self.conn.commit()
+        if "split_state" not in session_cols:
+            self.conn.execute(
+                "ALTER TABLE sessions ADD COLUMN split_state TEXT NOT NULL DEFAULT ''"
+            )
+            self.conn.commit()
+        transcript_cols = {
+            row["name"]
+            for row in self.conn.execute("PRAGMA table_info(track_transcripts)").fetchall()
+        }
+        for col in ("segments", "levels"):
+            if col not in transcript_cols:
+                self.conn.execute(f"ALTER TABLE track_transcripts ADD COLUMN {col} TEXT")
+                self.conn.commit()
 
         song_cols = {
             row["name"] for row in self.conn.execute("PRAGMA table_info(songs)").fetchall()
@@ -1295,14 +1315,100 @@ class Database:
             (session_id, session_id),
         ).fetchall()
 
-    def save_transcript(self, track_id: int, audio_path: str, model: str, text: str):
+    def save_transcript(
+        self,
+        track_id: int,
+        audio_path: str,
+        model: str,
+        text: str,
+        segments: list | None = None,
+        levels: list | None = None,
+    ):
+        """``segments``: timed phrases ``[start, end, text, compression_ratio]``;
+        ``levels``: loudness (dB) per second. Both optional (older transcripts lack them)."""
         self.conn.execute(
-            """INSERT INTO track_transcripts (track_id, audio_path, model, text)
-               VALUES (?, ?, ?, ?)
+            """INSERT INTO track_transcripts (track_id, audio_path, model, text, segments, levels)
+               VALUES (?, ?, ?, ?, ?, ?)
                ON CONFLICT(track_id) DO UPDATE SET audio_path = excluded.audio_path,
-                 model = excluded.model, text = excluded.text, created_at = datetime('now')""",
-            (track_id, audio_path, model, text),
+                 model = excluded.model, text = excluded.text, segments = excluded.segments,
+                 levels = excluded.levels, created_at = datetime('now')""",
+            (
+                track_id,
+                audio_path,
+                model,
+                text,
+                json.dumps(segments) if segments is not None else None,
+                json.dumps(levels) if levels is not None else None,
+            ),
         )
+        self.conn.commit()
+
+    def rename_transcript_audio(self, track_id: int, old_path: str, new_path: str):
+        """Keep a track's transcript current when its audio file is only renamed."""
+        self.conn.execute(
+            "UPDATE track_transcripts SET audio_path = ? WHERE track_id = ? AND audio_path = ?",
+            (new_path, track_id, old_path),
+        )
+        self.conn.commit()
+
+    def set_split_state(self, session_id: int, state: str):
+        self.conn.execute("UPDATE sessions SET split_state = ? WHERE id = ?", (state, session_id))
+        self.conn.commit()
+
+    def sessions_to_refine(self) -> list[int]:
+        """Recordings whose automatic split can be refined from the transcripts: split
+        by detection and not touched since (no track tagged by a person, no track
+        notes), with a timed transcript of every track."""
+        rows = self.conn.execute(
+            """SELECT s.id FROM sessions s
+               WHERE s.split_state = 'auto'
+                 AND EXISTS (SELECT 1 FROM tracks t WHERE t.session_id = s.id)
+                 AND NOT EXISTS (
+                   SELECT 1 FROM tracks t
+                   LEFT JOIN track_transcripts tt
+                     ON tt.track_id = t.id AND tt.audio_path = t.audio_path
+                   LEFT JOIN track_auto_tags a ON a.track_id = t.id AND a.song_id = t.song_id
+                   WHERE t.session_id = s.id
+                     AND (tt.segments IS NULL
+                          OR COALESCE(t.notes, '') != ''
+                          OR (t.song_id IS NOT NULL AND a.track_id IS NULL)))
+               ORDER BY s.id"""
+        ).fetchall()
+        return [r["id"] for r in rows]
+
+    def get_timed_transcripts(self, session_id: int) -> dict[int, dict]:
+        """track_id -> {segments, levels} for a recording's tracks that have them."""
+        rows = self.conn.execute(
+            """SELECT t.id, tt.segments, tt.levels
+               FROM tracks t
+               JOIN track_transcripts tt ON tt.track_id = t.id AND tt.audio_path = t.audio_path
+               WHERE t.session_id = ? AND tt.segments IS NOT NULL""",
+            (session_id,),
+        ).fetchall()
+        return {
+            r["id"]: {
+                "segments": json.loads(r["segments"]),
+                "levels": json.loads(r["levels"] or "[]"),
+            }
+            for r in rows
+        }
+
+    def get_transcript_model(self, track_id: int) -> str:
+        row = self.conn.execute(
+            "SELECT model FROM track_transcripts WHERE track_id = ?", (track_id,)
+        ).fetchone()
+        return row["model"] if row else ""
+
+    def clear_auto_tag(self, track_id: int):
+        """Forget an automatic tag (the track was re-cut, so it gets assessed afresh).
+        A tag set by a person is left alone."""
+        self.conn.execute(
+            """UPDATE tracks SET song_id = NULL
+               WHERE id = ? AND song_id =
+                 (SELECT song_id FROM track_auto_tags WHERE track_id = ?)""",
+            (track_id, track_id),
+        )
+        self.conn.execute("DELETE FROM track_auto_tags WHERE track_id = ?", (track_id,))
         self.conn.commit()
 
     def get_transcripts(self) -> list[sqlite3.Row]:
