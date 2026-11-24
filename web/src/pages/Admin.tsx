@@ -93,8 +93,8 @@ function HealthBadge({ percent }: { percent: number }) {
 function HealthItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline gap-2">
-      <span className="text-xs text-gray-500">{label}</span>
-      <span className="text-sm text-gray-200">{value}</span>
+      <span className="w-24 shrink-0 text-xs text-gray-500">{label}</span>
+      <span className="min-w-0 break-words text-sm text-gray-200">{value}</span>
     </div>
   );
 }
@@ -258,6 +258,18 @@ export default function Admin() {
     }
   };
 
+  const handleInvite = async (user: AdminUser) => {
+    try {
+      const result = await api.adminResendInvite(user.id);
+      setToast({
+        message: result.email_sent ? "Invite sent" : "Invite created (SMTP not configured)",
+        variant: "success",
+      });
+    } catch (err: any) {
+      setToast({ message: err.message, variant: "error" });
+    }
+  };
+
   const handleAssignGroup = async (userId: number, groupId: number) => {
     try {
       await api.adminAssignGroup(userId, groupId);
@@ -334,18 +346,21 @@ export default function Admin() {
     { key: "usage", label: "Usage" },
     { key: "library", label: "Library" },
     { key: "storage", label: "Storage" },
-    { key: "health", label: "Server Health" },
+    { key: "health", label: "Server" },
   ];
 
   return (
     <div className="space-y-6">
       {/* Tabs */}
-      <div className="flex gap-1 overflow-x-auto border-b border-gray-800">
+      <div className="no-scrollbar -mx-4 flex gap-1 overflow-x-auto border-b border-gray-800 px-4 sm:mx-0 sm:px-0">
         {TABS.map((t) => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`cursor-pointer whitespace-nowrap px-3 py-2 text-sm font-medium transition -mb-px sm:px-4 ${
+            onClick={(e) => {
+              setTab(t.key);
+              e.currentTarget.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+            }}
+            className={`cursor-pointer whitespace-nowrap px-3 py-2.5 text-sm font-medium transition -mb-px sm:px-4 ${
               tab === t.key
                 ? "border-b-2 border-accent-500 text-accent-400"
                 : "text-gray-400 hover:text-gray-200"
@@ -373,7 +388,55 @@ export default function Admin() {
               Add User
             </button>
           </div>
-          <div className="overflow-x-auto rounded-lg border border-gray-800">
+          {/* Phones: one card per user */}
+          <div className="divide-y divide-gray-800/50 rounded-lg border border-gray-800 sm:hidden">
+            {users.map((user) => (
+              <div key={user.id} className="px-3 py-3">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 truncate text-sm font-medium text-white">{user.name || user.email}</span>
+                  <span className="shrink-0 text-xs text-gray-400">{user.role}</span>
+                </div>
+                {user.name && <div className="truncate text-xs text-gray-500">{user.email}</div>}
+                <div className="mt-1.5 flex flex-wrap gap-1 text-xs text-gray-300">
+                  {user.groups.length === 0 && <span className="text-gray-600">No groups</span>}
+                  {user.groups.map((g) => (
+                    <span key={g.id} className="rounded-full bg-gray-800 px-2 py-0.5">{g.name}</span>
+                  ))}
+                </div>
+                <div className="-mx-2 mt-2 flex items-center gap-1">
+                  <button
+                    onClick={() => openEditUser(user)}
+                    className="rounded px-2 py-1.5 text-xs text-gray-300 transition hover:bg-gray-800"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleInvite(user)}
+                    className="rounded px-2 py-1.5 text-xs text-gray-300 transition hover:bg-gray-800"
+                  >
+                    Invite
+                  </button>
+                  <button
+                    onClick={() => { setResetPwUser(user); setResetPwValue(""); }}
+                    className="rounded px-2 py-1.5 text-xs text-gray-300 transition hover:bg-gray-800"
+                  >
+                    Reset password
+                  </button>
+                  <button
+                    onClick={() => setDeleteModal({ type: "user", id: user.id, name: user.email })}
+                    className="ml-auto rounded px-2 py-1.5 text-xs text-red-400 transition hover:bg-red-950"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+            {users.length === 0 && (
+              <p className="px-3 py-4 text-center text-sm text-gray-500">No users yet.</p>
+            )}
+          </div>
+
+          <div className="hidden overflow-x-auto rounded-lg border border-gray-800 sm:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-800 bg-gray-900 text-left text-xs text-gray-400">
@@ -390,13 +453,13 @@ export default function Admin() {
                     <td className="px-3 py-2 text-white">{user.email}</td>
                     <td className="px-3 py-2 text-gray-300">{user.name || <span className="text-gray-600">—</span>}</td>
                     <td className="px-3 py-2 text-gray-300">{user.role}</td>
-                    <td className="px-3 py-2 text-xs text-gray-300">
+                    <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-300">
                       {user.groups.length === 0 && <span className="text-gray-600">None</span>}
                       {user.groups.length >= 1 && (
                         <span className="rounded-full bg-gray-800 px-2 py-0.5">{user.groups[0].name}</span>
                       )}
                       {user.groups.length > 1 && (
-                        <span className="ml-1 text-gray-500">+{user.groups.length - 1} more</span>
+                        <span className="ml-1 whitespace-nowrap text-gray-500">+{user.groups.length - 1} more</span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-right">
@@ -408,24 +471,14 @@ export default function Admin() {
                           Edit
                         </button>
                         <button
-                          onClick={async () => {
-                            try {
-                              const result = await api.adminResendInvite(user.id);
-                              setToast({
-                                message: result.email_sent ? "Invite sent" : "Invite created (SMTP not configured)",
-                                variant: "success",
-                              });
-                            } catch (err: any) {
-                              setToast({ message: err.message, variant: "error" });
-                            }
-                          }}
+                          onClick={() => handleInvite(user)}
                           className="rounded px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
                         >
                           Invite
                         </button>
                         <button
                           onClick={() => { setResetPwUser(user); setResetPwValue(""); }}
-                          className="rounded px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
+                          className="whitespace-nowrap rounded px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
                         >
                           Reset pw
                         </button>
@@ -501,7 +554,27 @@ export default function Admin() {
           {!stats && !statsError && <p className="text-sm text-gray-500">Loading...</p>}
           {stats && (
             <>
-              <div className="overflow-x-auto rounded-lg border border-gray-800">
+              {/* Phones: one row per user, only the counts that aren't zero */}
+              <div className="divide-y divide-gray-800/50 rounded-lg border border-gray-800 sm:hidden">
+                {stats.users.map((u) => {
+                  const counts = EVENT_TYPES.filter((t) => u.event_counts[t]);
+                  return (
+                    <div key={u.id} className="px-3 py-2.5">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="min-w-0 truncate text-sm font-medium text-white">{u.name || u.email}</span>
+                        <span className="shrink-0 text-xs text-gray-500">{relativeTime(u.last_active_at)}</span>
+                      </div>
+                      <div className="mt-0.5 text-xs text-gray-400">
+                        {counts.length === 0
+                          ? <span className="text-gray-600">No activity</span>
+                          : counts.map((t) => `${u.event_counts[t]} ${eventLabel(t).toLowerCase()}`).join(" · ")}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="hidden overflow-x-auto rounded-lg border border-gray-800 sm:block">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-800 bg-gray-900 text-left text-xs text-gray-400">
@@ -535,9 +608,9 @@ export default function Admin() {
                 ) : (
                   <div className="space-y-1">
                     {stats.recent_activity.map((a, i) => (
-                      <div key={i} className="flex items-baseline gap-2 rounded px-3 py-1.5 text-sm hover:bg-gray-900/50">
-                        <span className="text-xs text-gray-500 whitespace-nowrap">{formatTimestamp(a.created_at)}</span>
-                        <span className="text-gray-300">
+                      <div key={i} className="flex items-baseline gap-3 rounded py-1.5 text-sm sm:px-3 sm:hover:bg-gray-900/50">
+                        <span className="w-28 shrink-0 text-xs text-gray-500">{formatTimestamp(a.created_at)}</span>
+                        <span className="min-w-0 break-words text-gray-300">
                           <span className="font-medium text-white">{a.user_name}</span>
                           {" "}{eventAction(a.event_type)}
                           {a.detail && <span className="text-accent-400"> {a.detail}</span>}
@@ -572,12 +645,14 @@ export default function Admin() {
       {/* === Server Health Tab === */}
       {tab === "health" && (
         <section className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-300">Server Health</h2>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-gray-500">
+              {health ? `${health.system.hostname} · up ${formatDuration(health.app.uptime_seconds)}` : ""}
+            </p>
             <button
               onClick={loadHealth}
               disabled={healthLoading}
-              className="rounded bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:bg-gray-700 disabled:opacity-50"
+              className="shrink-0 rounded bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:bg-gray-700 disabled:opacity-50"
             >
               {healthLoading ? "Refreshing..." : "Refresh"}
             </button>
@@ -602,7 +677,7 @@ export default function Admin() {
               {/* Memory */}
               <div className="rounded-lg border border-gray-800 p-4">
                 <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Memory</h3>
-                <div className="mb-2 flex items-baseline gap-2">
+                <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
                   <span className="text-lg font-semibold text-white">{health.memory.used_mb} MB</span>
                   <span className="text-sm text-gray-400">/ {health.memory.total_mb} MB</span>
                   <HealthBadge percent={health.memory.percent} />
@@ -617,8 +692,8 @@ export default function Admin() {
                   <div className="space-y-3">
                     {health.disk.map((d) => (
                       <div key={d.mount}>
-                        <div className="mb-1 flex items-baseline gap-2">
-                          <span className="text-sm font-medium text-white">{d.mount}</span>
+                        <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
+                          <span className="min-w-0 break-all text-sm font-medium text-white">{d.mount}</span>
                           <span className="text-sm text-gray-400">{d.used_gb} GB / {d.total_gb} GB</span>
                           <HealthBadge percent={d.percent} />
                         </div>
@@ -632,7 +707,7 @@ export default function Admin() {
               {/* Database */}
               <div className="rounded-lg border border-gray-800 p-4">
                 <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Database</h3>
-                <div className="mb-3">
+                <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <HealthItem label="Size" value={`${health.database.size_mb} MB`} />
                   <HealthItem label="Storage" value={health.storage.backend === "r2" ? "Cloudflare R2" : "Local filesystem"} />
                 </div>
