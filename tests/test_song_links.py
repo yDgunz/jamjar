@@ -242,3 +242,65 @@ def test_merge_moves_flags(tmp_path: Path):
     db.merge_songs(keep, drop)
     assert db.is_video_flagged(keep, "https://example.com/x")
     assert db.list_song_links(keep) == []
+
+
+# --- Videos the routine couldn't find ---
+
+
+def test_video_misses_recorded_listed_and_cleared_by_a_new_link(song):
+    http, song_id = song
+    body = [
+        {"song_id": song_id, "kind": "lesson"},
+        {"song_id": song_id, "kind": "backing_track", "reason": "not_applicable"},
+        {"song_id": 9999, "kind": "lesson"},  # unknown songs are ignored
+    ]
+    assert http.post("/api/admin/video-misses", json=body, headers=KEY).status_code == 204
+    misses = http.get("/api/admin/video-misses", headers=KEY).json()
+    assert [(m["song_id"], m["kind"], m["reason"]) for m in misses] == [
+        (song_id, "backing_track", "not_applicable"),
+        (song_id, "lesson", "not_found"),
+    ]
+
+    # Recording again updates the reason instead of failing
+    again = [{"song_id": song_id, "kind": "lesson", "reason": "not_applicable"}]
+    assert http.post("/api/admin/video-misses", json=again, headers=KEY).status_code == 204
+
+    # Someone adds a lesson: that miss goes away
+    _add(http, song_id, "https://youtu.be/abc123XYZ_0", "lesson")
+    misses = http.get("/api/admin/video-misses", headers=KEY).json()
+    assert [m["kind"] for m in misses] == ["backing_track"]
+
+    resp = http.delete(f"/api/admin/video-misses/{song_id}/backing_track", headers=KEY)
+    assert resp.status_code == 204
+    assert http.get("/api/admin/video-misses", headers=KEY).json() == []
+
+
+def test_video_misses_validate_and_need_superadmin(client):  # noqa: F811
+    db = api._db
+    _create_user_and_group(db, email="ed@x.com", role="editor")
+    song_id = db._get_or_create_song("S", db.get_group_by_name("TestBand").id)
+    bad = [{"song_id": song_id, "kind": "podcast"}]
+    assert client.post("/api/admin/video-misses", json=bad, headers=KEY).status_code == 422
+    client.post("/api/auth/login", json={"email": "ed@x.com", "password": "password"})
+    assert client.get("/api/admin/video-misses").status_code == 403
+    assert client.post("/api/admin/video-misses", json=[]).status_code == 403
+
+
+def test_not_found_misses_expire_and_merge_keeps_them(tmp_path: Path):
+    db = Database(tmp_path / "t.db")
+    g = db.create_group("G")
+    keep = db._get_or_create_song("A", g)
+    drop = db._get_or_create_song("B", g)
+    db.add_song_link(keep, "lesson", "https://example.com/l", "L")
+    db.set_video_miss(drop, "lesson")
+    db.set_video_miss(drop, "backing_track")
+    db.set_video_miss(drop, "other", "not_applicable")
+    db.merge_songs(keep, drop)
+    # The kept song has a lesson, so only the other two carry over
+    assert [(m["song_id"], m["kind"]) for m in db.list_video_misses()] == [
+        (keep, "backing_track"),
+        (keep, "other"),
+    ]
+    db.conn.execute("UPDATE video_misses SET created_at = datetime('now', '-31 days')")
+    db.conn.commit()
+    assert [m["kind"] for m in db.list_video_misses()] == ["other"]

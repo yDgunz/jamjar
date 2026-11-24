@@ -3760,6 +3760,43 @@ def admin_resolve_video_flag(flag_id: int, request: Request):
     db.resolve_video_flag(flag_id)
 
 
+class VideoMiss(BaseModel):
+    song_id: int
+    kind: SongLinkKind
+    reason: Literal["not_found", "not_applicable"] = "not_found"
+
+
+class VideoMissResponse(VideoMiss):
+    created_at: str
+
+
+@app.get("/api/admin/video-misses", response_model=list[VideoMissResponse])
+def admin_list_video_misses(request: Request):
+    """Kinds of video the library-curation routine should not search for now:
+    it found nothing recently, or the kind doesn't apply to the song."""
+    _require_role(request, "superadmin")
+    return get_db().list_video_misses()
+
+
+@app.post("/api/admin/video-misses", status_code=204)
+def admin_set_video_misses(
+    misses: Annotated[list[VideoMiss], Field(max_length=500)], request: Request
+):
+    """Record what a run of the routine searched for and couldn't get."""
+    _require_role(request, "superadmin")
+    db = get_db()
+    for miss in misses:
+        if db.get_song(miss.song_id):
+            db.set_video_miss(miss.song_id, miss.kind, miss.reason)
+
+
+@app.delete("/api/admin/video-misses/{song_id}/{kind}", status_code=204)
+def admin_delete_video_miss(song_id: int, kind: SongLinkKind, request: Request):
+    """Let the routine search for this kind of video again."""
+    _require_role(request, "superadmin")
+    get_db().delete_video_miss(song_id, kind)
+
+
 @app.get("/api/admin/song-identification")
 def admin_song_identification(request: Request):
     """State of automatic song tagging (speech-to-text + matching)."""
