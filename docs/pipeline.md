@@ -57,6 +57,7 @@ Untagged tracks are tagged automatically when they are recognised: right after a
 4. **When it runs** (`jam-session identify-songs`, a child process started by the server; one at a time, others queue):
    - **After an upload, Drive import or re-split** — for that recording only (`--session ID`): its tracks are transcribed, then every untagged track is re-assessed. A 90-minute recording takes roughly 15 minutes on one core.
    - **Nightly** (`JAM_IDENTIFY_HOUR`, UTC) — transcribes any track without a transcript (newest recordings first, up to `JAM_IDENTIFY_MAX_MINUTES`, the rest the next night), then re-assesses every untagged track, so more get recognised as more takes are tagged by hand and charts gain lyrics. It also catches whatever an after-upload run skipped.
+   - **On demand** (superadmin) — `POST /api/admin/song-identification/run` starts a full run like the nightly one; `?session_id=ID` runs it for one recording, so an older recording doesn't wait behind hundreds of newer tracks.
 
    A run skips transcribing when free memory is below `JAM_TRANSCRIBE_MIN_FREE_MB` or another recording is being processed. Tagged tracks are transcribed too: they are the reference takes. `JAM_IDENTIFY_HOUR=off` turns all automatic runs off.
 
