@@ -18,15 +18,15 @@ html {
 /* Where page content can start at the top: below the notch/status bar inset, and,
    in the iOS Home Screen app, below the band iOS blurs and fades at the top of the
    page (about 35pt, measured from screenshots). That band is reported as no inset, so
-   part of it is added explicitly (all of it left too big a gap); -webkit-touch-callout
-   limits it to iOS. */
+   a little of it is added explicitly: just enough to clear its strongest part (all of
+   it, and then 1.25rem, left too big a gap). -webkit-touch-callout limits it to iOS. */
 :root {
   --safe-top: env(safe-area-inset-top);
 }
 @media (display-mode: standalone) {
   @supports (-webkit-touch-callout: none) {
     :root {
-      --safe-top: calc(env(safe-area-inset-top) + 1.25rem);
+      --safe-top: calc(env(safe-area-inset-top) + 0.5rem);
     }
   }
 }
