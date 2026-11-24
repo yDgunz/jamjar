@@ -297,7 +297,9 @@ At the end of any session where work state changed:
 
 ## Deployment
 
-The app runs in Docker via `docker compose`. CI/CD is via GitHub Actions (`.github/workflows/deploy.yml`): push to `main` triggers SSH deploy to the VPS. The deploy rebuilds with `--pull` (fresh base images), then polls `/health` for up to ~60s; if the new version never becomes healthy it resets to the previous commit, rebuilds, and fails the workflow.
+The app runs in Docker via `docker compose`. CI/CD is via GitHub Actions (`.github/workflows/deploy.yml`): push to `main` builds the image on the GitHub runner (with `pull`, so base images are fresh) and pushes it to GHCR as `ghcr.io/<owner>/jamjar:<commit sha>` (and `:latest`); nothing is built on the VPS. The deploy job then SSHes in, pulls that image with the job's short-lived `GITHUB_TOKEN`, tags it `jamjar:live` (the image `docker-compose.yml` runs; the image it replaces becomes `jamjar:previous`), runs `docker compose up -d --no-build`, and polls `/health` for up to ~60s. If the new version never becomes healthy it resets to the previous commit, puts `jamjar:previous` back as `jamjar:live`, restarts, and fails the workflow. The registry keeps the 10 newest images.
+
+`IMAGE_PLATFORM` in `deploy.yml` and `qa-deploy.yml` (`linux/amd64`) must match the VPS's CPU; the deploy checks this after pulling and stops before touching the running app if it doesn't. Locally, `docker compose up --build` still builds the image.
 
 **Required GitHub Secrets:** `SSH_HOST`, `SSH_USER`, `SSH_KEY`, `SSH_PASSPHRASE`
 
@@ -310,17 +312,17 @@ Feature branches can be deployed to `<branch>.jam-jar.app` for testing on any de
 **How it works:**
 1. Create a PR from your feature branch
 2. Add the `deploy-qa` label to the PR
-3. GitHub Actions builds and deploys a QA environment with seeded test data
+3. GitHub Actions builds the image (pushed to GHCR as `ghcr.io/<owner>/jamjar-qa:<branch>`), and the VPS pulls it and starts a QA environment with seeded test data
 4. A comment appears on the PR with the QA URL
 5. Log in with any seeded user (e.g., `test`) using the QA password from `JAM_QA_PASSWORD`
 6. Removing the label or closing/merging the PR tears down the environment
 
-**Constraints:** Max 3 concurrent QA environments. Each gets 512MB RAM, 1 CPU.
+**Constraints:** One QA environment at a time (`MAX_QA_ENVS` in `scripts/qa-deploy.sh`; it shares the VPS with production). A deploy for a second branch fails until the first is torn down. It gets 512MB RAM, 1 CPU.
 
 **Infrastructure:** Caddy (systemd on VPS) reverse-proxies subdomains to per-branch Docker Compose projects. QA config files live in `/etc/caddy/qa-sites/`. Workspaces live in `/opt/jamjar-qa/<branch>/`.
 
 **Scripts:**
-- `scripts/qa-deploy.sh <branch> <repo-url> <git-ref>` — deploy a QA environment
+- `scripts/qa-deploy.sh <branch> <repo-url> <git-ref> [image]` — deploy a QA environment (pulls `image` when given, otherwise builds on the server)
 - `scripts/qa-teardown.sh <branch>` — tear down a QA environment
 
 **Environment:** QA environments use local-only storage (no R2), no SMTP, and a unique JWT secret. The seeded database uses `JAM_QA_PASSWORD` for all user passwords.

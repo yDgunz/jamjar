@@ -1,5 +1,9 @@
 services:
   app:
+    # Production runs the image CI built and pushed to GHCR: the deploy pulls it and
+    # tags it jamjar:live (nothing is built on the server). `docker compose up --build`
+    # still builds it locally.
+    image: jamjar:live
     build: .
     ports:
       - "127.0.0.1:8000:8000"
