@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS songs (
     artist TEXT NOT NULL DEFAULT '',
     sheet TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
+    score_path TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(group_id, name)
 );
@@ -272,6 +273,7 @@ class Song:
     background_sources: str = ""  # JSON list of {title, url}
     created_at: str | None = None
     tab: str = ""
+    score_path: str | None = None  # storage key of the notated score (MusicXML), if any
 
 
 @dataclass
@@ -477,6 +479,10 @@ class Database:
         if "tab" not in song_cols:
             # Guitar tablature (intros, riffs, solos), kept apart from the chords/lyrics chart
             self.conn.execute("ALTER TABLE songs ADD COLUMN tab TEXT NOT NULL DEFAULT ''")
+            self.conn.commit()
+        if "score_path" not in song_cols:
+            # Notated sheet music: storage key of an uploaded MusicXML file
+            self.conn.execute("ALTER TABLE songs ADD COLUMN score_path TEXT")
             self.conn.commit()
 
         # Shared song catalog: every song is linked to its home band.
@@ -1318,7 +1324,7 @@ class Database:
                       COUNT(t.id) as take_count,
                       MIN(ses.date) as first_date, MAX(ses.date) as last_date,
                       s.created_by, s.updated_by, s.updated_at,
-                      s.background, s.background_sources, s.created_at, s.tab
+                      s.background, s.background_sources, s.created_at, s.tab, s.score_path
                FROM songs s
                LEFT JOIN tracks t ON t.song_id = s.id{take_filter}
                LEFT JOIN sessions ses ON t.session_id = ses.id
@@ -1421,6 +1427,22 @@ class Database:
         )
         self.conn.commit()
 
+    def set_song_score(self, song_id: int, score_path: str | None, updated_by: int | None = None):
+        """Set (or clear, with None) the storage key of a song's notated score."""
+        self.conn.execute(
+            "UPDATE songs SET score_path = ?, updated_by = ?, updated_at = datetime('now')"
+            " WHERE id = ?",
+            (score_path, updated_by, song_id),
+        )
+        self.conn.commit()
+
+    def score_paths(self) -> set[str]:
+        """Storage keys of every song's notated score."""
+        rows = self.conn.execute(
+            "SELECT score_path FROM songs WHERE score_path IS NOT NULL"
+        ).fetchall()
+        return {row["score_path"] for row in rows}
+
     def set_song_background(self, song_id: int, text: str, sources_json: str):
         """Set (or clear, with empty text) a song's "About" background."""
         self.conn.execute(
@@ -1502,7 +1524,7 @@ class Database:
 
     def merge_songs(self, keep_id: int, merge_id: int):
         """Fold song `merge_id` into `keep_id`: takes, setlist entries and group
-        links move over; the kept song's artist/chart/notes win unless empty.
+        links move over; the kept song's artist/chart/notes/score win unless empty.
         `merge_id` is deleted."""
         if keep_id == merge_id:
             raise ValueError("Cannot merge a song into itself")
@@ -1551,6 +1573,7 @@ class Database:
                        artist = CASE WHEN artist = '' THEN ? ELSE artist END,
                        sheet = CASE WHEN sheet = '' THEN ? ELSE sheet END,
                        tab = CASE WHEN tab = '' THEN ? ELSE tab END,
+                       score_path = COALESCE(score_path, ?),
                        background_sources = CASE WHEN background = ''
                                             THEN ? ELSE background_sources END,
                        background = CASE WHEN background = '' THEN ? ELSE background END,
@@ -1560,6 +1583,7 @@ class Database:
                     merge["artist"],
                     merge["sheet"],
                     merge["tab"],
+                    merge["score_path"],
                     merge["background_sources"],
                     merge["background"],
                     keep_id,

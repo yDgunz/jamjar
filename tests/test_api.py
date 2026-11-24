@@ -1701,3 +1701,217 @@ def test_server_health_readonly_forbidden(client, tmp_path):
 
     resp = client.get("/api/admin/server-health")
     assert resp.status_code == 403
+
+
+# --- Song scores (notated sheet music) ---
+
+_MUSICXML = (
+    b'<?xml version="1.0" encoding="UTF-8"?>\n'
+    b'<score-partwise version="4.0"><part-list/></score-partwise>\n'
+)
+
+
+def _mxl_bytes():
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("META-INF/container.xml", "<container/>")
+        zf.writestr("score.xml", _MUSICXML)
+    return buf.getvalue()
+
+
+def _make_song(client, gid, name="Gymnopedie"):
+    resp = client.post("/api/songs", json={"name": name, "group_id": gid, "artist": "Satie"})
+    assert resp.status_code == 200
+    return resp.json()["id"]
+
+
+def test_song_has_no_score_by_default(auth_client):
+    client, _, gid = auth_client
+    song_id = _make_song(client, gid)
+    assert client.get(f"/api/songs/{song_id}").json()["score_format"] is None
+    assert client.get(f"/api/songs/{song_id}/score").status_code == 404
+
+
+def test_upload_and_fetch_score(auth_client, tmp_path):
+    client, _, gid = auth_client
+    song_id = _make_song(client, gid)
+    data = _mxl_bytes()
+
+    resp = client.put(f"/api/songs/{song_id}/score", files={"file": ("piece.mxl", data)})
+    assert resp.status_code == 200
+    assert resp.json()["score_format"] == "mxl"
+    assert "score_path" not in resp.json()
+    assert client.get("/api/songs").json()[0]["score_format"] == "mxl"
+
+    resp = client.get(f"/api/songs/{song_id}/score")
+    assert resp.status_code == 200
+    assert resp.content == data
+    assert resp.headers["x-content-type-options"] == "nosniff"
+    assert "attachment" in resp.headers["content-disposition"]
+    assert len(list((tmp_path / "scores").iterdir())) == 1
+
+
+def test_upload_plain_musicxml_score(auth_client):
+    client, _, gid = auth_client
+    song_id = _make_song(client, gid)
+    resp = client.put(f"/api/songs/{song_id}/score", files={"file": ("piece.xml", _MUSICXML)})
+    assert resp.status_code == 200
+    assert resp.json()["score_format"] == "musicxml"
+    assert client.get(f"/api/songs/{song_id}/score").content == _MUSICXML
+
+
+def test_replace_score_removes_old_file(auth_client, tmp_path):
+    client, _, gid = auth_client
+    song_id = _make_song(client, gid)
+    first = client.put(f"/api/songs/{song_id}/score", files={"file": ("a.mxl", _mxl_bytes())})
+    assert len(first.json()["score_version"]) == 16
+    resp = client.put(f"/api/songs/{song_id}/score", files={"file": ("b.musicxml", _MUSICXML)})
+    assert resp.json()["score_format"] == "musicxml"
+    assert resp.json()["score_version"] != first.json()["score_version"]
+    files = list((tmp_path / "scores").iterdir())
+    assert [f.suffix for f in files] == [".musicxml"]
+
+
+@pytest.mark.parametrize(
+    "filename,data",
+    [
+        ("piece.pdf", b"%PDF-1.4"),
+        ("piece.mxl", b"not a zip"),
+        ("piece.musicxml", b"<html><script>alert(1)</script></html>"),
+    ],
+)
+def test_upload_score_rejects_non_musicxml(auth_client, filename, data):
+    client, _, gid = auth_client
+    song_id = _make_song(client, gid)
+    resp = client.put(f"/api/songs/{song_id}/score", files={"file": (filename, data)})
+    assert resp.status_code == 400
+    assert client.get(f"/api/songs/{song_id}").json()["score_format"] is None
+
+
+def test_upload_score_too_large(auth_client, monkeypatch):
+    client, _, gid = auth_client
+    song_id = _make_song(client, gid)
+    monkeypatch.setattr(api, "MAX_SCORE_BYTES", 10)
+    resp = client.put(f"/api/songs/{song_id}/score", files={"file": ("p.xml", _MUSICXML)})
+    assert resp.status_code == 413
+
+
+def test_delete_score(auth_client, tmp_path):
+    client, _, gid = auth_client
+    song_id = _make_song(client, gid)
+    client.put(f"/api/songs/{song_id}/score", files={"file": ("a.mxl", _mxl_bytes())})
+    resp = client.delete(f"/api/songs/{song_id}/score")
+    assert resp.status_code == 200
+    assert resp.json()["score_format"] is None
+    assert client.get(f"/api/songs/{song_id}/score").status_code == 404
+    assert list((tmp_path / "scores").iterdir()) == []
+
+
+def test_delete_song_removes_score_file(auth_client, tmp_path):
+    client, _, gid = auth_client
+    song_id = _make_song(client, gid)
+    client.put(f"/api/songs/{song_id}/score", files={"file": ("a.mxl", _mxl_bytes())})
+    assert client.delete(f"/api/songs/{song_id}").status_code == 200
+    assert list((tmp_path / "scores").iterdir()) == []
+
+
+def test_score_requires_group_access_and_editor(client):
+    db = api._db
+    _, gid = _create_user_and_group(db)
+    song_id = db._get_or_create_song("Private Piece", gid)
+    key = {"X-API-Key": "test-api-key"}
+    resp = client.put(
+        f"/api/songs/{song_id}/score", files={"file": ("a.mxl", _mxl_bytes())}, headers=key
+    )
+    assert resp.status_code == 200
+
+    # A member of another group can't see it
+    _login_as(client, db, "outsider@example.com", role="admin", group_name="Other")
+    assert client.get(f"/api/songs/{song_id}/score").status_code == 404
+    client.post("/api/auth/logout")
+
+    # A readonly member can read but not replace or delete
+    _login_as(client, db, "reader@example.com", role="readonly", group_id=gid)
+    assert client.get(f"/api/songs/{song_id}/score").status_code == 200
+    resp = client.put(f"/api/songs/{song_id}/score", files={"file": ("a.mxl", _mxl_bytes())})
+    assert resp.status_code == 403
+    assert client.delete(f"/api/songs/{song_id}/score").status_code == 403
+
+
+def test_score_path_migration_on_existing_db(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    Database(path).close()
+    conn = sqlite3.connect(path)
+    conn.execute("ALTER TABLE songs DROP COLUMN score_path")
+    conn.execute("INSERT INTO groups (name) VALUES ('G')")
+    conn.execute("INSERT INTO songs (group_id, name, sheet) VALUES (1, 'Old Song', 'C G')")
+    conn.commit()
+    conn.close()
+
+    db = Database(path)
+    song = db.list_songs([1])[0]
+    assert (song.name, song.sheet, song.score_path) == ("Old Song", "C G", None)
+    db.close()
+
+
+def test_merge_keeps_score_and_drops_the_other_file(auth_client, tmp_path):
+    client, _, gid = auth_client
+    keep = _make_song(client, gid, "Clair de Lune")
+    other = _make_song(client, gid, "Claire de Lune")
+    client.put(f"/api/songs/{keep}/score", files={"file": ("a.mxl", _mxl_bytes())})
+    client.put(f"/api/songs/{other}/score", files={"file": ("b.xml", _MUSICXML)})
+    resp = client.post("/api/songs/merge", json={"keep_id": keep, "merge_id": other})
+    assert resp.status_code == 200
+    assert resp.json()["score_format"] == "mxl"
+    assert [f.suffix for f in (tmp_path / "scores").iterdir()] == [".mxl"]
+
+
+def test_merge_carries_score_to_song_without_one(auth_client, tmp_path):
+    client, _, gid = auth_client
+    keep = _make_song(client, gid, "Clair de Lune")
+    other = _make_song(client, gid, "Claire de Lune")
+    client.put(f"/api/songs/{other}/score", files={"file": ("b.xml", _MUSICXML)})
+    resp = client.post("/api/songs/merge", json={"keep_id": keep, "merge_id": other})
+    assert resp.json()["score_format"] == "musicxml"
+    assert client.get(f"/api/songs/{keep}/score").content == _MUSICXML
+
+
+def test_delete_group_removes_scores_of_its_songs_only(client, tmp_path):
+    db = api._db
+    key = {"X-API-Key": "test-api-key"}
+    _, gone = _create_user_and_group(db)
+    stays = db.create_group("Other Band")
+    solo_song = db._get_or_create_song("Only Here", gone)
+    shared_song = db._get_or_create_song("Shared", gone)
+    db.link_song_to_group(shared_song, stays)
+    for song_id, data in ((solo_song, _mxl_bytes()), (shared_song, _MUSICXML)):
+        resp = client.put(
+            f"/api/songs/{song_id}/score",
+            files={"file": ("s.mxl" if data[:2] == b"PK" else "s.xml", data)},
+            headers=key,
+        )
+        assert resp.status_code == 200
+    assert client.delete(f"/api/admin/groups/{gone}", headers=key).status_code == 200
+    assert [f.suffix for f in (tmp_path / "scores").iterdir()] == [".musicxml"]
+    assert client.get(f"/api/songs/{shared_song}/score", headers=key).status_code == 200
+
+
+def test_storage_usage_counts_scores_as_referenced(auth_client, monkeypatch):
+    from jam_session_processor.storage import LocalStorage
+
+    client, _, gid = auth_client
+    song_id = _make_song(client, gid)
+    key = {"X-API-Key": "test-api-key"}
+    client.put(f"/api/songs/{song_id}/score", files={"file": ("a.mxl", _mxl_bytes())})
+    score_key = next(iter(api._db.score_paths()))
+    # A bucket listing (R2) includes every object, scores too
+    monkeypatch.setattr(
+        LocalStorage, "list_objects", lambda self: [(score_key, 10), ("stray.bin", 5)]
+    )
+    usage = client.get("/api/admin/storage?refresh=true", headers=key).json()
+    assert usage["orphans"] == {"objects": 1, "bytes": 5}

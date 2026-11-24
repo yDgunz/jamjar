@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, Link, useNavigate, useLocation } from "react-router";
 import { api, formatLongDate, formatShortDate, canEdit, canAdmin, recordSongActivity } from "../api";
 import type { Song, SongLink, SongLinkKind, SongTrack } from "../api";
@@ -9,6 +9,7 @@ import { ListRows } from "../components/ListItemCard";
 import EditableField from "../components/EditableField";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
+import ScoreViewer from "../components/ScoreViewer";
 import SongAbout from "../components/SongAbout";
 import SongTab from "../components/SongTab";
 import SongVideos from "../components/SongVideos";
@@ -139,7 +140,10 @@ export default function SongHistory() {
   const [fetchingLyrics, setFetchingLyrics] = useState(false);
   const [editingSheet, setEditingSheet] = useState(false);
   const [sheetInput, setSheetInput] = useState("");
-  const [tab, setTab] = useState<"chart" | "takes" | "tab" | "about" | null>(null);
+  const [tab, setTab] = useState<"chart" | "takes" | "tab" | "score" | "about" | null>(null);
+  const scoreFileRef = useRef<HTMLInputElement>(null);
+  const [uploadingScore, setUploadingScore] = useState(false);
+  const [showRemoveScore, setShowRemoveScore] = useState(false);
   const [editingTab, setEditingTab] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [editingNotesField, setEditingNotesField] = useState(false);
@@ -150,6 +154,30 @@ export default function SongHistory() {
   const [videoError, setVideoError] = useState<string | null>(null);
   const [savingVideo, setSavingVideo] = useState(false);
   const [removingLink, setRemovingLink] = useState<SongLink | null>(null);
+
+  const handleScoreFile = async (file: File | undefined) => {
+    if (!file) return;
+    setUploadingScore(true);
+    try {
+      setSong(await api.uploadSongScore(songId, file));
+      setTab("score");
+    } catch (err) {
+      setErrorMsg(`Upload failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setUploadingScore(false);
+      if (scoreFileRef.current) scoreFileRef.current.value = "";
+    }
+  };
+
+  const handleRemoveScore = async () => {
+    setShowRemoveScore(false);
+    try {
+      setSong(await api.deleteSongScore(songId));
+      setTab(null);
+    } catch (err) {
+      setErrorMsg(`Remove failed: ${err instanceof Error ? err.message : err}`);
+    }
+  };
 
   const openAddVideo = () => {
     setVideoUrl("");
@@ -321,9 +349,13 @@ export default function SongHistory() {
 
   if (!song) return <p className="text-red-400">Song not found.</p>;
 
-  const activeTab = tab ?? (song.sheet || takes.length === 0 ? "chart" : "takes");
-  // With four tabs the row gets tight on phones; the Edit button drops to its icon
-  const manyTabs = Boolean((song.tab || tab === "tab") && song.background);
+  // A piece with only notated sheet music (no chart) opens on its score
+  const activeTab = tab ?? (
+    !song.sheet && song.score_format ? "score" : song.sheet || takes.length === 0 ? "chart" : "takes"
+  );
+  // With four or more tabs the row gets tight on phones; the Edit button drops to its icon
+  const manyTabs =
+    [song.tab || tab === "tab", song.score_format, song.background].filter(Boolean).length >= 2;
   const multiGroup = user != null && user.groups.length > 1;
   const songGroups = song.groups ?? [];
   const bandNames = songGroups.length ? songGroups.map((g) => g.name).join(", ") : song.group_name;
@@ -347,6 +379,15 @@ export default function SongHistory() {
     sheetActions.push({ actions: [
       { label: song.sheet ? "Edit chart" : "Add chart", onClick: () => { setTab("chart"); setEditingSheet(true); } },
       { label: song.tab ? "Edit tab" : "Add tab", hint: "riffs & solos", onClick: () => { setTab("tab"); setEditingTab(true); } },
+      {
+        label: song.score_format ? "Replace sheet music" : "Add sheet music",
+        hint: uploadingScore ? "uploading…" : "MusicXML file",
+        disabled: uploadingScore,
+        onClick: () => scoreFileRef.current?.click(),
+      },
+      ...(song.score_format
+        ? [{ label: "Remove sheet music", onClick: () => setShowRemoveScore(true) }]
+        : []),
       {
         label: "Fetch lyrics",
         hint: song.artist ? "lrclib.net" : "needs artist",
@@ -422,6 +463,7 @@ export default function SongHistory() {
             "chart",
             "takes",
             ...(song.tab || tab === "tab" ? (["tab"] as const) : []),
+            ...(song.score_format ? (["score"] as const) : []),
             ...(song.background ? (["about"] as const) : []),
           ] as const).map((t) => (
             <button
@@ -429,7 +471,7 @@ export default function SongHistory() {
               onClick={() => setTab(t)}
               className={`flex-1 whitespace-nowrap rounded-md px-1.5 py-1.5 sm:px-2 transition ${activeTab === t ? "bg-gray-600 text-white shadow" : "text-gray-400"}`}
             >
-              {t === "chart" ? "Chart" : t === "about" ? "About" : t === "tab" ? "Tab" : `Takes${takes.length ? ` (${takes.length})` : ""}`}
+              {t === "chart" ? "Chart" : t === "about" ? "About" : t === "tab" ? "Tab" : t === "score" ? "Score" : `Takes${takes.length ? ` (${takes.length})` : ""}`}
             </button>
           ))}
         </div>
@@ -566,6 +608,10 @@ export default function SongHistory() {
           onEditingChange={(e) => { setEditingTab(e); if (!e && !song.tab) setTab("chart"); }}
           onSaved={setSong}
         />
+      ) : activeTab === "score" && song.score_format ? (
+        <div className="mt-5">
+          <ScoreViewer songId={songId} format={song.score_format} version={song.score_version} />
+        </div>
       ) : activeTab === "about" && song.background ? (
         <SongAbout background={song.background} />
       ) : takes.length === 0 ? (
@@ -647,6 +693,22 @@ export default function SongHistory() {
           }
         }}
         onCancel={() => setRemovingLink(null)}
+      />
+      <input
+        ref={scoreFileRef}
+        type="file"
+        accept=".mxl,.musicxml,.xml"
+        className="hidden"
+        onChange={(e) => handleScoreFile(e.target.files?.[0])}
+      />
+      <Modal
+        open={showRemoveScore}
+        title="Remove sheet music"
+        message={`Remove the sheet music from ${song?.name}? The file is deleted.`}
+        confirmLabel="Remove"
+        variant="danger"
+        onConfirm={handleRemoveScore}
+        onCancel={() => setShowRemoveScore(false)}
       />
       <Modal
         open={showFetchConfirm}

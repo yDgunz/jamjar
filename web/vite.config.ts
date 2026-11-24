@@ -29,6 +29,9 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         // Precache the handwriting font too, so the notebook look works offline
         globPatterns: ['**/*.{js,css,html,woff2}'],
+        // The sheet-music engraver (Verovio, ~8 MB) is fetched the first time a
+        // score is opened; keep it out of the precache every visitor downloads.
+        globIgnores: ['**/verovio.worker-*.js'],
         // No navigateFallback — use NetworkFirst for navigations instead,
         // so the browser always fetches fresh index.html from the server.
         // Hashed JS/CSS bundles are still precached and served instantly.
@@ -79,6 +82,7 @@ export default defineConfig({
       },
     }),
   ],
+  worker: { format: 'es' },
   server: {
     host: true,
     proxy: {
