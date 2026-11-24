@@ -6,6 +6,7 @@ import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import FilterChip from "../components/FilterChip";
 import ListItemCard, { ListRows } from "../components/ListItemCard";
+import SongHas from "../components/SongHas";
 import PageHeader, { HeaderIconButton, PlusIcon } from "../components/PageHeader";
 import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import SearchInput from "../components/SearchInput";
@@ -358,7 +359,7 @@ export default function SongCatalog() {
                   key={song.id}
                   to={`/songs/${song.id}`}
                   title={song.name}
-                  right={song.take_count > 0 ? <span className="text-gray-500">{song.take_count}</span> : null}
+                  right={<SongHas song={song} />}
                 >
                   {(meta || hit === "lyrics") && (
                     <div className="mt-0.5 truncate text-sm text-gray-400">
