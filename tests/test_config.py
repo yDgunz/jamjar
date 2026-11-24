@@ -166,3 +166,13 @@ def test_reset_clears_singleton(monkeypatch, tmp_path):
     cfg2 = get_config()
     assert cfg2.port == 9999
     assert cfg1 is not cfg2
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [("30", 30), ("7", 7), ("0", None), ("never", None), ("off", None), ("", None), ("x", 30)],
+)
+def test_share_expiry_days(raw, expected):
+    from jam_session_processor.config import _share_expiry_days
+
+    assert _share_expiry_days(raw) == expected

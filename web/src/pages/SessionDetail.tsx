@@ -3,6 +3,8 @@ import { Link, useParams, useNavigate, useSearchParams } from "react-router";
 import { api, formatLongDate, canEdit, canAdmin, SESSION_KINDS, SESSION_KIND_LABEL } from "../api";
 import type { Session, SessionKind, Track, Song } from "../api";
 import ActionSheet from "../components/ActionSheet";
+import ShareDialog from "../share/ShareDialog";
+import { ShareIcon } from "../share/ShareIcon";
 import type { SheetSection } from "../components/ActionSheet";
 import { ListRows } from "../components/ListItemCard";
 import FetchError from "../components/FetchError";
@@ -43,6 +45,7 @@ export default function SessionDetail() {
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [processingProgress, setProcessingProgress] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [mergeTarget, setMergeTarget] = useState<{ trackId: number; nextId: number } | null>(null);
   const [merging, setMerging] = useState(false);
   const player = usePlayer();
@@ -374,6 +377,15 @@ export default function SessionDetail() {
             {fullIsCurrent && player.playing ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="h-4 w-4" />}
             {fullIsCurrent && player.playing ? "Pause full recording" : "Play full recording"}
           </button>
+          <button
+            onClick={() => setShareOpen(true)}
+            aria-label="Share recording"
+            title="Share recording"
+            className="flex shrink-0 items-center gap-1.5 rounded-xl bg-white/[0.08] px-4 py-3 text-[15px] font-medium text-gray-200 transition hover:bg-white/[0.12] active:bg-white/[0.12]"
+          >
+            <ShareIcon className="h-4 w-4" />
+            <span className="hidden sm:inline">Share</span>
+          </button>
           {sheetSections.length > 0 && (
             <button
               onClick={() => setSheetOpen(true)}
@@ -466,6 +478,7 @@ export default function SessionDetail() {
         sections={sheetSections}
         onClose={() => setSheetOpen(false)}
       />
+      <ShareDialog open={shareOpen} kind="session" id={session.id} title={sessionTitle} onClose={() => setShareOpen(false)} />
       <Modal
         open={mergeTarget !== null}
         title="Merge tracks"

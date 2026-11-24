@@ -3,6 +3,8 @@ import { useParams, Link, useNavigate, useLocation } from "react-router";
 import { api, formatLongDate, formatShortDate, canEdit, canAdmin, recordSongActivity } from "../api";
 import type { Song, SongLink, SongLinkKind, SongTrack } from "../api";
 import ActionSheet, { MoreButton } from "../components/ActionSheet";
+import ShareDialog from "../share/ShareDialog";
+import { ShareIcon } from "../share/ShareIcon";
 import type { SheetAction, SheetSection } from "../components/ActionSheet";
 import ChordSheet from "../components/ChordSheet";
 import { ListRows } from "../components/ListItemCard";
@@ -22,12 +24,11 @@ import { isChordPro, toChordPro } from "../utils/chordpro";
 import { LINK_KIND_LABEL } from "../utils/youtube";
 
 
-function TakeRow({ take, songName, onUpdate, readOnly, onError }: {
+function TakeRow({ take, songName, onUpdate, readOnly }: {
   take: SongTrack;
   songName: string;
   onUpdate: () => void;
   readOnly?: boolean;
-  onError?: (msg: string) => void;
 }) {
   const player = usePlayer();
   const key = `track:${take.id}`;
@@ -35,24 +36,13 @@ function TakeRow({ take, songName, onUpdate, readOnly, onError }: {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesInput, setNotesInput] = useState(take.notes ?? "");
+  const [shareOpen, setShareOpen] = useState(false);
   const sessionName = take.session_name || `Session ${take.session_id}`;
 
   const handleSaveNotes = async () => {
     await api.updateTrackNotes(take.id, notesInput.trim());
     setEditingNotes(false);
     onUpdate();
-  };
-
-  const handleShare = async () => {
-    try {
-      const result = await api.createShareLink(take.id);
-      const fullUrl = `${window.location.origin}${result.url}`;
-      if (navigator.share) await navigator.share({ title: songName, url: fullUrl });
-      else await navigator.clipboard.writeText(fullUrl);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      onError?.(`Share failed: ${err instanceof Error ? err.message : err}`);
-    }
   };
 
   const play = () => player.play({
@@ -67,7 +57,7 @@ function TakeRow({ take, songName, onUpdate, readOnly, onError }: {
   const actions: SheetAction[] = [
     { label: "Go to recording", href: `/sessions/${take.session_id}` },
     ...(!readOnly ? [{ label: take.notes ? "Edit notes" : "Add notes", onClick: () => setEditingNotes(true) }] : []),
-    { label: "Share link", onClick: handleShare },
+    { label: "Share…", onClick: () => setShareOpen(true) },
     { label: "Download", href: `${api.trackAudioUrl(take.id)}?download=1`, download: `${songName}.m4a` },
   ];
 
@@ -115,6 +105,7 @@ function TakeRow({ take, songName, onUpdate, readOnly, onError }: {
         sections={[{ actions }]}
         onClose={() => setSheetOpen(false)}
       />
+      <ShareDialog open={shareOpen} kind="track" id={take.id} title={songName} onClose={() => setShareOpen(false)} />
     </div>
   );
 }
@@ -135,6 +126,7 @@ export default function SongHistory() {
   const [nameInput, setNameInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [bandsOpen, setBandsOpen] = useState(false);
 
   const [editingArtist, setEditingArtist] = useState(false);
@@ -410,6 +402,11 @@ export default function SongHistory() {
       });
     }
   }
+  // Everyone can share; without edit rights the button opens the share dialog directly
+  const canOpenSheet = sheetActions.length > 0;
+  if (canOpenSheet) {
+    sheetActions.push({ actions: [{ label: "Share…", hint: "public link", onClick: () => setShareOpen(true) }] });
+  }
   if (canAdmin(user)) {
     sheetActions.push({ title: "Manage", actions: [
       { label: "Delete song", destructive: true, onClick: () => setShowDelete(true) },
@@ -477,7 +474,16 @@ export default function SongHistory() {
             </button>
           ))}
         </div>
-        {sheetActions.length > 0 && (
+        {!canOpenSheet && (
+          <button
+            onClick={() => setShareOpen(true)}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white/[0.08] px-3 py-2 text-sm font-medium text-gray-200 transition hover:bg-white/[0.14] active:bg-white/[0.14]"
+          >
+            <ShareIcon className="h-4 w-4" />
+            <span className={manyTabs ? "hidden sm:inline" : ""}>Share</span>
+          </button>
+        )}
+        {canOpenSheet && (
           <button
             onClick={() => setActionsOpen(true)}
             aria-label="Edit"
@@ -628,7 +634,6 @@ export default function SongHistory() {
                 songName={song.name}
                 onUpdate={refresh}
                 readOnly={!canEdit(user)}
-                onError={setErrorMsg}
               />
             ))}
           </ListRows>
@@ -642,6 +647,7 @@ export default function SongHistory() {
         sections={sheetActions}
         onClose={() => setActionsOpen(false)}
       />
+      <ShareDialog open={shareOpen} kind="song" id={song.id} title={song.name} onClose={() => setShareOpen(false)} />
       <FormModal
         open={addingVideo}
         title="Add video"

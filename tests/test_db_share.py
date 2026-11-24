@@ -48,24 +48,24 @@ def test_get_share_link_by_token_invalid(seeded_db):
     assert db.get_share_link_by_token("nonexistent") is None
 
 
-def test_get_share_link_by_track(seeded_db):
+def test_get_share_for_track(seeded_db):
     db, uid, gid, sid, tid = seeded_db
     db.create_share_link(tid, uid)
-    link = db.get_share_link_by_track(tid)
+    link = db.get_share("track", tid)
     assert link is not None
     assert link.track_id == tid
 
 
-def test_get_share_link_by_track_none(seeded_db):
+def test_get_share_for_track_none(seeded_db):
     db, uid, gid, sid, tid = seeded_db
-    assert db.get_share_link_by_track(tid) is None
+    assert db.get_share("track", tid) is None
 
 
-def test_delete_share_link(seeded_db):
+def test_delete_share(seeded_db):
     db, uid, gid, sid, tid = seeded_db
-    db.create_share_link(tid, uid)
-    db.delete_share_link(tid)
-    assert db.get_share_link_by_track(tid) is None
+    link = db.create_share_link(tid, uid)
+    db.delete_share(link.id)
+    assert db.get_share("track", tid) is None
 
 
 def test_share_link_cascades_on_track_delete(seeded_db):
@@ -82,3 +82,73 @@ def test_share_link_user_delete_sets_null(seeded_db):
     fetched = db.get_share_link_by_token(link.token)
     assert fetched is not None
     assert fetched.created_by is None
+
+
+def test_old_track_only_table_is_replaced(tmp_path):
+    """The old track-only table is dropped and recreated; its links don't carry over."""
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    db = Database(path)
+    uid = db.create_user("a@example.com", hash_password("pw"))
+    gid = db.create_group("Band")
+    sid = db.create_session("r.m4a", gid)
+    tid = db.create_track(sid, track_number=1, start_sec=0, end_sec=1, audio_path="t.m4a")
+    db.close()
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """DROP TABLE share_links;
+        CREATE TABLE share_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token TEXT NOT NULL UNIQUE,
+            track_id INTEGER NOT NULL UNIQUE REFERENCES tracks(id) ON DELETE CASCADE,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );"""
+    )
+    conn.execute(
+        "INSERT INTO share_links (token, track_id, created_by) VALUES ('tok', ?, ?)", (tid, uid)
+    )
+    conn.commit()
+    conn.close()
+
+    db = Database(path)
+    assert db.get_share_link_by_token("tok") is None
+    # New kinds of link work on the new table
+    assert db.create_share("session", sid, gid, uid).session_id == sid
+    assert db.create_share_link(tid, uid).kind == "track"
+
+
+def test_shares_cascade_with_their_target(seeded_db):
+    db, uid, gid, sid, tid = seeded_db
+    song = db._get_or_create_song("Song", gid)
+    setlist = db.create_setlist("Gig", gid)
+    links = [
+        db.create_share("session", sid, gid, uid),
+        db.create_share("setlist", setlist, gid, uid),
+        db.create_share("song", song, gid, uid),
+    ]
+    db.delete_setlist(setlist)
+    db.delete_song(song)
+    db.delete_session(sid)
+    assert all(db.get_share_link_by_token(link.token) is None for link in links)
+
+
+def test_song_share_follows_song_merge(seeded_db):
+    db, uid, gid, sid, tid = seeded_db
+    keep = db._get_or_create_song("Keep", gid)
+    gone = db._get_or_create_song("Gone", gid)
+    link = db.create_share("song", gone, gid, uid)
+    db.merge_songs(keep, gone)
+    assert db.get_share_link_by_token(link.token).song_id == keep
+
+
+def test_list_shares_titles(seeded_db):
+    db, uid, gid, sid, tid = seeded_db
+    db.create_share_link(tid, uid, expires_in_days=7)
+    [row] = db.list_shares(created_by=uid)
+    assert row["title"] == "Track 1"
+    assert row["kind"] == "track" and row["target_id"] == tid
+    assert row["expired"] is False
+    assert db.list_shares(created_by=uid + 1) == []
+    assert db.list_shares(group_ids=[gid])[0]["id"] == row["id"]
