@@ -1287,6 +1287,11 @@ def get_job(job_id: str, request: Request):
     )
 
 
+# Uploads shorter than this are imported as one track without song detection
+# (they can still be split later via reprocess).
+SINGLE_TRACK_MAX_SEC = 600
+
+
 @_tracked_job
 def _process_upload(
     job_id: str,
@@ -1359,7 +1364,9 @@ def _process_upload(
                 storage.rename(r2_key, new_source_rel)
             db.update_session_source_file(session_id, new_source_rel)
 
-        if single:
+        # Short recordings are almost always one song, not a full jam session
+        short = bool(meta.duration_seconds) and meta.duration_seconds < SINGLE_TRACK_MAX_SEC
+        if single or short:
             segments = [(0.0, meta.duration_seconds)]
         else:
             db.update_job_progress(job_id, "Detecting songs...")

@@ -102,7 +102,7 @@ def _mock_export(file_path, segments, output_dir, **kwargs):
     return paths
 
 
-def _make_mock_meta(duration=400.0, recording_date=None):
+def _make_mock_meta(duration=4000.0, recording_date=None):
     meta = MagicMock()
     meta.duration_seconds = duration
     meta.recording_date = recording_date

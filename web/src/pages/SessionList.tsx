@@ -366,6 +366,9 @@ export default function SessionList() {
           <span className="text-sm text-gray-300">Single song recording</span>
         </label>
         {!singleSong && (
+          <p className="text-xs text-gray-500 -mt-2">Recordings under 10 minutes are always kept as one track.</p>
+        )}
+        {!singleSong && (
         <div>
           <label className="block text-xs font-medium text-gray-400 mb-1">
             Threshold (dB)

@@ -620,7 +620,7 @@ def test_upload_session(auth_client, tmp_path):
 
     mock_meta = MagicMock()
     mock_meta.recording_date = None
-    mock_meta.duration_seconds = 400.0
+    mock_meta.duration_seconds = 4000.0
 
     def mock_export(file_path, segments, output_dir, **kwargs):
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -660,6 +660,47 @@ def test_upload_session(auth_client, tmp_path):
     assert data["group_id"] == gid
 
 
+def test_upload_short_recording_is_single_track(auth_client, tmp_path):
+    """Recordings under 10 minutes skip song detection and become one track."""
+    from io import BytesIO
+    from unittest.mock import MagicMock, patch
+
+    client, uid, gid = auth_client
+
+    mock_meta = MagicMock()
+    mock_meta.recording_date = None
+    mock_meta.duration_seconds = 245.0
+
+    def mock_export(file_path, segments, output_dir, **kwargs):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        paths = []
+        for i, _ in enumerate(segments, 1):
+            p = output_dir / f"track{i}.m4a"
+            p.write_bytes(b"\x00" * 100)
+            paths.append(p)
+        return paths
+
+    detect = MagicMock()
+    with (
+        patch("jam_session_processor.splitter.detect_songs", detect),
+        patch("jam_session_processor.output.export_segments", side_effect=mock_export),
+        patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta),
+    ):
+        resp = client.post(
+            "/api/sessions/upload",
+            files={"file": ("short-take.m4a", BytesIO(b"\x00" * 100), "audio/mp4")},
+        )
+        assert resp.status_code == 202
+        result = _poll_job(client, resp.json()["id"])
+
+    assert result["status"] == "completed"
+    detect.assert_not_called()
+    tracks = client.get(f"/api/sessions/{result['session_id']}/tracks").json()
+    assert len(tracks) == 1
+    assert tracks[0]["start_sec"] == 0.0
+    assert tracks[0]["end_sec"] == 245.0
+
+
 def test_upload_invalid_type(auth_client, tmp_path):
     from io import BytesIO
 
@@ -683,7 +724,7 @@ def test_upload_duplicate_filename(auth_client, tmp_path):
     mock_result = SplitResult(segments=[], total_duration_sec=100.0)
     mock_meta = MagicMock()
     mock_meta.recording_date = None
-    mock_meta.duration_seconds = 100.0
+    mock_meta.duration_seconds = 4000.0
 
     with (
         patch("jam_session_processor.splitter.detect_songs", return_value=mock_result),
@@ -801,7 +842,7 @@ def test_upload_with_api_key(client, tmp_path):
     mock_result = SplitResult(segments=[], total_duration_sec=100.0)
     mock_meta = MagicMock()
     mock_meta.recording_date = None
-    mock_meta.duration_seconds = 100.0
+    mock_meta.duration_seconds = 4000.0
 
     headers = {"X-API-Key": "test-api-key"}
     with (
@@ -1492,11 +1533,14 @@ def test_access_request_sends_email(client, monkeypatch):
     monkeypatch.setenv("JAM_ACCESS_REQUEST_EMAIL", "admin@example.com")
     reset_config()
 
-    resp = client.post("/api/access-request", json={
-        "email": "newband@example.com",
-        "band_name": "The Testers",
-        "message": "We jam every Tuesday",
-    })
+    resp = client.post(
+        "/api/access-request",
+        json={
+            "email": "newband@example.com",
+            "band_name": "The Testers",
+            "message": "We jam every Tuesday",
+        },
+    )
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
     assert len(sent_emails) == 1
@@ -1511,11 +1555,14 @@ def test_access_request_missing_fields(client):
 
 
 def test_access_request_invalid_email(client):
-    resp = client.post("/api/access-request", json={
-        "email": "not-an-email",
-        "band_name": "Band",
-        "message": "Hi",
-    })
+    resp = client.post(
+        "/api/access-request",
+        json={
+            "email": "not-an-email",
+            "band_name": "Band",
+            "message": "Hi",
+        },
+    )
     assert resp.status_code == 422
 
 
@@ -1527,29 +1574,38 @@ def test_access_request_rate_limited(client, monkeypatch):
     api._access_request_limiter._attempts.clear()
 
     for _ in range(3):
-        resp = client.post("/api/access-request", json={
+        resp = client.post(
+            "/api/access-request",
+            json={
+                "email": "test@example.com",
+                "band_name": "Band",
+                "message": "Hi",
+            },
+        )
+        assert resp.status_code == 200
+
+    resp = client.post(
+        "/api/access-request",
+        json={
             "email": "test@example.com",
             "band_name": "Band",
             "message": "Hi",
-        })
-        assert resp.status_code == 200
-
-    resp = client.post("/api/access-request", json={
-        "email": "test@example.com",
-        "band_name": "Band",
-        "message": "Hi",
-    })
+        },
+    )
     assert resp.status_code == 429
 
 
 def test_access_request_smtp_not_configured(client):
     """Access request without SMTP still returns 200 (no error revealed)."""
     api._access_request_limiter._attempts.clear()
-    resp = client.post("/api/access-request", json={
-        "email": "test@example.com",
-        "band_name": "Band",
-        "message": "Hi",
-    })
+    resp = client.post(
+        "/api/access-request",
+        json={
+            "email": "test@example.com",
+            "band_name": "Band",
+            "message": "Hi",
+        },
+    )
     assert resp.status_code == 200
 
 
@@ -1665,7 +1721,7 @@ def test_server_health_database_counts(client, tmp_path):
     assert isinstance(db_info["size_mb"], (int, float))
     counts = db_info["counts"]
     assert counts["groups"] >= 1  # We created one
-    assert counts["users"] >= 1   # We logged in as one
+    assert counts["users"] >= 1  # We logged in as one
     assert counts["sessions"] >= 1  # We created one
     assert "tracks" in counts
     assert "songs" in counts
