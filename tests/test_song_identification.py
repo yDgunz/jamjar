@@ -193,12 +193,67 @@ def test_run_skips_transcribing_when_memory_is_short(client, monkeypatch):  # no
     db = api._db
     monkeypatch.setattr("jam_session_processor.transcribe.is_available", lambda: True)
     monkeypatch.setattr(identify, "available_memory_mb", lambda: 100)
-    assert "memory" in identify.run(db)["skipped"]
+    assert "memory" in identify.run(db, wait_minutes=0)["skipped"]
     monkeypatch.setattr(identify, "available_memory_mb", lambda: 4000)
     gid = db.create_group("Busy")
     db.create_job("j1", gid)
     db.update_job_progress("j1", "splitting")
-    assert "processed" in identify.run(db)["skipped"]
+    assert "processed" in identify.run(db, wait_minutes=0)["skipped"]
+
+
+def test_run_waits_for_other_processing_to_finish(client, monkeypatch):  # noqa: F811
+    # Recordings re-detected together: the first one's run starts while the others are
+    # still being split. It waits for them instead of giving up.
+    db = api._db
+    monkeypatch.setattr(identify, "available_memory_mb", lambda: 4000)
+    gid = db.create_group("Busy")
+    db.create_job("j1", gid)
+    db.update_job_progress("j1", "splitting")
+    waits = []
+
+    def sleep(seconds):
+        waits.append(seconds)
+        if len(waits) == 3:
+            db.complete_job("j1", None)
+
+    monkeypatch.setattr(identify.time, "sleep", sleep)
+    assert identify._wait_until_free(db, wait_minutes=30) == ""
+    assert len(waits) == 3
+
+
+def test_interrupted_tagging_is_found_again_after_a_restart(client):  # noqa: F811
+    db = api._db
+    _, sid = _band(db)
+    done, pending = _track(db, sid, 1), _track(db, sid, 2)
+    db.save_transcript(done, db.get_track(done).audio_path, "fake", "words")
+    assert db.sessions_awaiting_tagging() == []  # not a detected split: left alone
+    db.set_split_state(sid, "auto")
+    assert db.sessions_awaiting_tagging() == [sid]
+    db.save_transcript(pending, db.get_track(pending).audio_path, "fake", "words")
+    assert db.sessions_awaiting_tagging() == []
+
+
+def test_recording_reports_tagging_in_progress(client, monkeypatch):  # noqa: F811
+    db = api._db
+    _, sid = _band(db)
+    done = _track(db, sid, 1)
+    _track(db, sid, 2)
+    db.save_transcript(done, db.get_track(done).audio_path, "fake", "words")
+    get = lambda: client.get(f"/api/sessions/{sid}", headers=H).json()["tagging"]  # noqa: E731
+    assert get() is None
+
+    monkeypatch.setattr(api, "_identify_pending", [sid])
+    assert get() == {"state": "queued", "transcribed": 1, "total": 2}
+    monkeypatch.setattr(api, "_identify_pending", [])
+    monkeypatch.setattr(api, "_identify_running", lambda: True)
+    monkeypatch.setattr(api, "_identify_current", sid)
+    assert get() == {"state": "running", "transcribed": 1, "total": 2}
+    # A run for another recording says nothing about this one
+    monkeypatch.setattr(api, "_identify_current", sid + 1)
+    assert get() is None
+    # The nightly run (no recording) covers it while it has tracks left to transcribe
+    monkeypatch.setattr(api, "_identify_current", None)
+    assert get()["state"] == "running"
 
 
 def test_admin_endpoints_need_superadmin(client):  # noqa: F811

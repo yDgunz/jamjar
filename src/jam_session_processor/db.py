@@ -1384,6 +1384,19 @@ class Database:
         ).fetchall()
         return [r["id"] for r in rows]
 
+    def sessions_awaiting_tagging(self) -> list[int]:
+        """Freshly detected recordings with tracks that still have no transcript: their
+        tagging run was interrupted (a restart) or never got to transcribe."""
+        rows = self.conn.execute(
+            """SELECT DISTINCT s.id FROM sessions s
+               JOIN tracks t ON t.session_id = s.id
+               LEFT JOIN track_transcripts tt
+                 ON tt.track_id = t.id AND tt.audio_path = t.audio_path
+               WHERE s.split_state = 'auto' AND tt.track_id IS NULL
+               ORDER BY s.id"""
+        ).fetchall()
+        return [r["id"] for r in rows]
+
     def get_timed_transcripts(self, session_id: int) -> dict[int, dict]:
         """track_id -> {segments, levels} for a recording's tracks that have them."""
         rows = self.conn.execute(
