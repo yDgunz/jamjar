@@ -2479,25 +2479,6 @@ def revoke_share(share_id: int, request: Request):
     return {"ok": True}
 
 
-# The original track-only endpoints, kept for existing clients
-
-
-@app.post("/api/tracks/{track_id}/share")
-def create_share_link(track_id: int, request: Request):
-    resp = create_share(ShareCreateRequest(kind="track", id=track_id), request)
-    return {"token": resp.token, "url": resp.url, **resp.model_dump()}
-
-
-@app.delete("/api/tracks/{track_id}/share")
-def revoke_share_link(track_id: int, request: Request):
-    db = get_db()
-    _get_track_with_access(db, track_id, request)
-    link = db.get_share_link_by_track(track_id)
-    if not link:
-        raise HTTPException(status_code=404, detail="No share link exists for this track")
-    return revoke_share(link.id, request)
-
-
 # --- Public share endpoints (no auth; the token is the credential) ---
 
 

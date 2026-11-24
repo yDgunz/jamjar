@@ -48,24 +48,24 @@ def test_get_share_link_by_token_invalid(seeded_db):
     assert db.get_share_link_by_token("nonexistent") is None
 
 
-def test_get_share_link_by_track(seeded_db):
+def test_get_share_for_track(seeded_db):
     db, uid, gid, sid, tid = seeded_db
     db.create_share_link(tid, uid)
-    link = db.get_share_link_by_track(tid)
+    link = db.get_share("track", tid)
     assert link is not None
     assert link.track_id == tid
 
 
-def test_get_share_link_by_track_none(seeded_db):
+def test_get_share_for_track_none(seeded_db):
     db, uid, gid, sid, tid = seeded_db
-    assert db.get_share_link_by_track(tid) is None
+    assert db.get_share("track", tid) is None
 
 
-def test_delete_share_link(seeded_db):
+def test_delete_share(seeded_db):
     db, uid, gid, sid, tid = seeded_db
-    db.create_share_link(tid, uid)
-    db.delete_share_link(tid)
-    assert db.get_share_link_by_track(tid) is None
+    link = db.create_share_link(tid, uid)
+    db.delete_share(link.id)
+    assert db.get_share("track", tid) is None
 
 
 def test_share_link_cascades_on_track_delete(seeded_db):
@@ -84,14 +84,10 @@ def test_share_link_user_delete_sets_null(seeded_db):
     assert fetched.created_by is None
 
 
-def test_old_track_only_table_is_migrated(tmp_path, monkeypatch):
-    """Links from before expiry keep working and get the default expiry from now."""
+def test_old_track_only_table_is_replaced(tmp_path):
+    """The old track-only table is dropped and recreated; its links don't carry over."""
     import sqlite3
 
-    from jam_session_processor.config import reset_config
-
-    monkeypatch.setenv("JAM_SHARE_EXPIRY_DAYS", "30")
-    reset_config()
     path = tmp_path / "old.db"
     db = Database(path)
     uid = db.create_user("a@example.com", hash_password("pw"))
@@ -117,15 +113,10 @@ def test_old_track_only_table_is_migrated(tmp_path, monkeypatch):
     conn.close()
 
     db = Database(path)
-    link = db.get_share_link_by_token("tok")
-    assert (link.kind, link.track_id, link.group_id, link.created_by) == ("track", tid, gid, uid)
-    assert link.expires_at is not None
-    from jam_session_processor.db import share_expired
-
-    assert not share_expired(link)
-    # And new kinds of link work on the rebuilt table
+    assert db.get_share_link_by_token("tok") is None
+    # New kinds of link work on the new table
     assert db.create_share("session", sid, gid, uid).session_id == sid
-    reset_config()
+    assert db.create_share_link(tid, uid).kind == "track"
 
 
 def test_shares_cascade_with_their_target(seeded_db):

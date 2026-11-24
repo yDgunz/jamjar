@@ -44,54 +44,23 @@ def auth_client(client, tmp_path):
     return client, uid, gid
 
 
-def test_create_share_link(auth_client):
+def test_create_share_requires_auth(client):
+    assert client.post("/api/shares", json={"kind": "track", "id": 1}).status_code == 401
+    assert client.get("/api/shares").status_code == 401
+    assert client.delete("/api/shares/1").status_code == 401
+
+
+def test_old_track_share_endpoints_are_gone(auth_client):
     client, uid, gid = auth_client
-    db = api._db
-    tracks = db.get_tracks_for_session(1)
-    resp = client.post(f"/api/tracks/{tracks[0].id}/share")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "token" in data
-    assert data["url"].startswith("/share/")
+    assert client.post("/api/tracks/1/share").status_code in (404, 405)
 
 
-def test_create_share_link_idempotent(auth_client):
+def test_revoke_unknown_share_404(auth_client):
     client, uid, gid = auth_client
-    db = api._db
-    tracks = db.get_tracks_for_session(1)
-    resp1 = client.post(f"/api/tracks/{tracks[0].id}/share")
-    resp2 = client.post(f"/api/tracks/{tracks[0].id}/share")
-    assert resp1.json()["token"] == resp2.json()["token"]
+    assert client.delete("/api/shares/999").status_code == 404
 
 
-def test_create_share_link_requires_auth(client):
-    resp = client.post("/api/tracks/1/share")
-    assert resp.status_code == 401
-
-
-def test_delete_share_link(auth_client):
-    client, uid, gid = auth_client
-    db = api._db
-    tracks = db.get_tracks_for_session(1)
-    client.post(f"/api/tracks/{tracks[0].id}/share")
-    resp = client.delete(f"/api/tracks/{tracks[0].id}/share")
-    assert resp.status_code == 200
-
-
-def test_delete_share_link_404_when_none(auth_client):
-    client, uid, gid = auth_client
-    db = api._db
-    tracks = db.get_tracks_for_session(1)
-    resp = client.delete(f"/api/tracks/{tracks[0].id}/share")
-    assert resp.status_code == 404
-
-
-def test_delete_share_link_requires_auth(client):
-    resp = client.delete("/api/tracks/1/share")
-    assert resp.status_code == 401
-
-
-def test_readonly_can_create_share_link(client, tmp_path):
+def test_readonly_can_share(client, tmp_path):
     """All roles including readonly can create share links."""
     db = api._db
     uid = db.create_user("ro@example.com", hash_password("password"), name="RO", role="readonly")
@@ -103,8 +72,9 @@ def test_readonly_can_create_share_link(client, tmp_path):
     db.create_track(sid, track_number=1, start_sec=0, end_sec=300, audio_path=str(audio))
     client.post("/api/auth/login", json={"email": "ro@example.com", "password": "password"})
     tracks = db.get_tracks_for_session(sid)
-    resp = client.post(f"/api/tracks/{tracks[0].id}/share")
+    resp = client.post("/api/shares", json={"kind": "track", "id": tracks[0].id})
     assert resp.status_code == 200
+    assert resp.json()["can_manage"] is True
 
 
 def test_public_share_audio(auth_client, tmp_path):
@@ -153,11 +123,6 @@ def test_public_share_track(auth_client):
 
 def test_public_share_invalid_token(client):
     assert client.get("/api/share/nonexistent").status_code == 404
-
-
-def test_old_track_links_are_now_spa_pages(client):
-    """/share/{token} is the SPA's public page now; the server no longer renders it."""
-    assert client.get("/api/share/nope").status_code == 404
 
 
 # --- Generic share links (tracks, recordings, setlists, songs) ---

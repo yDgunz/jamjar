@@ -80,7 +80,7 @@ def test_merge_recordings(auth_client, tmp_path):  # noqa: F811
     c, tc = _recording(db, tmp_path, gid, "c", 4, notes="third")
     http.post(f"/api/tracks/{tb}/tag", json={"song_name": "Be Forever"})
     http.put(f"/api/tracks/{tc}/notes", json={"notes": "MIX2"})
-    token = http.post(f"/api/tracks/{tc}/share").json()["token"]
+    token = http.post("/api/shares", json={"kind": "track", "id": tc}).json()["token"]
 
     resp = http.post(f"/api/sessions/{a}/merge", json={"session_ids": [c, b]})
     assert resp.status_code == 202

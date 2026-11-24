@@ -573,39 +573,21 @@ class Database:
             self.conn.execute("ALTER TABLE songs ADD COLUMN score_path TEXT")
             self.conn.commit()
 
-        # Share links: any kind of target, plus an expiry. Rebuild the old
-        # track-only table (track_id NOT NULL); existing links get the default expiry.
+        # Share links: any kind of target, plus an expiry. The old track-only table
+        # (track_id NOT NULL) is replaced; its links are dropped, not carried over.
         share_cols = {
             r["name"] for r in self.conn.execute("PRAGMA table_info(share_links)").fetchall()
         }
         if "kind" not in share_cols:
-            self._rebuild_share_links()
+            self.conn.execute("DROP TABLE share_links")
+            self.conn.execute(f"CREATE TABLE share_links ({_SHARE_LINKS_COLUMNS}\n)")
+            self.conn.commit()
 
         # Shared song catalog: every song is linked to its home band.
         self.conn.execute(
             "INSERT OR IGNORE INTO group_songs (group_id, song_id) SELECT group_id, id FROM songs"
         )
         self.conn.commit()
-
-    def _rebuild_share_links(self):
-        from jam_session_processor.config import get_config
-
-        days = get_config().share_expiry_days
-        expiry = f"datetime('now', '+{int(days)} days')" if days else "NULL"
-        self.conn.execute("DROP TABLE IF EXISTS share_links_new")
-        with self.conn:
-            self.conn.execute(f"CREATE TABLE share_links_new ({_SHARE_LINKS_COLUMNS}\n)")
-            self.conn.execute(
-                "INSERT INTO share_links_new"
-                " (id, token, kind, track_id, group_id, created_by, created_at, expires_at)"
-                " SELECT l.id, l.token, 'track', l.track_id, s.group_id, l.created_by,"
-                f" l.created_at, {expiry}"
-                " FROM share_links l"
-                " LEFT JOIN tracks t ON t.id = l.track_id"
-                " LEFT JOIN sessions s ON s.id = t.session_id"
-            )
-            self.conn.execute("DROP TABLE share_links")
-            self.conn.execute("ALTER TABLE share_links_new RENAME TO share_links")
 
     def close(self):
         """Close every thread's connection."""
@@ -1538,23 +1520,15 @@ class Database:
             out.append(d)
         return out
 
-    # Track-link helpers (the original, track-only API)
-
     def create_share_link(
         self, track_id: int, created_by: int | None, expires_in_days: int | None = None
     ) -> ShareLink:
+        """Share a track (its band is looked up from its recording)."""
         track = self.get_track(track_id)
         session = self.get_session(track.session_id) if track else None
         return self.create_share(
             "track", track_id, session.group_id if session else None, created_by, expires_in_days
         )
-
-    def get_share_link_by_track(self, track_id: int) -> ShareLink | None:
-        return self.get_share("track", track_id)
-
-    def delete_share_link(self, track_id: int):
-        self.conn.execute("DELETE FROM share_links WHERE track_id = ?", (track_id,))
-        self.conn.commit()
 
     # --- Invite tokens ---
 
