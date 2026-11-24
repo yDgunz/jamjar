@@ -15,6 +15,7 @@ Processing runs server-side via two API endpoints:
 - **`POST /api/drive/import`** — import a file from a Google Drive folder shared with the app's service account. The server downloads it with the Drive API into `recordings/drive/<file id>/`, checks for a duplicate by duration (unless `force`), then runs the same processing job as an upload. The Drive file is recorded in `drive_imports` (imported / duplicate / skipped) so it isn't offered again.
 - **`POST /api/sessions/upload`** — upload a new audio file; saves the file and returns a job ID (HTTP 202). Processing runs in a background thread. The frontend polls `GET /api/jobs/{id}` for real-time progress updates until the job completes or fails. When R2 storage is configured, local files are cleaned up after successful upload.
 - **`POST /api/sessions/{id}/reprocess`** — re-run detection on an existing session with new threshold/min-duration parameters (synchronous)
+- **`POST /api/sessions/{id}/merge`** — merge other recordings of the same band into this one (`{session_ids}`), as a background job: the sources are joined into one file and the existing tracks are moved over with shifted times (no re-detection, no re-export)
 
 Both support `single=true` to skip song detection and import the whole file as one track.
 

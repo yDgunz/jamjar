@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router";
-import { api, formatLongDate, canEdit, canAdmin } from "../api";
-import type { Session, Track, Song } from "../api";
+import { api, formatLongDate, canEdit, canAdmin, SESSION_KINDS, SESSION_KIND_LABEL } from "../api";
+import type { Session, SessionKind, Track, Song } from "../api";
 import ActionSheet from "../components/ActionSheet";
 import type { SheetSection } from "../components/ActionSheet";
 import { ListRows } from "../components/ListItemCard";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
+import KindBadge from "../components/KindBadge";
 import ManualSplitPanel from "../components/ManualSplitPanel";
 import type { ManualSegment } from "../components/ManualSplitPanel";
 import Modal, { Toast } from "../components/Modal";
@@ -193,6 +194,14 @@ export default function SessionDetail() {
     }
   };
 
+  const handleSetKind = async (kind: SessionKind) => {
+    try {
+      setSession(await api.updateSessionKind(sessionId, kind));
+    } catch (err) {
+      showError(`Couldn't set the type: ${err instanceof Error ? err.message : err}`);
+    }
+  };
+
   const handleMove = async () => {
     const gid = moveTarget;
     setMoveOpen(false);
@@ -262,6 +271,17 @@ export default function SessionDetail() {
       { label: "Change date", onClick: () => setEditingDate(true) },
       { label: session.notes ? "Edit notes" : "Add notes", onClick: () => setEditingNotes(true) },
     ] });
+    sheetSections.push({
+      title: "Type",
+      actions: [
+        ...SESSION_KINDS.map((k) => ({
+          label: SESSION_KIND_LABEL[k],
+          hint: session.kind === k ? "✓" : undefined,
+          onClick: () => handleSetKind(k),
+        })),
+        ...(session.kind ? [{ label: "No type", onClick: () => handleSetKind("") }] : []),
+      ],
+    });
   }
   if (canAdmin(user)) {
     sheetSections.push({
@@ -319,7 +339,10 @@ export default function SessionDetail() {
               className="mt-1 rounded-lg bg-white/[0.08] px-2 py-1 text-base text-white outline-none"
             />
           ) : (
-            <p className="mt-1 text-[15px] text-gray-400">{meta}</p>
+            <p className="mt-1 text-[15px] text-gray-400">
+              <KindBadge kind={session.kind} className="mr-2" />
+              {meta}
+            </p>
           )}
         </div>
       </div>

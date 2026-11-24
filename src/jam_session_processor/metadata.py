@@ -81,7 +81,12 @@ def extract_metadata(file_path: Path) -> AudioMetadata:
     tags = audio.tags
     if tags:
         for key in ("©day", "\xa9day"):
-            if key in tags:
+            try:
+                present = key in tags
+            except ValueError:
+                # FLAC/Ogg comment keys must be ASCII; mutagen rejects the lookup
+                present = False
+            if present:
                 raw = str(tags[key][0])
                 try:
                     recording_date = datetime.fromisoformat(raw)

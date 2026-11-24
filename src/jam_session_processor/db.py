@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     source_file TEXT NOT NULL,
     duration_sec REAL,
     notes TEXT DEFAULT '',
+    kind TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -200,6 +201,8 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 
 
 VALID_ROLES = {"superadmin", "admin", "editor", "readonly"}
+# What a recording is; '' means not set
+SESSION_KINDS = ("jam", "gig", "demo", "studio")
 
 
 @dataclass
@@ -238,6 +241,7 @@ class Session:
     created_by: int | None = None
     updated_by: int | None = None
     updated_at: str | None = None
+    kind: str = ""
 
 
 @dataclass
@@ -429,6 +433,9 @@ class Database:
         }
         if "duration_sec" not in session_cols:
             self.conn.execute("ALTER TABLE sessions ADD COLUMN duration_sec REAL")
+            self.conn.commit()
+        if "kind" not in session_cols:
+            self.conn.execute("ALTER TABLE sessions ADD COLUMN kind TEXT NOT NULL DEFAULT ''")
             self.conn.commit()
 
         song_cols = {
@@ -978,6 +985,58 @@ class Database:
         )
         self.conn.commit()
 
+    def update_session_kind(self, session_id: int, kind: str, updated_by: int | None = None):
+        if kind not in SESSION_KINDS and kind != "":
+            raise ValueError(f"Unknown recording type: {kind}")
+        self.conn.execute(
+            "UPDATE sessions SET kind = ?, updated_by = ?,"
+            " updated_at = datetime('now') WHERE id = ?",
+            (kind, updated_by, session_id),
+        )
+        self.conn.commit()
+
+    def move_track(
+        self,
+        track_id: int,
+        session_id: int,
+        track_number: int,
+        start_sec: float,
+        end_sec: float,
+        audio_path: str,
+    ):
+        """Re-home a track (used when recordings are merged). Tag, notes and
+        share link stay with the track."""
+        self.conn.execute(
+            "UPDATE tracks SET session_id = ?, track_number = ?, start_sec = ?,"
+            " end_sec = ?, audio_path = ? WHERE id = ?",
+            (session_id, track_number, start_sec, end_sec, audio_path, track_id),
+        )
+        self.conn.commit()
+
+    def finish_session_merge(
+        self,
+        target_id: int,
+        merged_ids: list[int],
+        source_file: str,
+        duration_sec: float,
+        notes: str,
+        updated_by: int | None = None,
+    ):
+        """Point the kept recording at its new combined source and drop the
+        recordings merged into it (their tracks must already have been moved)."""
+        marks = self._in(merged_ids)
+        self.conn.execute(
+            "UPDATE sessions SET source_file = ?, duration_sec = ?, notes = ?,"
+            " updated_by = ?, updated_at = datetime('now') WHERE id = ?",
+            (source_file, duration_sec, notes, updated_by, target_id),
+        )
+        self.conn.execute(
+            f"UPDATE drive_imports SET session_id = ? WHERE session_id IN ({marks})",
+            [target_id, *merged_ids],
+        )
+        self.conn.execute(f"DELETE FROM sessions WHERE id IN ({marks})", merged_ids)
+        self.conn.commit()
+
     def update_session_group(self, session_id: int, new_group_id: int):
         """Move a session to a new group. Tagged songs are linked to the new group
         (or retagged to a same-named song that group already plays)."""
@@ -1476,7 +1535,8 @@ class Database:
         self.conn.commit()
 
     def get_tracks_for_song(self, song_id: int, group_ids: list[int] | None = None) -> list[dict]:
-        """Tracks tagged with a song (in sessions of `group_ids`, or all), newest first."""
+        """Tracks tagged with a song (in sessions of `group_ids`, or all): studio
+        recordings first, then newest first."""
         group_filter = ""
         params: list = [song_id]
         if group_ids is not None:
@@ -1489,11 +1549,11 @@ class Database:
                       t.start_sec, t.end_sec, t.duration_sec,
                       t.audio_path, t.notes,
                       ses.date as session_date, ses.source_file,
-                      ses.name as session_name
+                      ses.name as session_name, ses.kind as session_kind
                FROM tracks t
                JOIN sessions ses ON t.session_id = ses.id
                WHERE t.song_id = ?{group_filter}
-               ORDER BY ses.date DESC, t.track_number""",
+               ORDER BY (ses.kind = 'studio') DESC, ses.date DESC, t.track_number""",
             params,
         ).fetchall()
         return [dict(row) for row in rows]
