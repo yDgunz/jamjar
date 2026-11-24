@@ -3,7 +3,7 @@
 ## Pipeline Steps
 
 1. **Metadata extraction** — reads `.m4a`, `.wav`, `.mp3`, `.flac`, and `.ogg` files using mutagen. Recording date comes from iPhone `©day` tag, then filename parsing (`M-D-YY`, `M-D-YYYY`, `YYYY-MM-DD`).
-2. **Song detection** — decodes to 8 kHz mono PCM via ffmpeg, computes per-second RMS energy, applies 15-second rolling average, finds sustained high-energy regions (default: 2+ minutes above -20 dB). Can be skipped with single-song mode, which imports the entire file as one track.
+2. **Song detection** — decodes to 8 kHz mono PCM via ffmpeg, computes per-second RMS energy, applies a 9-second rolling average, and finds sustained stretches (90+ seconds) at the recording's own playing level: within 7.5 dB of its 90th-percentile loudest second, so loud and quiet recordings split the same way with nothing to tune. Dips shorter than 8 seconds don't end a song. A recording that never gets above -50 dB has no songs. Can be skipped with single-song mode, which imports the entire file as one track.
 3. **Export** — ffmpeg seek+split extracts each song to AAC (M4A container, 192kbps). No full-file loading.
 4. **Storage** — exported tracks are saved locally and optionally uploaded to Cloudflare R2 (when configured).
 5. **Database** — creates session and track records in SQLite with relative file paths.
@@ -14,7 +14,7 @@ Processing runs server-side via two API endpoints:
 
 - **`POST /api/drive/import`** — import a file from a Google Drive folder shared with the app's service account. The server downloads it with the Drive API into `recordings/drive/<file id>/`, checks for a duplicate by duration (unless `force`), then runs the same processing job as an upload. The Drive file is recorded in `drive_imports` (imported / duplicate / skipped) so it isn't offered again.
 - **`POST /api/sessions/upload`** — upload a new audio file; saves the file and returns a job ID (HTTP 202). Processing runs in a background thread. The frontend polls `GET /api/jobs/{id}` for real-time progress updates until the job completes or fails. When R2 storage is configured, local files are cleaned up after successful upload.
-- **`POST /api/sessions/{id}/reprocess`** — re-run detection on an existing session with new threshold/min-duration parameters (synchronous)
+- **`POST /api/sessions/{id}/reprocess`** — re-run detection on an existing session, or split it by hand with `{segments: [[start, end], ...]}` (background job)
 - **`POST /api/sessions/{id}/merge`** — merge other recordings of the same band into this one (`{session_ids}`), as a background job: the sources are joined into one file and the existing tracks are moved over with shifted times (no re-detection, no re-export)
 
 Both support `single=true` to skip song detection and import the whole file as one track.
@@ -29,7 +29,8 @@ Audio file (.m4a/.wav/.mp3/.flac/.ogg)
   ├─ splitter.py ──→ detect_songs()
   │     │  ffmpeg decode → 8 kHz mono PCM
   │     │  compute_rms_profile() → per-second dB values
-  │     │  smooth_profile() → 15-sec rolling average
+  │     │  smooth_profile() → 9-sec rolling average
+  │     │  playing_threshold_db() → level relative to this recording
   │     └─→ SplitResult (list of start/end timestamps)
   │
   ├─ output.py ──→ export_segments()
@@ -43,9 +44,9 @@ Audio file (.m4a/.wav/.mp3/.flac/.ogg)
 
 ## Processing Parameters
 
-- **threshold** — energy threshold in dB (default: -20, higher = more selective)
-- **min_duration** — minimum song duration in seconds (default: 120)
 - **single** — skip detection, import entire file as one track (default: false)
+
+There is no level setting. Older clients may still send `threshold` / `min_duration`; both are accepted and ignored.
 
 ## Automatic Song Tagging (speech-to-text)
 

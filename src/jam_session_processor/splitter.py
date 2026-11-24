@@ -4,11 +4,19 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_ENERGY_THRESHOLD_DB = -20
-DEFAULT_MIN_SONG_DURATION_SEC = 120
+DEFAULT_MIN_SONG_DURATION_SEC = 90
 ANALYSIS_SAMPLE_RATE = 8000
 WINDOW_SEC = 1
-SMOOTHING_WINDOW_SEC = 15
+SMOOTHING_WINDOW_SEC = 9
+# A dip in the smoothed level shorter than this doesn't end a song (a stop, a breakdown)
+MAX_GAP_SEC = 8
+# The level that counts as "playing" is set per recording: this far below how loud the
+# recording gets when the band is playing (its LOUD_PERCENTILE loudest second). Phones
+# and rooms differ by 10+ dB, so no fixed level works for every recording.
+LOUD_PERCENTILE = 0.9
+LOUD_MARGIN_DB = 7.5
+# A recording that never gets louder than this has no music in it
+MIN_LOUD_DB = -50.0
 
 
 @dataclass(frozen=True)
@@ -77,46 +85,77 @@ def smooth_profile(values: list[float], window: int) -> list[float]:
     return smoothed
 
 
+def playing_threshold_db(rms_profile: list[float]) -> float | None:
+    """The level above which this recording counts as music, or None if it's all quiet."""
+    if not rms_profile:
+        return None
+    ordered = sorted(rms_profile)
+    loud = ordered[min(len(ordered) - 1, int(len(ordered) * LOUD_PERCENTILE))]
+    if loud < MIN_LOUD_DB:
+        return None
+    return loud - LOUD_MARGIN_DB
+
+
 def detect_songs(
     file_path: Path,
-    energy_threshold_db: float = DEFAULT_ENERGY_THRESHOLD_DB,
     min_song_duration_sec: int = DEFAULT_MIN_SONG_DURATION_SEC,
+    smoothing_sec: int = SMOOTHING_WINDOW_SEC,
+    max_gap_sec: int = MAX_GAP_SEC,
 ) -> SplitResult:
-    """Detect songs by finding sustained high-energy sections."""
+    """Detect songs: sustained stretches near the recording's own playing level."""
     rms_profile = compute_rms_profile(file_path)
     if not rms_profile:
         return SplitResult(segments=[], total_duration_sec=0.0)
 
     total_duration = len(rms_profile) * WINDOW_SEC
-    smoothed = smooth_profile(rms_profile, SMOOTHING_WINDOW_SEC)
+    threshold = playing_threshold_db(rms_profile)
+    if threshold is None:
+        return SplitResult(segments=[], total_duration_sec=float(total_duration))
+    smoothed = smooth_profile(rms_profile, smoothing_sec)
 
-    # Find contiguous regions above the energy threshold
+    # Find contiguous regions above the threshold
     in_song = False
     song_start = 0
-    raw_segments: list[tuple[int, int]] = []
+    regions: list[list[int]] = []
 
     for i, db in enumerate(smoothed):
-        if db >= energy_threshold_db:
+        if db >= threshold:
             if not in_song:
                 song_start = i
                 in_song = True
         else:
             if in_song:
-                raw_segments.append((song_start, i))
+                regions.append([song_start, i])
                 in_song = False
 
     if in_song:
-        raw_segments.append((song_start, len(smoothed)))
+        regions.append([song_start, len(smoothed)])
 
-    # Filter out segments shorter than min_song_duration
+    # Join regions separated by only a brief dip
+    raw_segments: list[list[int]] = []
+    for start_idx, end_idx in regions:
+        if raw_segments and (start_idx - raw_segments[-1][1]) * WINDOW_SEC < max_gap_sec:
+            raw_segments[-1][1] = end_idx
+        else:
+            raw_segments.append([start_idx, end_idx])
+
+    # Filter out segments shorter than min_song_duration; pad the rest a little
+    # (never past the middle of the gap to a neighbouring region, so songs can't overlap)
     padding_sec = 2.0
     segments: list[tuple[float, float]] = []
-    for start_idx, end_idx in raw_segments:
+    for n, (start_idx, end_idx) in enumerate(raw_segments):
         duration = (end_idx - start_idx) * WINDOW_SEC
-        if duration >= min_song_duration_sec:
-            start_sec = max(0.0, start_idx * WINDOW_SEC - padding_sec)
-            end_sec = min(float(total_duration), end_idx * WINDOW_SEC + padding_sec)
-            segments.append((start_sec, end_sec))
+        if duration < min_song_duration_sec:
+            continue
+        before = (start_idx - raw_segments[n - 1][1]) * WINDOW_SEC / 2 if n else padding_sec
+        after = (
+            (raw_segments[n + 1][0] - end_idx) * WINDOW_SEC / 2
+            if n + 1 < len(raw_segments)
+            else padding_sec
+        )
+        start_sec = max(0.0, start_idx * WINDOW_SEC - min(padding_sec, before))
+        end_sec = min(float(total_duration), end_idx * WINDOW_SEC + min(padding_sec, after))
+        segments.append((start_sec, end_sec))
 
     return SplitResult(segments=segments, total_duration_sec=float(total_duration))
 

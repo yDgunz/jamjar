@@ -74,7 +74,6 @@ export default function SessionList() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadGroupId, setUploadGroupId] = useState<number | null>(null);
-  const [uploadThreshold, setUploadThreshold] = useState<number | string>(20);
   const [singleSong, setSingleSong] = useState(false);
   const [duplicateDetected, setDuplicateDetected] = useState(false);
   const navigate = useNavigate();
@@ -93,7 +92,6 @@ export default function SessionList() {
 
   const openUploadModal = () => {
     setSelectedFile(null);
-    setUploadThreshold(20);
     setSingleSong(false);
     // Pre-populate group: use filter if set, or auto-select if single group
     const groups = user?.groups ?? [];
@@ -126,12 +124,9 @@ export default function SessionList() {
     setUploadError(null);
     setDuplicateDetected(false);
     try {
-      const thresholdNum = uploadThreshold === "" ? 20 : Number(uploadThreshold);
-      const threshold = thresholdNum !== 20 ? -thresholdNum : undefined;
-
       // Try presigned upload flow first
       const initResp = await api.initUpload(
-        selectedFile.name, groupId ?? undefined, threshold, singleSong || undefined, force || undefined,
+        selectedFile.name, groupId ?? undefined, singleSong || undefined, force || undefined,
       );
 
       if (initResp.upload_url) {
@@ -153,13 +148,13 @@ export default function SessionList() {
 
         // Signal completion — server starts background processing
         await api.completeUpload(
-          initResp.job.id, initResp.session_id, threshold, singleSong || undefined, force || undefined,
+          initResp.job.id, initResp.session_id, singleSong || undefined, force || undefined,
         );
         navigate(`/sessions/${initResp.session_id}?job=${initResp.job.id}`);
       } else {
         // Local storage fallback: use existing direct upload
         const job = await api.uploadSession(
-          selectedFile, groupId ?? undefined, threshold, singleSong || undefined, force || undefined,
+          selectedFile, groupId ?? undefined, singleSong || undefined, force || undefined,
           (pct) => {
             setUploadProgress(pct);
             setUploadStatus(pct < 100 ? `Uploading... ${pct}%` : "Processing...");
@@ -365,28 +360,6 @@ export default function SessionList() {
           />
           <span className="text-sm text-gray-300">Single song recording</span>
         </label>
-        {!singleSong && (
-        <div>
-          <label className="block text-xs font-medium text-gray-400 mb-1">
-            Threshold (dB)
-          </label>
-          <div className="flex items-center gap-1.5">
-            <span className="text-sm text-gray-400">&minus;</span>
-            <input
-              type="number"
-              value={uploadThreshold}
-              onChange={(e) => setUploadThreshold(e.target.value === "" ? "" : Number(e.target.value))}
-              min={0}
-              step={1}
-              className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
-            />
-            <span className="text-sm text-gray-500">dB</span>
-          </div>
-          <p className="mt-1 text-xs text-gray-500">
-            Try 15 for loud rooms, 30 for quieter/acoustic.
-          </p>
-        </div>
-        )}
       </FormModal>
     </div>
   );
