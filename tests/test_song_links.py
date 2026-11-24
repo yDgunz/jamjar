@@ -148,3 +148,97 @@ def test_links_deleted_with_song(tmp_path: Path):
     link_id = db.add_song_link(s, "lesson", "https://example.com", "x")
     db.delete_song(s)
     assert db.get_song_link(link_id) is None
+
+
+# --- Marking a video as bad ---
+
+KEY = {"X-API-Key": "test-api-key"}
+
+
+def _add(http, song_id, url, kind="lesson"):
+    resp = http.post(f"/api/songs/{song_id}/links", json={"url": url, "kind": kind, "title": "t"})
+    assert resp.status_code == 200
+    return resp.json()["links"][-1]["id"]
+
+
+def test_flag_hides_video_and_lists_it_for_the_routine(song):
+    http, song_id = song
+    link_id = _add(http, song_id, "https://www.youtube.com/watch?v=abc123XYZ_0")
+    resp = http.post(
+        f"/api/songs/{song_id}/links/{link_id}/flag", json={"reason": "wrong_instrument"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["links"] == []
+
+    flags = http.get("/api/admin/video-flags", headers=KEY).json()
+    assert len(flags) == 1
+    flag = flags[0]
+    assert flag["song_id"] == song_id
+    assert flag["song_name"] == "Wonderwall"
+    assert flag["kind"] == "lesson"
+    assert flag["reason"] == "wrong_instrument"
+    assert flag["url"] == "https://www.youtube.com/watch?v=abc123XYZ_0"
+    assert flag["resolved_at"] is None
+
+    assert http.post(f"/api/admin/video-flags/{flag['id']}/resolve", headers=KEY).status_code == 204
+    assert http.get("/api/admin/video-flags", headers=KEY).json() == []
+    done = http.get("/api/admin/video-flags?include_resolved=true", headers=KEY).json()
+    assert done[0]["resolved_at"]
+    assert http.post("/api/admin/video-flags/999/resolve", headers=KEY).status_code == 404
+
+
+def test_flag_validates_link_and_reason(song):
+    http, song_id = song
+    link_id = _add(http, song_id, "https://example.com/a")
+    assert http.post(f"/api/songs/{song_id}/links/999/flag", json={}).status_code == 404
+    resp = http.post(f"/api/songs/{song_id}/links/{link_id}/flag", json={"reason": "boring"})
+    assert resp.status_code == 422
+
+
+def test_routine_cannot_re_add_flagged_video_but_a_person_can(song):
+    http, song_id = song
+    link_id = _add(http, song_id, "https://www.youtube.com/watch?v=abc123XYZ_0")
+    http.post(f"/api/songs/{song_id}/links/{link_id}/flag", json={"reason": "poor_quality"})
+    flag_id = http.get("/api/admin/video-flags", headers=KEY).json()[0]["id"]
+    http.post(f"/api/admin/video-flags/{flag_id}/resolve", headers=KEY)
+
+    # Same video under another URL shape, even after the flag is resolved
+    body = {"url": "https://youtu.be/abc123XYZ_0?t=10", "kind": "lesson", "title": "t"}
+    assert http.post(f"/api/songs/{song_id}/links", json=body, headers=KEY).status_code == 409
+    other = {**body, "url": "https://youtu.be/different_1"}
+    assert http.post(f"/api/songs/{song_id}/links", json=other, headers=KEY).status_code == 200
+
+    # A person adding it again overrides the flag
+    assert http.post(f"/api/songs/{song_id}/links", json=body).status_code == 200
+    assert http.get("/api/admin/video-flags?include_resolved=true", headers=KEY).json() == []
+
+
+def test_readonly_cannot_flag(client):  # noqa: F811
+    db = api._db
+    _create_user_and_group(db, email="ro@x.com", role="readonly")
+    gid = db.get_group_by_name("TestBand").id
+    song_id = db._get_or_create_song("S", gid)
+    link_id = db.add_song_link(song_id, "lesson", "https://example.com", "x")
+    client.post("/api/auth/login", json={"email": "ro@x.com", "password": "password"})
+    assert client.post(f"/api/songs/{song_id}/links/{link_id}/flag", json={}).status_code == 403
+    assert client.get("/api/admin/video-flags").status_code == 403
+
+
+def test_video_key():
+    key = api._video_key
+    assert key("https://www.youtube.com/watch?v=abc123&t=5") == "yt:abc123"
+    assert key("https://youtu.be/abc123") == "yt:abc123"
+    assert key("https://m.youtube.com/shorts/abc123") == "yt:abc123"
+    assert key(" https://example.com/a ") == "https://example.com/a"
+
+
+def test_merge_moves_flags(tmp_path: Path):
+    db = Database(tmp_path / "t.db")
+    g = db.create_group("G")
+    keep = db._get_or_create_song("A", g)
+    drop = db._get_or_create_song("B", g)
+    link_id = db.add_song_link(drop, "lesson", "https://example.com/x", "X")
+    db.flag_song_link(link_id, "https://example.com/x", "other")
+    db.merge_songs(keep, drop)
+    assert db.is_video_flagged(keep, "https://example.com/x")
+    assert db.list_song_links(keep) == []

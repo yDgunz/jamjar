@@ -76,6 +76,25 @@ CREATE TABLE IF NOT EXISTS song_links (
 
 CREATE INDEX IF NOT EXISTS idx_song_links_song ON song_links(song_id);
 
+-- Videos someone marked as bad. Flagging moves the row here from song_links (so
+-- it disappears from the song at once); the library-curation routine looks for a
+-- replacement and sets resolved_at. Rows are kept so the same video (video_key:
+-- the YouTube id, or the URL) is never added to that song again by the routine.
+CREATE TABLE IF NOT EXISTS video_flags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    url TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    video_key TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT 'other',
+    flagged_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_video_flags_song ON video_flags(song_id);
+
 -- Per-user song activity, for "recently opened / performed" sorting.
 CREATE TABLE IF NOT EXISTS song_activity (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -534,6 +553,7 @@ class Database:
             DROP TABLE IF EXISTS invite_tokens;
             DROP TABLE IF EXISTS activity_log;
             DROP TABLE IF EXISTS song_activity;
+            DROP TABLE IF EXISTS video_flags;
             DROP TABLE IF EXISTS song_links;
             DROP TABLE IF EXISTS group_songs;
             DROP TABLE IF EXISTS setlist_songs;
@@ -1720,6 +1740,9 @@ class Database:
                 "UPDATE song_links SET song_id = ? WHERE song_id = ?", (keep_id, merge_id)
             )
             self.conn.execute(
+                "UPDATE video_flags SET song_id = ? WHERE song_id = ?", (keep_id, merge_id)
+            )
+            self.conn.execute(
                 """INSERT INTO song_activity (user_id, song_id, last_opened_at, last_performed_at)
                    SELECT user_id, ?, last_opened_at, last_performed_at
                    FROM song_activity WHERE song_id = ?
@@ -1796,6 +1819,63 @@ class Database:
 
     def delete_song_link(self, link_id: int):
         self.conn.execute("DELETE FROM song_links WHERE id = ?", (link_id,))
+        self.conn.commit()
+
+    # --- Videos marked as bad ---
+
+    def flag_song_link(
+        self, link_id: int, video_key: str, reason: str, flagged_by: int | None = None
+    ) -> int:
+        """Move a link out of song_links into video_flags, for the curation
+        routine to replace."""
+        with self.conn:
+            cur = self.conn.execute(
+                """INSERT INTO video_flags
+                     (song_id, kind, url, title, video_key, reason, flagged_by)
+                   SELECT song_id, kind, url, title, ?, ?, ? FROM song_links WHERE id = ?""",
+                (video_key, reason, flagged_by, link_id),
+            )
+            self.conn.execute("DELETE FROM song_links WHERE id = ?", (link_id,))
+        return cur.lastrowid
+
+    def list_video_flags(self, include_resolved: bool = False) -> list[dict]:
+        """Flagged videos with their song, oldest first; open ones only by default."""
+        rows = self.conn.execute(
+            f"""SELECT f.id, f.song_id, s.name AS song_name, s.artist AS song_artist,
+                       f.kind, f.url, f.title, f.reason, f.created_at, f.resolved_at,
+                       u.name AS flagged_by_name
+                FROM video_flags f
+                JOIN songs s ON s.id = f.song_id
+                LEFT JOIN users u ON u.id = f.flagged_by
+                {"" if include_resolved else "WHERE f.resolved_at IS NULL"}
+                ORDER BY f.id"""
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_video_flag(self, flag_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM video_flags WHERE id = ?", (flag_id,)).fetchone()
+        return dict(row) if row else None
+
+    def resolve_video_flag(self, flag_id: int):
+        self.conn.execute(
+            """UPDATE video_flags SET resolved_at = datetime('now')
+               WHERE id = ? AND resolved_at IS NULL""",
+            (flag_id,),
+        )
+        self.conn.commit()
+
+    def is_video_flagged(self, song_id: int, video_key: str) -> bool:
+        return bool(
+            self.conn.execute(
+                "SELECT 1 FROM video_flags WHERE song_id = ? AND video_key = ? LIMIT 1",
+                (song_id, video_key),
+            ).fetchone()
+        )
+
+    def clear_video_flags(self, song_id: int, video_key: str):
+        self.conn.execute(
+            "DELETE FROM video_flags WHERE song_id = ? AND video_key = ?", (song_id, video_key)
+        )
         self.conn.commit()
 
     # --- Per-user song activity ---

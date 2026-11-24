@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Literal
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 import requests as http_requests
@@ -2847,6 +2847,25 @@ def _youtube_title(url: str) -> str:
     return ""
 
 
+def _video_key(url: str) -> str:
+    """What identifies a video across URL shapes: the YouTube id, else the URL."""
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or "").lower()
+    for prefix in ("www.", "m.", "music."):
+        host = host.removeprefix(prefix)
+    video_id = ""
+    if host == "youtu.be":
+        video_id = parsed.path.strip("/").split("/")[0]
+    elif host in ("youtube.com", "youtube-nocookie.com"):
+        if parsed.path == "/watch":
+            video_id = parse_qs(parsed.query).get("v", [""])[0]
+        else:
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) >= 2 and parts[0] in ("embed", "shorts", "live", "v"):
+                video_id = parts[1]
+    return f"yt:{video_id}" if video_id else url.strip()
+
+
 @app.post("/api/songs/{song_id}/links", response_model=SongResponse)
 def add_song_link(song_id: int, req: AddSongLinkRequest, request: Request):
     """Attach a reference video (how-to lesson, backing track) to a song."""
@@ -2856,6 +2875,15 @@ def add_song_link(song_id: int, req: AddSongLinkRequest, request: Request):
     url = req.url.strip()
     if urlparse(url).scheme not in ("http", "https") or not urlparse(url).netloc:
         raise HTTPException(status_code=400, detail="Enter a full http(s) link")
+    key = _video_key(url)
+    if db.is_video_flagged(song_id, key):
+        # The curation routine (API key) must not bring back a video someone
+        # marked as bad; a person adding it again overrides the flag.
+        if request.state.auth_type == "api_key":
+            raise HTTPException(
+                status_code=409, detail="This video was marked as bad for this song"
+            )
+        db.clear_video_flags(song_id, key)
     title = req.title.strip() or _youtube_title(url)
     user_id = request.state.user.id if request.state.user else None
     db.add_song_link(song_id, req.kind, url, title, created_by=user_id)
@@ -2871,6 +2899,28 @@ def delete_song_link(song_id: int, link_id: int, request: Request):
     if not link or link["song_id"] != song_id:
         raise HTTPException(status_code=404, detail="Link not found")
     db.delete_song_link(link_id)
+    return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
+
+
+VideoFlagReason = Literal["wrong_song", "wrong_instrument", "poor_quality", "unavailable", "other"]
+
+
+class FlagSongLinkRequest(BaseModel):
+    reason: VideoFlagReason = "other"
+
+
+@app.post("/api/songs/{song_id}/links/{link_id}/flag", response_model=SongResponse)
+def flag_song_link(song_id: int, link_id: int, req: FlagSongLinkRequest, request: Request):
+    """Mark a video as bad: it leaves the song at once, and the library-curation
+    routine looks for a replacement on its next run."""
+    db = get_db()
+    _get_song_with_access(db, song_id, request)
+    _require_role(request, "editor")
+    link = db.get_song_link(link_id)
+    if not link or link["song_id"] != song_id:
+        raise HTTPException(status_code=404, detail="Link not found")
+    user_id = request.state.user.id if request.state.user else None
+    db.flag_song_link(link_id, _video_key(link["url"]), req.reason, flagged_by=user_id)
     return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
 
 
@@ -3676,6 +3726,38 @@ def admin_log_curation_run(req: CurationRunRequest, request: Request):
     items = json.dumps([i.model_dump() for i in req.items])
     run_id = db.add_curation_run(req.summary, items)
     return _curation_run_response(next(r for r in db.list_curation_runs(1) if r["id"] == run_id))
+
+
+class VideoFlagResponse(BaseModel):
+    id: int
+    song_id: int
+    song_name: str
+    song_artist: str
+    kind: str
+    url: str
+    title: str
+    reason: str
+    flagged_by_name: str | None
+    created_at: str
+    resolved_at: str | None
+
+
+@app.get("/api/admin/video-flags", response_model=list[VideoFlagResponse])
+def admin_list_video_flags(request: Request, include_resolved: bool = False):
+    """Videos marked as bad, oldest first: the ones still waiting for the
+    library-curation routine, or all of them with `include_resolved`."""
+    _require_role(request, "superadmin")
+    return get_db().list_video_flags(include_resolved)
+
+
+@app.post("/api/admin/video-flags/{flag_id}/resolve", status_code=204)
+def admin_resolve_video_flag(flag_id: int, request: Request):
+    """The routine is done with a flagged video (replaced, or no replacement found)."""
+    _require_role(request, "superadmin")
+    db = get_db()
+    if not db.get_video_flag(flag_id):
+        raise HTTPException(status_code=404, detail="Flag not found")
+    db.resolve_video_flag(flag_id)
 
 
 @app.get("/api/admin/song-identification")

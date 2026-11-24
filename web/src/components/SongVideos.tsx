@@ -1,5 +1,5 @@
-import { useState } from "react";
-import type { SongLink } from "../api";
+import { useEffect, useState } from "react";
+import type { SongLink, VideoFlagReason } from "../api";
 import { LINK_KIND_LABEL, youTubeId, youTubeStart } from "../utils/youtube";
 
 /**
@@ -134,6 +134,80 @@ export default function SongVideos({
             Add video
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+const FLAG_REASONS: [VideoFlagReason, string][] = [
+  ["wrong_song", "Wrong song or version"],
+  ["wrong_instrument", "Wrong instrument"],
+  ["poor_quality", "Poor quality"],
+  ["unavailable", "Won't play"],
+  ["other", "Something else"],
+];
+
+/**
+ * Asked when removing a video: say what's wrong with it, so the nightly
+ * routine finds a better one, or just remove it.
+ */
+export function RemoveVideoDialog({
+  link,
+  onFlag,
+  onRemove,
+  onCancel,
+}: {
+  link: SongLink | null;
+  onFlag: (link: SongLink, reason: VideoFlagReason) => void;
+  onRemove: (link: SongLink) => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    if (!link) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [link, onCancel]);
+
+  if (!link) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60" onClick={onCancel} />
+      <div className="relative mx-4 w-full max-w-sm rounded-lg border border-gray-700 bg-gray-900 px-6 py-5 shadow-xl">
+        <h3 className="text-sm font-semibold text-white">Remove video</h3>
+        <p className="mt-2 line-clamp-2 text-sm text-gray-400">{link.title || link.url}</p>
+        <p className="mt-4 text-sm text-gray-300">Replace it with a better one</p>
+        <p className="mt-0.5 text-xs text-gray-500">
+          It's removed now and a replacement is found overnight. What's wrong with it?
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {FLAG_REASONS.map(([reason, label]) => (
+            <button
+              key={reason}
+              onClick={() => onFlag(link, reason)}
+              className="rounded-full bg-white/[0.08] px-3 py-1.5 text-sm text-gray-200 transition hover:bg-white/[0.14] active:bg-white/20"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="rounded px-4 py-2 text-sm text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onRemove(link)}
+            className="rounded px-4 py-2 text-sm font-medium text-red-400 transition hover:bg-red-500/10"
+          >
+            Just remove it
+          </button>
+        </div>
       </div>
     </div>
   );

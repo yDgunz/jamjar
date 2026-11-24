@@ -13,7 +13,7 @@ import KindBadge from "../components/KindBadge";
 import ScoreViewer from "../components/ScoreViewer";
 import SongAbout from "../components/SongAbout";
 import SongTab from "../components/SongTab";
-import SongVideos from "../components/SongVideos";
+import SongVideos, { RemoveVideoDialog } from "../components/SongVideos";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
@@ -679,14 +679,17 @@ export default function SongHistory() {
           className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
         />
       </FormModal>
-      <Modal
-        open={removingLink !== null}
-        title="Remove video"
-        message={`Remove "${removingLink?.title || removingLink?.url}" from ${song?.name}?`}
-        confirmLabel="Remove"
-        variant="danger"
-        onConfirm={async () => {
-          const link = removingLink!;
+      <RemoveVideoDialog
+        link={removingLink}
+        onFlag={async (link, reason) => {
+          setRemovingLink(null);
+          try {
+            setSong(await api.flagSongLink(songId, link.id, reason));
+          } catch (err) {
+            setErrorMsg(`Remove failed: ${err instanceof Error ? err.message : err}`);
+          }
+        }}
+        onRemove={async (link) => {
           setRemovingLink(null);
           try {
             setSong(await api.deleteSongLink(songId, link.id));
