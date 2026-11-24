@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router";
 import { api, formatLongDate, canEdit, canAdmin, SESSION_KINDS, SESSION_KIND_LABEL } from "../api";
-import type { Session, SessionKind, Track, Song } from "../api";
+import type { Job, Session, SessionKind, Track, Song } from "../api";
 import ActionSheet from "../components/ActionSheet";
 import ShareDialog from "../share/ShareDialog";
 import { ShareIcon } from "../share/ShareIcon";
@@ -15,6 +15,7 @@ import type { ManualSegment } from "../components/ManualSplitPanel";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
 import Spinner from "../components/Spinner";
+import SplitProgress from "../components/SplitProgress";
 import TrackRow from "../components/TrackRow";
 import { useAuth } from "../context/AuthContext";
 import { formatTime, PauseIcon, PlayIcon, usePlayer } from "../context/PlayerContext";
@@ -43,6 +44,7 @@ export default function SessionDetail() {
   const [manualOpen, setManualOpen] = useState(false);
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [processingProgress, setProcessingProgress] = useState<string | null>(null);
+  const [processingJob, setProcessingJob] = useState<Job | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [mergeTarget, setMergeTarget] = useState<{ trackId: number; nextId: number } | null>(null);
@@ -85,6 +87,7 @@ export default function SessionDetail() {
     if (!activeJobId) return;
     let cancelled = false;
     setProcessingProgress("Processing...");
+    setProcessingJob(null);
 
     const poll = async () => {
       while (!cancelled) {
@@ -112,6 +115,7 @@ export default function SessionDetail() {
             if (jobId) setSearchParams({}, { replace: true });
             return;
           }
+          setProcessingJob(job);
           if (job.progress) setProcessingProgress(job.progress);
         } catch {
           if (cancelled) return;
@@ -407,10 +411,7 @@ export default function SessionDetail() {
       )}
 
       {processingProgress ? (
-        <div className="flex flex-col items-center gap-3 py-12">
-          <Spinner className="text-accent-400" />
-          <p className="text-sm text-gray-400">{processingProgress}</p>
-        </div>
+        <SplitProgress job={processingJob} fallbackText={processingProgress} />
       ) : tracks.length === 0 && !loading ? (
         manualOpen ? null : (
           <div className="mt-5 rounded-xl border border-dashed border-white/10 px-5 py-6 text-center">

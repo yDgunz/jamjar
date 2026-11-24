@@ -1915,3 +1915,40 @@ def test_storage_usage_counts_scores_as_referenced(auth_client, monkeypatch):
     )
     usage = client.get("/api/admin/storage?refresh=true", headers=key).json()
     assert usage["orphans"] == {"objects": 1, "bytes": 5}
+
+
+def test_job_reports_structured_progress(auth_client):
+    """A job's detail (step, counts, segments, waveform) comes back from GET /api/jobs."""
+    from jam_session_processor.api import _waveform_levels
+
+    auth_client, _uid, group_id = auth_client
+    db = api._db
+    db.create_job("jobdetail1", group_id)
+
+    # Text-only progress (older callers) leaves the structured fields empty
+    db.update_job_progress("jobdetail1", "Waiting for upload...")
+    body = auth_client.get("/api/jobs/jobdetail1").json()
+    assert body["step"] is None and body["elapsed_sec"] is None
+
+    db.update_job_progress(
+        "jobdetail1", "Detecting songs...", {"step": "detect", "steps": ["analyze", "detect"]}
+    )
+    db.update_job_progress(
+        "jobdetail1",
+        "Exporting track 1 of 2...",
+        {"step": "export", "current": 1, "total": 2, "segments": [[0, 100], [120, 300]]},
+    )
+    body = auth_client.get("/api/jobs/jobdetail1").json()
+    assert body["step"] == "export"
+    assert body["steps"] == ["analyze", "detect"]  # kept from the earlier step
+    assert (body["current"], body["total"]) == (1, 2)
+    assert body["segments"] == [[0, 100], [120, 300]]
+    assert body["elapsed_sec"] is not None and body["elapsed_sec"] >= 0
+
+    db.complete_job("jobdetail1", None)
+    assert auth_client.get("/api/jobs/jobdetail1").json()["elapsed_sec"] is None
+
+    levels = _waveform_levels([-60.0] * 50 + [-10.0] * 50, bars=10)
+    assert len(levels) == 10
+    assert levels[0] == 0.0 and levels[-1] == 1.0
+    assert _waveform_levels([]) == []

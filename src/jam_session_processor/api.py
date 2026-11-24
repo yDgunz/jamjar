@@ -892,6 +892,124 @@ class JobResponse(BaseModel):
     progress: str
     session_id: int | None
     error: str | None
+    # Structured progress for the processing screen; all optional (older jobs,
+    # and job types that only report text, leave them out)
+    step: str | None = None  # download | analyze | upload | detect | export | save | merge
+    steps: list[str] | None = None  # the steps this job goes through, in order
+    current: int | None = None  # e.g. track 3 ...
+    total: int | None = None  # ... of 9
+    elapsed_sec: float | None = None  # since the work started
+    duration_sec: float | None = None  # length of the recording
+    segments: list[tuple[float, float]] | None = None  # the songs found, in seconds
+    levels: list[float] | None = None  # loudness along the recording, 0..1
+
+
+def _job_response(job) -> JobResponse:
+    try:
+        detail = json.loads(job.detail) if job.detail else {}
+    except ValueError:
+        detail = {}
+    started = detail.get("started_at")
+    running = job.status in ("pending", "processing")
+    return JobResponse(
+        id=job.id,
+        type=job.type,
+        group_id=job.group_id,
+        status=job.status,
+        progress=job.progress,
+        session_id=job.session_id,
+        error=job.error,
+        step=detail.get("step"),
+        steps=detail.get("steps"),
+        current=detail.get("current"),
+        total=detail.get("total"),
+        elapsed_sec=round(max(0.0, time.time() - started), 1) if started and running else None,
+        duration_sec=detail.get("duration_sec"),
+        segments=detail.get("segments"),
+        levels=detail.get("levels"),
+    )
+
+
+WAVEFORM_BARS = 96
+
+
+def _waveform_levels(rms_profile: list[float], bars: int = WAVEFORM_BARS) -> list[float]:
+    """Squeeze a per-second dB profile into `bars` values between 0 and 1."""
+    if not rms_profile:
+        return []
+    bars = min(bars, len(rms_profile))
+    size = len(rms_profile) / bars
+    peaks = [
+        max(rms_profile[int(i * size) : max(int((i + 1) * size), int(i * size) + 1)])
+        for i in range(bars)
+    ]
+    top = max(peaks)
+    floor = top - 40.0  # anything 40 dB under the loudest part draws as silence
+    return [round(min(1.0, max(0.0, (p - floor) / 40.0)), 2) for p in peaks]
+
+
+def _split_and_save(
+    db, cfg, storage, job_id, session_id, source, output_dir, segments, duration, exported
+):
+    """Export the segments as tracks and store them, reporting each one.
+
+    The exported paths are added to `exported` (the caller's list, for cleanup).
+    """
+    from jam_session_processor.output import export_segments
+
+    if not segments:
+        return
+    total = len(segments)
+    db.update_job_progress(
+        job_id,
+        "Exporting tracks...",
+        {
+            "step": "export",
+            "current": 0,
+            "total": total,
+            "segments": [[round(a, 1), round(b, 1)] for a, b in segments],
+            "duration_sec": float(duration) if isinstance(duration, (int, float)) else None,
+        },
+    )
+
+    def on_export(i: int, n: int, _name: str):
+        db.update_job_progress(
+            job_id, f"Exporting track {i} of {n}...", {"step": "export", "current": i}
+        )
+
+    exported.extend(export_segments(source, segments, output_dir, on_progress=on_export))
+
+    for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
+        rel_path = cfg.make_relative(audio_path.resolve())
+        db.create_track(
+            session_id,
+            track_number=i,
+            start_sec=start,
+            end_sec=end,
+            audio_path=rel_path,
+        )
+        if storage.is_remote:
+            storage.put(rel_path, audio_path.resolve())
+        db.update_job_progress(
+            job_id, f"Saved track {i} of {total}...", {"step": "save", "current": i}
+        )
+
+
+def _detect_with_progress(db, job_id, source):
+    """Detect songs and store the recording's waveform on the job."""
+    from jam_session_processor.splitter import detect_songs
+
+    db.update_job_progress(job_id, "Detecting songs...", {"step": "detect"})
+    result = detect_songs(source)
+    db.update_job_progress(
+        job_id,
+        "Detecting songs...",
+        {
+            "levels": _waveform_levels(result.rms_profile),
+            "duration_sec": result.total_duration_sec or None,
+        },
+    )
+    return result.segments or []
 
 
 class ReprocessRequest(BaseModel):
@@ -1092,7 +1210,7 @@ def _process_session_merge(job_id: str, session_id: int, other_ids: list[int], u
             db,
             session_id,
             other_ids,
-            on_progress=lambda msg: db.update_job_progress(job_id, msg),
+            on_progress=lambda msg: db.update_job_progress(job_id, msg, {"step": "merge"}),
             updated_by=user_id,
         )
         db.set_split_state(session_id, "")
@@ -1134,15 +1252,7 @@ async def merge_sessions_endpoint(session_id: int, req: MergeSessionsRequest, re
     loop.run_in_executor(
         None, _process_session_merge, job.id, session_id, list(req.session_ids), user_id
     )
-    return JobResponse(
-        id=job.id,
-        type=job.type,
-        group_id=job.group_id,
-        status=job.status,
-        progress=job.progress,
-        session_id=job.session_id,
-        error=job.error,
-    )
+    return _job_response(job)
 
 
 @app.put("/api/sessions/{session_id}/group", response_model=SessionResponse)
@@ -1233,8 +1343,6 @@ def _process_reprocess(
 ):
     """Run reprocessing in a background thread."""
     from jam_session_processor.metadata import extract_metadata
-    from jam_session_processor.output import export_segments
-    from jam_session_processor.splitter import detect_songs
     from jam_session_processor.storage import get_storage
 
     db = get_db()
@@ -1252,8 +1360,17 @@ def _process_reprocess(
         source = cfg.resolve_path(session.source_file)
 
         # Ensure source file is local if using remote storage
+        detecting = not manual_segments and not single
+        steps = (
+            (["download"] if storage.is_remote else [])
+            + ["analyze"]
+            + (["detect"] if detecting else [])
+            + ["export", "save"]
+        )
         if storage.is_remote:
-            db.update_job_progress(job_id, "Downloading from storage...")
+            db.update_job_progress(
+                job_id, "Downloading from storage...", {"step": "download", "steps": steps}
+            )
             source = storage.get(session.source_file, source)
 
         if not source.exists():
@@ -1268,7 +1385,9 @@ def _process_reprocess(
             output_dir = cfg.output_dir_for_session(session_id)
 
         # Delete old tracks and their audio files
-        db.update_job_progress(job_id, "Removing old tracks...")
+        db.update_job_progress(
+            job_id, "Removing old tracks...", {"step": "analyze", "steps": steps}
+        )
         for track in existing_tracks:
             storage.delete(track.audio_path)
             db.delete_track(track.id)
@@ -1285,26 +1404,20 @@ def _process_reprocess(
         elif single:
             segments = [(0.0, meta.duration_seconds)]
         else:
-            db.update_job_progress(job_id, "Detecting songs...")
-            result = detect_songs(source)
-            segments = result.segments if result.segments else []
+            segments = _detect_with_progress(db, job_id, source)
 
-        if segments:
-            db.update_job_progress(job_id, "Exporting tracks...")
-            exported = export_segments(source, segments, output_dir)
-
-            for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
-                db.update_job_progress(job_id, f"Saving track {i} of {len(segments)}...")
-                rel_path = cfg.make_relative(audio_path.resolve())
-                db.create_track(
-                    session_id,
-                    track_number=i,
-                    start_sec=start,
-                    end_sec=end,
-                    audio_path=rel_path,
-                )
-                if storage.is_remote:
-                    storage.put(rel_path, audio_path.resolve())
+        _split_and_save(
+            db,
+            cfg,
+            storage,
+            job_id,
+            session_id,
+            source,
+            output_dir,
+            segments,
+            meta.duration_seconds,
+            exported,
+        )
 
         # Only a detected split is refined later from what is sung (see refine.py)
         db.set_split_state(session_id, "" if manual_segments or single else "auto")
@@ -1362,15 +1475,7 @@ async def reprocess_session(session_id: int, req: ReprocessRequest, request: Req
         segments,
     )
 
-    return JobResponse(
-        id=job.id,
-        type=job.type,
-        group_id=job.group_id,
-        status=job.status,
-        progress=job.progress,
-        session_id=job.session_id,
-        error=job.error,
-    )
+    return _job_response(job)
 
 
 ALLOWED_EXTENSIONS = {".m4a", ".wav", ".mp3", ".flac", ".ogg"}
@@ -1386,15 +1491,7 @@ def get_job(job_id: str, request: Request):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     _require_group_access(request, job.group_id)
-    return JobResponse(
-        id=job.id,
-        type=job.type,
-        group_id=job.group_id,
-        status=job.status,
-        progress=job.progress,
-        session_id=job.session_id,
-        error=job.error,
-    )
+    return _job_response(job)
 
 
 @_tracked_job
@@ -1409,8 +1506,6 @@ def _process_upload(
 ):
     """Run the processing pipeline in a background thread."""
     from jam_session_processor.metadata import extract_metadata
-    from jam_session_processor.output import export_segments
-    from jam_session_processor.splitter import detect_songs
     from jam_session_processor.storage import get_storage
 
     db = get_db()
@@ -1420,12 +1515,21 @@ def _process_upload(
 
     try:
         # If file was uploaded directly to R2, download it locally first
+        steps = (
+            (["download"] if r2_key else [])
+            + ["analyze"]
+            + (["upload"] if storage.is_remote and not r2_key else [])
+            + ([] if single else ["detect"])
+            + ["export", "save"]
+        )
         if r2_key:
-            db.update_job_progress(job_id, "Downloading from storage...")
+            db.update_job_progress(
+                job_id, "Downloading from storage...", {"step": "download", "steps": steps}
+            )
             source.parent.mkdir(parents=True, exist_ok=True)
             storage.get(r2_key, source)
 
-        db.update_job_progress(job_id, "Analyzing audio...")
+        db.update_job_progress(job_id, "Analyzing audio...", {"step": "analyze", "steps": steps})
         meta = extract_metadata(source)
 
         # Save duration for duplicate detection
@@ -1459,7 +1563,7 @@ def _process_upload(
         new_source_rel = f"recordings/{session_id}{source_ext}"
         if storage.is_remote and not r2_key:
             # Only upload if the file isn't already in R2
-            db.update_job_progress(job_id, "Uploading recording...")
+            db.update_job_progress(job_id, "Uploading recording...", {"step": "upload"})
             storage.put(new_source_rel, source)
             db.update_session_source_file(session_id, new_source_rel)
         elif r2_key:
@@ -1471,30 +1575,20 @@ def _process_upload(
         if single:
             segments = [(0.0, meta.duration_seconds)]
         else:
-            db.update_job_progress(job_id, "Detecting songs...")
-            result = detect_songs(source)
-            segments = result.segments
+            segments = _detect_with_progress(db, job_id, source)
 
-        if segments:
-            db.update_job_progress(job_id, "Exporting tracks...")
-            output_dir = cfg.output_dir_for_session(session_id)
-            exported = export_segments(
-                source,
-                segments,
-                output_dir,
-            )
-            for i, ((start, end), audio_path) in enumerate(zip(segments, exported), start=1):
-                db.update_job_progress(job_id, f"Saving track {i} of {len(segments)}...")
-                rel_path = cfg.make_relative(audio_path.resolve())
-                db.create_track(
-                    session_id,
-                    track_number=i,
-                    start_sec=start,
-                    end_sec=end,
-                    audio_path=rel_path,
-                )
-                if storage.is_remote:
-                    storage.put(rel_path, audio_path.resolve())
+        _split_and_save(
+            db,
+            cfg,
+            storage,
+            job_id,
+            session_id,
+            source,
+            cfg.output_dir_for_session(session_id),
+            segments,
+            meta.duration_seconds,
+            exported,
+        )
 
         db.set_split_state(session_id, "" if single else "auto")
         db.complete_job(job_id, session_id)
@@ -1605,15 +1699,7 @@ def upload_init(req: UploadInitRequest, request: Request):
     return UploadInitResponse(
         upload_url=upload_url,
         r2_key=r2_key,
-        job=JobResponse(
-            id=job.id,
-            type=job.type,
-            group_id=job.group_id,
-            status=job.status,
-            progress=job.progress,
-            session_id=job.session_id,
-            error=job.error,
-        ),
+        job=_job_response(job),
         session_id=session_id,
     )
 
@@ -1819,15 +1905,7 @@ async def upload_session(request: Request, file: UploadFile):
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _process_upload, job_id, session_id, source, group_id, single)
 
-    return JobResponse(
-        id=job.id,
-        type=job.type,
-        group_id=job.group_id,
-        status=job.status,
-        progress=job.progress,
-        session_id=job.session_id,
-        error=job.error,
-    )
+    return _job_response(job)
 
 
 # --- Google Drive import ---
@@ -2025,7 +2103,7 @@ def _import_from_drive(
         client = get_drive_client()
         if not client:
             raise RuntimeError("Google Drive import is not set up")
-        db.update_job_progress(job_id, "Downloading from Google Drive...")
+        db.update_job_progress(job_id, "Downloading from Google Drive...", {"step": "download"})
         last = [0]
 
         def progress(n: int):
@@ -2127,15 +2205,7 @@ async def import_from_drive(req: DriveImportRequest, request: Request):
         req.force,
         user_id,
     )
-    return JobResponse(
-        id=job.id,
-        type=job.type,
-        group_id=job.group_id,
-        status=job.status,
-        progress=job.progress,
-        session_id=job.session_id,
-        error=job.error,
-    )
+    return _job_response(job)
 
 
 @app.post("/api/drive/skip")
