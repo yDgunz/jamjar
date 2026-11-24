@@ -323,3 +323,18 @@ def test_cli_match_only(client, monkeypatch):  # noqa: F811
     monkeypatch.setattr(cli, "_get_db", lambda: api._db)
     result = CliRunner().invoke(cli.cli, ["identify-songs", "--match-only"])
     assert result.exit_code == 0 and "tagged: 0" in result.output
+
+
+def test_admin_run_one_recording(client, monkeypatch):  # noqa: F811
+    db = api._db
+    _, sid = _band(db)
+    _track(db, sid, 1)
+    monkeypatch.setattr("jam_session_processor.transcribe.is_available", lambda: True)
+    launched = _fake_launcher(monkeypatch)
+    url = "/api/admin/song-identification/run"
+    assert client.post(f"{url}?session_id=99999", headers=H).status_code == 404
+    assert client.post(f"{url}?session_id={sid}", headers=H).status_code == 202
+    assert client.post(f"{url}?session_id={sid}", headers=H).status_code == 409
+    # A full run queues behind it
+    assert client.post(url, headers=H).status_code == 202
+    assert launched == [sid] and api._identify_pending == [None]

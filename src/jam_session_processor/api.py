@@ -3814,14 +3814,18 @@ def admin_song_identification(request: Request):
 
 
 @app.post("/api/admin/song-identification/run", status_code=202)
-def admin_run_song_identification(request: Request):
-    """Start an identification run now instead of waiting for the nightly one."""
+def admin_run_song_identification(request: Request, session_id: int | None = None):
+    """Start an identification run now instead of waiting for the nightly one.
+    ``?session_id=`` transcribes only that recording (then re-assesses every untagged
+    track, like any run), so an older recording needn't wait its turn in the full run."""
     _require_role(request, "superadmin")
     from jam_session_processor import transcribe
 
+    if session_id is not None and get_db().get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="Recording not found")
     if not transcribe.is_available():
         raise HTTPException(status_code=503, detail="Speech-to-text is not installed")
-    if not _request_identify(None):
+    if not _request_identify(session_id):
         raise HTTPException(status_code=409, detail="A run is already in progress")
     return {"started": True}
 
