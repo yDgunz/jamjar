@@ -183,6 +183,16 @@ export function isSuperAdmin(user: AuthUser | null): boolean {
   return hasRole(user, "superadmin");
 }
 
+/** What a recording is; "" means not set. */
+export type SessionKind = "" | "jam" | "gig" | "demo" | "studio";
+export const SESSION_KINDS: Exclude<SessionKind, "">[] = ["jam", "gig", "demo", "studio"];
+export const SESSION_KIND_LABEL: Record<Exclude<SessionKind, "">, string> = {
+  jam: "Jam",
+  gig: "Gig",
+  demo: "Demo",
+  studio: "Studio",
+};
+
 export interface Session {
   id: number;
   group_id: number;
@@ -200,6 +210,7 @@ export interface Session {
   created_by_name: string | null;
   updated_by_name: string | null;
   updated_at: string | null;
+  kind: SessionKind;
 }
 
 export interface Track {
@@ -283,6 +294,7 @@ export interface SongTrack {
   session_date: string | null;
   source_file: string;
   session_name: string;
+  session_kind: SessionKind;
 }
 
 export interface Job {
@@ -578,6 +590,13 @@ export const api = {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ date }),
+    }),
+
+  updateSessionKind: (id: number, kind: SessionKind) =>
+    fetchJson<Session>(`${BASE}/sessions/${id}/kind`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind }),
     }),
 
   updateSessionGroup: (id: number, groupId: number) =>

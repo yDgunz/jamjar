@@ -4,10 +4,13 @@ Orchestrates re-export from source files, DB updates, and file renaming
 when tracks are merged or split.
 """
 
+import subprocess
 from pathlib import Path
+from uuid import uuid4
 
 from jam_session_processor.config import get_config
 from jam_session_processor.db import Database, Track
+from jam_session_processor.metadata import extract_metadata
 from jam_session_processor.output import generate_output_name
 from jam_session_processor.splitter import DEFAULT_FORMAT, AudioFormat, export_segment
 from jam_session_processor.storage import get_storage
@@ -301,6 +304,126 @@ def _renumber_tracks(
             new_path = output_dir / new_name
             new_rel = cfg.make_relative(new_path)
             storage.rename(track.audio_path, new_rel)
-            db.update_track(
-                track.id, track_number=expected_num, audio_path=new_rel
+            db.update_track(track.id, track_number=expected_num, audio_path=new_rel)
+
+
+LOSSLESS_EXTENSIONS = {".wav", ".flac"}
+
+
+def _concat_audio(sources: list[Path], output: Path, sample_rate: int) -> None:
+    """Join audio files end to end into `output` (FLAC or AAC, by extension)."""
+    cmd = ["ffmpeg", "-y", "-v", "error"]
+    for src in sources:
+        cmd += ["-i", str(src)]
+    chains = "".join(
+        f"[{i}:a:0]aresample={sample_rate},aformat=channel_layouts=stereo[a{i}];"
+        for i in range(len(sources))
+    )
+    inputs = "".join(f"[a{i}]" for i in range(len(sources)))
+    cmd += ["-filter_complex", f"{chains}{inputs}concat=n={len(sources)}:v=0:a=1[out]"]
+    cmd += ["-map", "[out]"]
+    if output.suffix == ".flac":
+        cmd += ["-c:a", "flac"]
+    else:
+        cmd += ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
+    cmd.append(str(output))
+    proc = subprocess.run(cmd, capture_output=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffmpeg could not join the recordings: {proc.stderr.decode()[-300:]}")
+
+
+def merge_sessions(
+    db: Database,
+    target_id: int,
+    other_ids: list[int],
+    on_progress=None,
+    updated_by: int | None = None,
+) -> None:
+    """Merge recordings into `target_id`, in the order given.
+
+    The source files are joined end to end into one new source (FLAC when every
+    source is lossless, AAC otherwise). Tracks keep their audio files, tags,
+    notes and share links: they are moved to the kept recording, renumbered,
+    and their times shifted to where they now sit in the joined source. The
+    merged recordings and the old source files are then removed. The kept
+    recording keeps its name, date and type; notes are combined.
+    """
+
+    def progress(msg: str):
+        if on_progress:
+            on_progress(msg)
+
+    cfg = get_config()
+    storage = get_storage()
+    sessions = [db.get_session(sid) for sid in [target_id, *other_ids]]
+    if any(s is None for s in sessions):
+        raise ValueError("Recording not found")
+
+    local_sources: list[Path] = []
+    merged_path: Path | None = None
+    try:
+        # 1. Get every source locally and measure it
+        durations: list[float] = []
+        rates: list[int] = []
+        for i, s in enumerate(sessions, start=1):
+            progress(f"Fetching recording {i} of {len(sessions)}...")
+            local = cfg.resolve_path(s.source_file)
+            if storage.is_remote:
+                local = storage.get(s.source_file, local)
+            local_sources.append(local)
+            if not local.exists():
+                raise ValueError(f"Source audio for '{s.name or s.id}' was not found")
+            meta = extract_metadata(local)
+            durations.append(meta.duration_seconds)
+            rates.append(meta.sample_rate or 44100)
+
+        # 2. Join them into one new source file
+        progress("Joining recordings...")
+        lossless = all(p.suffix.lower() in LOSSLESS_EXTENSIONS for p in local_sources)
+        ext = ".flac" if lossless else ".m4a"
+        merged_path = cfg.input_dir / f"{target_id}-merged-{uuid4().hex[:8]}{ext}"
+        merged_path.parent.mkdir(parents=True, exist_ok=True)
+        _concat_audio(local_sources, merged_path, max(rates))
+        merged_rel = cfg.make_relative(merged_path)
+        total_duration = extract_metadata(merged_path).duration_seconds
+        if storage.is_remote:
+            progress("Saving joined recording...")
+            storage.put(merged_rel, merged_path)
+
+        # 3. Move the tracks over, shifted to their place in the joined source
+        progress("Moving tracks...")
+        target_tracks = db.get_tracks_for_session(target_id)
+        if target_tracks:
+            output_dir = cfg.resolve_path(target_tracks[0].audio_path).parent
+        else:
+            output_dir = cfg.output_dir_for_session(target_id)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        moves = []
+        offset = 0.0
+        for s, duration in zip(sessions, durations):
+            for t in db.get_tracks_for_session(s.id):
+                moves.append((t, t.start_sec + offset, t.end_sec + offset))
+            offset += duration
+        for number, (t, start, end) in enumerate(moves, start=1):
+            name = generate_output_name(
+                number, len(moves), start, end, extension=Path(t.audio_path).suffix
             )
+            new_rel = cfg.make_relative(output_dir / name)
+            if new_rel != t.audio_path:
+                storage.rename(t.audio_path, new_rel)
+            db.move_track(t.id, target_id, number, start, end, new_rel)
+
+        # 4. Switch the kept recording to the joined source; drop the others
+        notes = "\n".join(n for n in ((s.notes or "").strip() for s in sessions) if n)
+        db.finish_session_merge(
+            target_id, other_ids, merged_rel, total_duration, notes, updated_by=updated_by
+        )
+        for s in sessions:
+            if s.source_file and s.source_file != merged_rel:
+                storage.delete(s.source_file)
+    finally:
+        if storage.is_remote:
+            for p in local_sources:
+                p.unlink(missing_ok=True)
+            if merged_path:
+                merged_path.unlink(missing_ok=True)

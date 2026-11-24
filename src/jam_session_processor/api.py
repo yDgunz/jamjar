@@ -638,6 +638,7 @@ class SessionResponse(BaseModel):
     created_by_name: str | None = None
     updated_by_name: str | None = None
     updated_at: str | None = None
+    kind: str = ""
 
 
 class TrackResponse(BaseModel):
@@ -723,6 +724,7 @@ class SongTrackResponse(BaseModel):
     session_date: str | None
     source_file: str
     session_name: str
+    session_kind: str = ""
 
 
 class TagRequest(BaseModel):
@@ -758,6 +760,14 @@ class SongDetailsRequest(BaseModel):
 
 class DateRequest(BaseModel):
     date: ShortStr | None
+
+
+class KindRequest(BaseModel):
+    kind: Literal["", "jam", "gig", "demo", "studio"]
+
+
+class MergeSessionsRequest(BaseModel):
+    session_ids: list[int] = Field(min_length=1, max_length=50)
 
 
 class GroupRequest(BaseModel):
@@ -942,6 +952,83 @@ def update_session_date(session_id: int, req: DateRequest, request: Request):
     db.update_session_date(session_id, req.date, updated_by=user_id)
     session = db.get_session(session_id)
     return _session_response(session)
+
+
+@app.put("/api/sessions/{session_id}/kind", response_model=SessionResponse)
+def update_session_kind(session_id: int, req: KindRequest, request: Request):
+    """Set what a recording is: jam, gig, demo or studio ('' clears it)."""
+    db = get_db()
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    _require_group_access(request, session.group_id)
+    _require_role(request, "editor")
+    user_id = request.state.user.id if request.state.user else None
+    db.update_session_kind(session_id, req.kind, updated_by=user_id)
+    return _session_response(db.get_session(session_id))
+
+
+@_tracked_job
+def _process_session_merge(job_id: str, session_id: int, other_ids: list[int], user_id: int | None):
+    """Merge recordings into one in a background thread."""
+    from jam_session_processor.track_ops import merge_sessions
+
+    db = get_db()
+    try:
+        merge_sessions(
+            db,
+            session_id,
+            other_ids,
+            on_progress=lambda msg: db.update_job_progress(job_id, msg),
+            updated_by=user_id,
+        )
+        db.complete_job(job_id, session_id)
+    except Exception as e:
+        logger.exception("Merging recordings failed")
+        db.fail_job(job_id, str(e))
+
+
+@app.post("/api/sessions/{session_id}/merge", response_model=JobResponse, status_code=202)
+async def merge_sessions_endpoint(session_id: int, req: MergeSessionsRequest, request: Request):
+    """Merge other recordings of the same band into this one, in the order given.
+    Tracks keep their tags, notes and share links. Returns a job to poll."""
+    db = get_db()
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    _require_group_access(request, session.group_id)
+    _require_role(request, "admin")
+    if session_id in req.session_ids or len(set(req.session_ids)) != len(req.session_ids):
+        raise HTTPException(status_code=400, detail="List each other recording once")
+    for s in [session, *(db.get_session(sid) for sid in req.session_ids)]:
+        if not s:
+            raise HTTPException(status_code=404, detail="Session not found")
+        if s.group_id != session.group_id:
+            raise HTTPException(status_code=400, detail="Recordings must belong to the same band")
+        if s.active_job_id:
+            raise HTTPException(
+                status_code=409, detail="One of the recordings is still being processed"
+            )
+
+    job_id = uuid4().hex[:16]
+    job = db.create_job(job_id, session.group_id, job_type="merge", session_id=session_id)
+    user_id = request.state.user.id if request.state.user else None
+    if user_id:
+        db.log_activity(user_id, session.group_id, "merge_sessions", session.name)
+
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(
+        None, _process_session_merge, job.id, session_id, list(req.session_ids), user_id
+    )
+    return JobResponse(
+        id=job.id,
+        type=job.type,
+        group_id=job.group_id,
+        status=job.status,
+        progress=job.progress,
+        session_id=job.session_id,
+        error=job.error,
+    )
 
 
 @app.put("/api/sessions/{session_id}/group", response_model=SessionResponse)

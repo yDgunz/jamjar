@@ -9,6 +9,7 @@ import { ListRows } from "../components/ListItemCard";
 import EditableField from "../components/EditableField";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
+import KindBadge from "../components/KindBadge";
 import ScoreViewer from "../components/ScoreViewer";
 import SongAbout from "../components/SongAbout";
 import SongTab from "../components/SongTab";
@@ -80,6 +81,7 @@ function TakeRow({ take, songName, onUpdate, readOnly, onError }: {
           <span className="min-w-0 flex-1">
             <span className={`block truncate text-[17px] leading-snug sm:text-base ${isCurrent ? "font-medium text-accent-400" : "text-white"}`}>
               {formatLongDate(take.session_date)}
+              <KindBadge kind={take.session_kind} className="ml-2" />
             </span>
             <span className="block truncate text-sm text-gray-500">
               {sessionName} · <span className="tabular-nums">{formatTime(take.duration_sec)}</span>

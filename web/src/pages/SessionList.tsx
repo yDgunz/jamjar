@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { api, ApiError, formatShortDate, canAdmin } from "../api";
-import type { Session } from "../api";
+import { api, ApiError, formatShortDate, canAdmin, SESSION_KINDS, SESSION_KIND_LABEL } from "../api";
+import type { Session, SessionKind } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import GroupSelector from "../components/GroupSelector";
 import InlineSelect from "../components/InlineSelect";
+import KindBadge from "../components/KindBadge";
 import ListItemCard, { ListRows } from "../components/ListItemCard";
 import PageHeader, { HeaderIconButton } from "../components/PageHeader";
 import SearchInput from "../components/SearchInput";
@@ -65,6 +66,7 @@ export default function SessionList() {
     const stored = localStorage.getItem("session-sort");
     return stored === "uploaded" ? "uploaded" : "date";
   });
+  const [kindFilter, setKindFilter] = useState<SessionKind | "all">("all");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState("Uploading...");
@@ -183,6 +185,7 @@ export default function SessionList() {
 
   const filtered = (sessions ?? []).filter((s) => {
     if (groupFilter !== null && s.group_id !== groupFilter) return false;
+    if (kindFilter !== "all" && s.kind !== kindFilter) return false;
     if (filter.trim()) {
       const q = filter.toLowerCase();
       return (s.name || "").toLowerCase().includes(q)
@@ -241,6 +244,15 @@ export default function SessionList() {
           variant="subtle"
         />
         <InlineSelect
+          value={kindFilter}
+          options={[
+            { value: "all", label: "All types" },
+            ...SESSION_KINDS.map((k) => ({ value: k, label: SESSION_KIND_LABEL[k] })),
+          ] as { value: SessionKind | "all"; label: string }[]}
+          onChange={setKindFilter}
+          ariaLabel="Filter by recording type"
+        />
+        <InlineSelect
           value={sortBy}
           options={[{ value: "date", label: "By date recorded" }, { value: "uploaded", label: "By date added" }] as { value: SortBy; label: string }[]}
           onChange={setSortBy}
@@ -253,7 +265,9 @@ export default function SessionList() {
         </p>
       )}
       {(sessions ?? []).length > 0 && filtered.length === 0 && (
-        <p className="mt-8 text-center text-gray-400">No recordings match “{filter.trim()}”.</p>
+        <p className="mt-8 text-center text-gray-400">
+          {filter.trim() ? `No recordings match “${filter.trim()}”.` : "No recordings of this type."}
+        </p>
       )}
       <div className="space-y-5">
         {monthGroups.map(([month, group]) => (
@@ -275,6 +289,7 @@ export default function SessionList() {
                     to={`/sessions/${s.id}`}
                     title={<>
                       {s.name || `Session ${s.id}`}
+                      <KindBadge kind={s.kind} className="ml-2" />
                       {multiGroup && !groupFilter && s.group_name && (
                         <span className="ml-2 text-sm font-normal text-gray-500">{s.group_name}</span>
                       )}
