@@ -4,7 +4,7 @@ import { api, formatRelative, formatShortDate, canEdit, localSongActivity } from
 import type { Song } from "../api";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
-import FilterChip from "../components/FilterChip";
+import FilterChip, { BandChip, FilterBar, SortChip } from "../components/FilterChip";
 import ListItemCard, { ListRows } from "../components/ListItemCard";
 import SongHas from "../components/SongHas";
 import PageHeader, { HeaderIconButton, PlusIcon } from "../components/PageHeader";
@@ -219,30 +219,19 @@ export default function SongCatalog() {
 
       <SearchInput value={query} onChange={setQuery} placeholder="Search songs, artists, lyrics" />
 
-      {/* One scrollable row of chips: sort first, then filters (highlighted when set) */}
-      <div className="no-scrollbar -mx-4 mt-3 flex items-center gap-2 overflow-x-auto px-4 pb-1">
-        <FilterChip
+      <div className="mt-3">
+      <FilterBar
+        onClear={filtersOn || groupFilter !== null
+          ? () => { setArtistFilter(""); setRecordedFilter("any"); setActivityFilter("any"); setGroupFilter(null); }
+          : undefined}
+      >
+        <SortChip
           value={sortBy}
-          options={SORT_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
+          options={SORT_OPTIONS.map((o) => ({ value: o.key, label: o.label, short: o.short }))}
           onChange={setSortBy}
           ariaLabel="Sort songs"
-          display={(v) => SORT_OPTIONS.find((o) => o.key === v)?.short ?? ""}
-          icon={
-            <svg className="h-3.5 w-3.5 shrink-0 opacity-70" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-              <path fillRule="evenodd" d="M2.24 6.8a.75.75 0 0 0 1.06-.04l1.95-2.1v8.59a.75.75 0 0 0 1.5 0V4.66l1.95 2.1a.75.75 0 1 0 1.1-1.02l-3.25-3.5a.75.75 0 0 0-1.1 0L2.2 5.74a.75.75 0 0 0 .04 1.06Zm8 6.4a.75.75 0 0 0-.04 1.06l3.25 3.5a.75.75 0 0 0 1.1 0l3.25-3.5a.75.75 0 1 0-1.1-1.02l-1.95 2.1V6.75a.75.75 0 0 0-1.5 0v8.59l-1.95-2.1a.75.75 0 0 0-1.06-.04Z" clipRule="evenodd" />
-            </svg>
-          }
         />
-        {multiGroup && (
-          <FilterChip
-            value={groupFilter === null ? "" : String(groupFilter)}
-            options={[{ value: "", label: "All bands" }, ...user!.groups.map((g) => ({ value: String(g.id), label: g.name }))]}
-            onChange={(v) => setGroupFilter(v ? Number(v) : null)}
-            ariaLabel="Filter by band"
-            defaultValue=""
-            placeholder="Band"
-          />
-        )}
+        <BandChip groups={user?.groups ?? []} value={groupFilter} onChange={setGroupFilter} />
         <FilterChip
           value={artistFilter}
           options={[{ value: "", label: "All artists" }, ...artists.map(([a, n]) => ({ value: a, label: `${a} (${n})` }))]}
@@ -276,14 +265,7 @@ export default function SongCatalog() {
           defaultValue="any"
           placeholder="Activity"
         />
-        {(filtersOn || groupFilter !== null) && (
-          <button
-            onClick={() => { setArtistFilter(""); setRecordedFilter("any"); setActivityFilter("any"); setGroupFilter(null); }}
-            className="shrink-0 px-1 text-sm text-gray-400 hover:text-gray-200"
-          >
-            Clear
-          </button>
-        )}
+      </FilterBar>
       </div>
 
       <FormModal

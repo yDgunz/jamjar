@@ -112,9 +112,15 @@ export function MoreButton({ onClick, label = "More actions" }: { onClick: () =>
       title={label}
       className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-400 transition active:bg-white/10 sm:hover:bg-white/10"
     >
-      <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-        <path d="M3 10a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM8.5 10a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM15.5 8.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" />
-      </svg>
+      <MoreIcon className="h-5 w-5" />
     </button>
+  );
+}
+
+export function MoreIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M3 10a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM8.5 10a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM15.5 8.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" />
+    </svg>
   );
 }

@@ -150,7 +150,7 @@ export default function TrackRow({
     if (track.song_name) main.push({ label: "Remove song tag", onClick: handleUntag });
     main.push({ label: track.notes ? "Edit notes" : "Add notes", onClick: () => { setNotesInput(track.notes ?? ""); setEditingNotes(true); } });
   }
-  main.push({ label: "Share…", onClick: () => setShareOpen(true) });
+  main.push({ label: "Share…", hint: "public link", onClick: () => setShareOpen(true) });
   main.push({ label: "Download", href: `${api.trackAudioUrl(track.id)}?download=1`, download: `${title}.m4a` });
   sections.push({ actions: main });
 
