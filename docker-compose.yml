@@ -23,6 +23,7 @@ services:
       - JAM_SMTP_FROM=${JAM_SMTP_FROM:-}
       - JAM_APP_URL=${JAM_APP_URL:-}
       - JAM_GOOGLE_SERVICE_ACCOUNT=${JAM_GOOGLE_SERVICE_ACCOUNT:-}
+      - JAM_IDENTIFY_HOUR=${JAM_IDENTIFY_HOUR:-8}
     restart: unless-stopped
     # Let in-flight processing jobs finish on deploys/restarts (the app waits up to
     # JAM_SHUTDOWN_GRACE_SEC=270s for them before exiting)

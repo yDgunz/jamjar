@@ -219,6 +219,9 @@ export default function TrackRow({
             </span>
             <span className="block truncate text-sm text-gray-500">
               <span className="tabular-nums">{formatTime(track.duration_sec)}</span>
+              {track.auto_tagged && track.song_name && (
+                <span title="Recognised from the singing. Change or remove the tag if it's wrong."> · auto-tagged</span>
+              )}
               {track.notes && <span className="italic text-gray-400"> · {track.notes}</span>}
             </span>
           </span>

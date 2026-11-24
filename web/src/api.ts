@@ -223,6 +223,8 @@ export interface Track {
   end_sec: number;
   duration_sec: number;
   notes: string;
+  /** The song tag was set by the nightly identification run, not by a person */
+  auto_tagged?: boolean;
 }
 
 export interface SongGroup {

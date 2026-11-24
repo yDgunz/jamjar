@@ -159,14 +159,18 @@ def upload(file: Path, server: str, group: str, api_key: str):
         if upload_url:
             # Presigned upload: PUT directly to R2
             content_types = {
-                ".m4a": "audio/mp4", ".wav": "audio/wav", ".mp3": "audio/mpeg",
-                ".flac": "audio/flac", ".ogg": "audio/ogg",
+                ".m4a": "audio/mp4",
+                ".wav": "audio/wav",
+                ".mp3": "audio/mpeg",
+                ".flac": "audio/flac",
+                ".ogg": "audio/ogg",
             }
             content_type = content_types.get(ext, "application/octet-stream")
             try:
-                with open(file, "rb") as f, click.progressbar(
-                    length=file_size, label="Uploading", width=40
-                ) as bar:
+                with (
+                    open(file, "rb") as f,
+                    click.progressbar(length=file_size, label="Uploading", width=40) as bar,
+                ):
                     put_resp = requests.put(
                         upload_url,
                         data=_ProgressFileReader(f, bar),
@@ -215,9 +219,10 @@ def upload(file: Path, server: str, group: str, api_key: str):
 
     # Fall back to direct multipart upload
     try:
-        with open(file, "rb") as f, click.progressbar(
-            length=file_size, label="Uploading", width=40
-        ) as bar:
+        with (
+            open(file, "rb") as f,
+            click.progressbar(length=file_size, label="Uploading", width=40) as bar,
+        ):
             wrapped = _ProgressFileReader(f, bar)
             resp = requests.post(
                 url,
@@ -274,9 +279,7 @@ def upload(file: Path, server: str, group: str, api_key: str):
 @click.option(
     "--password", "set_password", is_flag=True, help="Set password directly instead of invite."
 )
-@click.option(
-    "-g", "--group", "group_names", multiple=True, help="Group(s) to add the user to."
-)
+@click.option("-g", "--group", "group_names", multiple=True, help="Group(s) to add the user to.")
 def add_user(email: str, name: str, role: str, set_password: bool, group_names: tuple[str, ...]):
     """Create a new user. Sends an invite email by default, or --password to set directly."""
     from jam_session_processor.auth import hash_password
@@ -322,8 +325,7 @@ def add_user(email: str, name: str, role: str, set_password: bool, group_names: 
         sent = send_invite_email(email, token, name)
         if sent:
             click.echo(
-                f"Created user '{email}' (id={user_id}, role={role}){group_msg}"
-                f" — invite email sent"
+                f"Created user '{email}' (id={user_id}, role={role}){group_msg} — invite email sent"
             )
         else:
             invite_url = f"{get_config().app_url.rstrip('/')}/invite/{token}"
@@ -429,6 +431,30 @@ def list_groups():
     for g in groups:
         click.echo(f"  {g.name} (id={g.id})")
     db.close()
+
+
+@cli.command("identify-songs")
+@click.option("--max-minutes", type=int, default=None, help="Time budget for transcribing.")
+@click.option("--match-only", is_flag=True, help="Skip transcribing; only re-assess tracks.")
+@click.option("--session", "session_id", type=int, default=None, help="Only this recording.")
+def identify_songs(max_minutes: int | None, match_only: bool, session_id: int | None):
+    """Transcribe new tracks and tag untagged ones it recognises (the nightly run)."""
+    import logging
+    import os
+
+    from jam_session_processor import identify
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    try:
+        os.nice(10)  # stay out of the web server's way
+    except (AttributeError, OSError):
+        pass
+    db = _get_db()
+    if match_only:
+        summary = identify.tag_untagged(db)
+    else:
+        summary = identify.run(db, max_minutes=max_minutes, session_id=session_id)
+    click.echo(", ".join(f"{k}: {v}" for k, v in summary.items() if v != ""))
 
 
 @cli.command("reset-db")

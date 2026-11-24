@@ -46,3 +46,20 @@ Audio file (.m4a/.wav/.mp3/.flac/.ogg)
 - **threshold** — energy threshold in dB (default: -20, higher = more selective)
 - **min_duration** — minimum song duration in seconds (default: 120)
 - **single** — skip detection, import entire file as one track (default: false)
+
+## Automatic Song Tagging (speech-to-text)
+
+Untagged tracks are tagged automatically when they are recognised: right after an upload and in a nightly run. It runs entirely on the server: no external service. The recording page marks these tracks "auto-tagged"; a wrong one is fixed like any other tag.
+
+1. **Transcribe** (`transcribe.py`) — a Whisper model (`small.en` by default, via faster-whisper, CPU, int8) transcribes each track's vocals. ffmpeg decodes 3-minute chunks so memory stays flat at about 0.8 GB; a track takes roughly 1/6 of its length on one core. The model (~460 MB) is downloaded once into `<JAM_DATA_DIR>/models`. The transcript is rough on purpose: it is only used for matching. It is stored in `track_transcripts` and redone only when the track's audio file changes (trim, split, merge).
+2. **Match** (`song_match.py`) — transcripts and texts are compared as TF-IDF vectors over word 1–3-grams. A track is compared with (a) the lyrics in the charts of its band's songs and (b) the transcripts of its band's takes that a person tagged, which is what recognises originals with no lyrics written down. Takes tagged automatically are not references, so one mistake can't spread.
+3. **Tag** (`identify.py`) — a track is tagged only when the best song clearly beats the runner-up. Tracks that already have a tag are never touched. Each automatic tag is recorded in `track_auto_tags`; if someone removes it, the same song is not applied to that track again.
+4. **When it runs** (`jam-session identify-songs`, a child process started by the server; one at a time, others queue):
+   - **After an upload, Drive import or re-split** — for that recording only (`--session ID`): its tracks are transcribed, then every untagged track is re-assessed. A 90-minute recording takes roughly 15 minutes on one core.
+   - **Nightly** (`JAM_IDENTIFY_HOUR`, UTC) — transcribes any track without a transcript (newest recordings first, up to `JAM_IDENTIFY_MAX_MINUTES`, the rest the next night), then re-assesses every untagged track, so more get recognised as more takes are tagged by hand and charts gain lyrics. It also catches whatever an after-upload run skipped.
+
+   A run skips transcribing when free memory is below `JAM_TRANSCRIBE_MIN_FREE_MB` or another recording is being processed. Tagged tracks are transcribed too: they are the reference takes. `JAM_IDENTIFY_HOUR=off` turns all automatic runs off.
+
+Measured on 174 labeled takes with `small.en`: 103 recognised, of which 99 right; none of the instrumental jams. `base.en` is about 3x faster and needs ~0.5 GB but gets noticeably fewer right.
+
+Without the `transcribe` extra installed (`pip install -e ".[transcribe]"`; the Docker image has it) nothing is transcribed and nothing else changes.
