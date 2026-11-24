@@ -2,6 +2,7 @@ import asyncio
 import functools
 import gzip
 import hmac
+import html
 import json
 import logging
 import os as _os
@@ -22,6 +23,7 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
+    HTMLResponse,
     JSONResponse,
     RedirectResponse,
     Response,
@@ -4072,6 +4074,89 @@ def admin_server_health(request: Request):
         "database": _get_db_stats(db),
         "storage": _get_storage_info(),
     }
+
+
+# --- Public share page ---
+#
+# The page itself is the SPA (web/src/share/PublicShare.tsx). The server sends its
+# index.html with the shared thing's name in the title and Open Graph tags, so link
+# previews in messaging apps (which don't run JavaScript) say what was shared, and
+# marks it not to be indexed.
+
+
+def _share_preview(token: str, song_id: int | None) -> tuple[int, str, str]:
+    """(HTTP status, title, description) for a share link's page."""
+    db = get_db()
+    link = db.get_share_link_by_token(token)
+    if not link:
+        return 404, "Link not found", "This shared link doesn't exist or was turned off."
+    if share_expired(link):
+        return 410, "This link has expired", "Ask whoever shared it to send a new one."
+
+    def when(date: str | None) -> str | None:
+        return _format_share_date(date) if date else None
+
+    def join(*parts) -> str:
+        return " · ".join(p for p in parts if p)
+
+    if link.kind == "track":
+        track = db.get_track(link.track_id)
+        session = db.get_session(track.session_id)
+        return 200, _track_title(track), join(session.name, when(session.date))
+    if link.kind == "session":
+        session = db.get_session(link.session_id)
+        n = len(db.get_tracks_for_session(session.id))
+        return 200, session.name, join("Recording", when(session.date), _plural(n, "track"))
+    if link.kind == "setlist":
+        setlist = db.get_setlist(link.setlist_id)
+        songs = db.get_setlist_songs(setlist.id)
+        song = next((s for s in songs if s.song_id == song_id), None) if song_id else None
+        if song:
+            return 200, song.song_name, join(song.artist, f"Chart from {setlist.name}")
+        return 200, setlist.name, join("Setlist", when(setlist.date), _plural(len(songs), "song"))
+    song = db.get_song(link.song_id)
+    return 200, song.name, join(song.artist, "Chart and lyrics")
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def _format_share_date(date: str) -> str:
+    try:
+        d = datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        return date
+    return f"{d.strftime('%b')} {d.day}, {d.year}"
+
+
+@app.get("/share/{token}")
+@app.get("/share/{token}/songs/{song_id}")
+def share_page(token: str, request: Request, song_id: int | None = None):
+    static_dir = _os.environ.get("JAM_STATIC_DIR")
+    index = Path(static_dir) / "index.html" if static_dir else None
+    if not index or not index.is_file():
+        raise HTTPException(status_code=404)
+    status, title, description = _share_preview(token, song_id)
+    esc = functools.partial(html.escape, quote=True)
+    image = f"{str(request.base_url).rstrip('/')}/icons/icon-512.png"
+    meta = (
+        f"<title>{esc(title)} – JamJar</title>\n"
+        '    <meta name="robots" content="noindex, nofollow" />\n'
+        f'    <meta name="description" content="{esc(description)}" />\n'
+        '    <meta property="og:site_name" content="JamJar" />\n'
+        '    <meta property="og:type" content="website" />\n'
+        f'    <meta property="og:title" content="{esc(title)}" />\n'
+        f'    <meta property="og:description" content="{esc(description)}" />\n'
+        f'    <meta property="og:image" content="{esc(image)}" />\n'
+        '    <meta name="twitter:card" content="summary" />'
+    )
+    page = index.read_text().replace("<title>JamJar</title>", meta, 1)
+    return HTMLResponse(
+        page,
+        status_code=status,
+        headers={"Cache-Control": "no-cache", "X-Robots-Tag": "noindex, nofollow"},
+    )
 
 
 # --- SPA static file serving ---

@@ -307,3 +307,67 @@ def test_admin_doesnt_see_other_bands_links(auth_client):
     client.cookies.clear()
     client.post("/api/auth/login", json={"email": "test@example.com", "password": "password"})
     assert client.get("/api/shares").json() == []
+
+
+# --- The public page's HTML (preview tags for messaging apps) ---
+
+
+@pytest.fixture
+def static_dir(tmp_path, monkeypatch):
+    d = tmp_path / "dist"
+    d.mkdir()
+    (d / "index.html").write_text(
+        "<html><head><title>JamJar</title></head><body><div id=root></div></body></html>"
+    )
+    monkeypatch.setenv("JAM_STATIC_DIR", str(d))
+    return d
+
+
+def test_share_page_has_preview_tags(auth_client, static_dir):
+    client, uid, gid = auth_client
+    db = api._db
+    sid, song_id, _, setlist_id = _seed(db, gid, uid)
+    db.conn.execute("UPDATE sessions SET name = 'Gig <at> Joe''s' WHERE id = ?", (sid,))
+    db.conn.commit()
+    token = client.post("/api/shares", json={"kind": "session", "id": sid}).json()["token"]
+    client.cookies.clear()
+    resp = client.get(f"/share/{token}")
+    assert resp.status_code == 200
+    assert "<title>Gig &lt;at&gt; Joe&#x27;s – JamJar</title>" in resp.text
+    assert 'property="og:title" content="Gig &lt;at&gt; Joe&#x27;s"' in resp.text
+    assert "Recording · Jan 1, 2026 · 1 track" in resp.text
+    assert 'name="robots" content="noindex, nofollow"' in resp.text
+    assert resp.headers["x-robots-tag"] == "noindex, nofollow"
+    assert "<div id=root>" in resp.text
+
+
+def test_share_page_setlist_song(auth_client, static_dir):
+    client, uid, gid = auth_client
+    db = api._db
+    _, song_id, other, setlist_id = _seed(db, gid, uid)
+    token = client.post("/api/shares", json={"kind": "setlist", "id": setlist_id}).json()["token"]
+    client.cookies.clear()
+    assert 'og:title" content="Friday Gig"' in client.get(f"/share/{token}").text
+    page = client.get(f"/share/{token}/songs/{song_id}").text
+    assert 'og:title" content="Fat Cat"' in page
+    assert "Chart from Friday Gig" in page
+    # A song outside the setlist doesn't leak its name
+    assert "Dog Day" not in client.get(f"/share/{token}/songs/{other}").text
+
+
+def test_share_page_missing_and_expired(auth_client, static_dir):
+    client, uid, gid = auth_client
+    db = api._db
+    token = client.post("/api/shares", json={"kind": "track", "id": 1}).json()["token"]
+    db.conn.execute("UPDATE share_links SET expires_at = '2000-01-01 00:00:00'")
+    db.conn.commit()
+    client.cookies.clear()
+    resp = client.get(f"/share/{token}")
+    assert resp.status_code == 410 and "This link has expired" in resp.text
+    resp = client.get("/share/nope")
+    assert resp.status_code == 404 and "Link not found" in resp.text
+    assert "<div id=root>" in resp.text  # the SPA still loads and explains
+
+
+def test_share_page_without_built_frontend(client):
+    assert client.get("/share/whatever").status_code == 404
