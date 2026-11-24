@@ -437,7 +437,7 @@ def list_groups():
 @click.option("--max-minutes", type=int, default=None, help="Time budget for transcribing.")
 @click.option("--match-only", is_flag=True, help="Skip transcribing; only re-assess tracks.")
 def identify_songs(max_minutes: int | None, match_only: bool):
-    """Transcribe new tracks and suggest songs for untagged ones (the nightly run)."""
+    """Transcribe new tracks and tag untagged ones it recognises (the nightly run)."""
     import logging
     import os
 
@@ -450,7 +450,7 @@ def identify_songs(max_minutes: int | None, match_only: bool):
         pass
     db = _get_db()
     if match_only:
-        summary = identify.refresh_suggestions(db)
+        summary = identify.tag_untagged(db)
     else:
         summary = identify.run(db, max_minutes=max_minutes)
     click.echo(", ".join(f"{k}: {v}" for k, v in summary.items() if v != ""))

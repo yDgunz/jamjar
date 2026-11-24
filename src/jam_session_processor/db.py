@@ -196,12 +196,11 @@ CREATE TABLE IF NOT EXISTS track_transcripts (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS track_suggestions (
+CREATE TABLE IF NOT EXISTS track_auto_tags (
     track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
     song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
     score REAL NOT NULL,
     source TEXT NOT NULL,
-    dismissed INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -541,7 +540,7 @@ class Database:
             DROP TABLE IF EXISTS setlists;
             DROP TABLE IF EXISTS jobs;
             DROP TABLE IF EXISTS share_links;
-            DROP TABLE IF EXISTS track_suggestions;
+            DROP TABLE IF EXISTS track_auto_tags;
             DROP TABLE IF EXISTS track_transcripts;
             DROP TABLE IF EXISTS tracks;
             DROP TABLE IF EXISTS songs;
@@ -1166,7 +1165,6 @@ class Database:
             "UPDATE tracks SET song_id = ? WHERE id = ?",
             (song_id, track_id),
         )
-        self.conn.execute("DELETE FROM track_suggestions WHERE track_id = ?", (track_id,))
         self.conn.commit()
         return song_id
 
@@ -1192,7 +1190,7 @@ class Database:
             return None
         return Track(**row)
 
-    # --- Song suggestions (speech-to-text matching, see identify.py) ---
+    # --- Automatic song tagging (speech-to-text matching, see identify.py) ---
 
     def tracks_needing_transcript(self) -> list[sqlite3.Row]:
         """Tracks with no transcript of their current audio, newest recordings first."""
@@ -1216,12 +1214,15 @@ class Database:
         self.conn.commit()
 
     def get_transcripts(self) -> list[sqlite3.Row]:
-        """Current transcripts: track_id, song_id (tag), group_id, text."""
+        """Current transcripts: track_id, song_id (tag), group_id, text, and auto
+        (1 when the track's tag was set automatically, not by a person)."""
         return self.conn.execute(
-            """SELECT t.id AS track_id, t.song_id, s.group_id, tt.text
+            """SELECT t.id AS track_id, t.song_id, s.group_id, tt.text,
+                      (a.song_id IS NOT NULL AND a.song_id = t.song_id) AS auto
                FROM track_transcripts tt
                JOIN tracks t ON t.id = tt.track_id AND t.audio_path = tt.audio_path
-               JOIN sessions s ON s.id = t.session_id"""
+               JOIN sessions s ON s.id = t.session_id
+               LEFT JOIN track_auto_tags a ON a.track_id = t.id"""
         ).fetchall()
 
     def get_song_sheets(self) -> list[tuple[int, str]]:
@@ -1236,53 +1237,41 @@ class Database:
         row = self.conn.execute("SELECT 1 FROM jobs WHERE status = 'processing' LIMIT 1").fetchone()
         return row is not None
 
-    def set_suggestion(self, track_id: int, song_id: int, score: float, source: str):
-        """Store a track's suggested song. A dismissed suggestion stays dismissed while
-        the suggestion is still the same song."""
+    def auto_tag_track(self, track_id: int, song_id: int, score: float, source: str) -> bool:
+        """Tag an untagged track with the song it was recognised as.
+
+        False (and no change) when the track is tagged, or was auto-tagged with this
+        same song before: someone removed that tag, so it isn't put back.
+        """
+        row = self.conn.execute(
+            """SELECT t.song_id, a.song_id AS auto_song_id
+               FROM tracks t LEFT JOIN track_auto_tags a ON a.track_id = t.id
+               WHERE t.id = ?""",
+            (track_id,),
+        ).fetchone()
+        if not row or row["song_id"] is not None or row["auto_song_id"] == song_id:
+            return False
+        self.conn.execute("UPDATE tracks SET song_id = ? WHERE id = ?", (song_id, track_id))
         self.conn.execute(
-            """INSERT INTO track_suggestions (track_id, song_id, score, source)
+            """INSERT INTO track_auto_tags (track_id, song_id, score, source)
                VALUES (?, ?, ?, ?)
-               ON CONFLICT(track_id) DO UPDATE SET
-                 dismissed = CASE WHEN song_id = excluded.song_id THEN dismissed ELSE 0 END,
-                 song_id = excluded.song_id, score = excluded.score,
-                 source = excluded.source, created_at = datetime('now')""",
+               ON CONFLICT(track_id) DO UPDATE SET song_id = excluded.song_id,
+                 score = excluded.score, source = excluded.source,
+                 created_at = datetime('now')""",
             (track_id, song_id, score, source),
         )
         self.conn.commit()
+        return True
 
-    def clear_suggestion(self, track_id: int) -> bool:
-        """Drop a suggestion that no longer holds (dismissed ones are kept)."""
-        cur = self.conn.execute(
-            "DELETE FROM track_suggestions WHERE track_id = ? AND dismissed = 0", (track_id,)
-        )
-        self.conn.commit()
-        return cur.rowcount > 0
-
-    def dismiss_suggestion(self, track_id: int):
-        self.conn.execute(
-            "UPDATE track_suggestions SET dismissed = 1 WHERE track_id = ?", (track_id,)
-        )
-        self.conn.commit()
-
-    def get_suggestions(
-        self, session_id: int | None = None, track_id: int | None = None
-    ) -> dict[int, dict]:
-        """Open suggestions for untagged tracks, keyed by track id."""
-        where, params = "", []
-        if session_id is not None:
-            where, params = " AND t.session_id = ?", [session_id]
-        elif track_id is not None:
-            where, params = " AND t.id = ?", [track_id]
+    def get_auto_tagged_track_ids(self, session_id: int) -> set[int]:
+        """Tracks of a recording that still carry the tag set automatically."""
         rows = self.conn.execute(
-            """SELECT ts.track_id, ts.song_id, s.name AS song_name, ts.score, ts.source
-               FROM track_suggestions ts
-               JOIN tracks t ON t.id = ts.track_id
-               JOIN songs s ON s.id = ts.song_id
-               WHERE ts.dismissed = 0 AND t.song_id IS NULL"""
-            + where,
-            params,
+            """SELECT t.id FROM tracks t
+               JOIN track_auto_tags a ON a.track_id = t.id AND a.song_id = t.song_id
+               WHERE t.session_id = ?""",
+            (session_id,),
         ).fetchall()
-        return {r["track_id"]: {k: r[k] for k in r.keys() if k != "track_id"} for r in rows}
+        return {r["id"] for r in rows}
 
     def get_identification_stats(self) -> dict:
         one = lambda sql: self.conn.execute(sql).fetchone()[0]  # noqa: E731
@@ -1290,7 +1279,10 @@ class Database:
             "tracks": one("SELECT COUNT(*) FROM tracks"),
             "untagged": one("SELECT COUNT(*) FROM tracks WHERE song_id IS NULL"),
             "pending_transcripts": len(self.tracks_needing_transcript()),
-            "suggestions": len(self.get_suggestions()),
+            "auto_tagged": one(
+                "SELECT COUNT(*) FROM tracks t JOIN track_auto_tags a"
+                " ON a.track_id = t.id AND a.song_id = t.song_id"
+            ),
             "last_transcribed_at": one("SELECT MAX(created_at) FROM track_transcripts"),
         }
 

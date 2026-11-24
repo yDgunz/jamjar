@@ -223,16 +223,8 @@ export interface Track {
   end_sec: number;
   duration_sec: number;
   notes: string;
-  /** "Looks like: ..." for an untagged track, from speech-to-text matching */
-  suggestion?: TrackSuggestion | null;
-}
-
-export interface TrackSuggestion {
-  song_id: number;
-  song_name: string;
-  score: number;
-  /** lyrics = matched the chart's lyrics; takes = sounds like takes already tagged */
-  source: "lyrics" | "takes";
+  /** The song tag was set by the nightly identification run, not by a person */
+  auto_tagged?: boolean;
 }
 
 export interface SongGroup {
@@ -622,9 +614,6 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ song_name: songName }),
     }),
-
-  dismissTrackSuggestion: (trackId: number) =>
-    fetch(`${BASE}/tracks/${trackId}/suggestion`, { method: "DELETE", credentials: "include" }),
 
   untagTrack: (trackId: number) =>
     fetch(`${BASE}/tracks/${trackId}/tag`, { method: "DELETE", credentials: "include" }),

@@ -1,4 +1,4 @@
-"""Suggest songs for untagged tracks ("Looks like: ...").
+"""Tag untagged tracks with the song they are recognised as.
 
 One run (nightly, or ``jam-session identify-songs``):
 
@@ -6,10 +6,11 @@ One run (nightly, or ``jam-session identify-songs``):
    recordings first, within a time budget. Tagged tracks are transcribed too: they are
    the reference for recognising other takes of the same song.
 2. Re-assesses every untagged track against its band's songs (chart lyrics and
-   transcripts of tagged takes) and stores, replaces or clears its suggestion.
+   transcripts of takes tagged by a person) and tags it when one song clearly stands
+   out. A wrong tag is cheap to fix by hand; a removed one is not put back.
 
-Step 2 is cheap and runs over everything each time, so suggestions improve as more
-tracks get tagged and more charts get lyrics.
+Step 2 is cheap and runs over everything each time, so more tracks get recognised as
+more takes are tagged by hand and more charts get lyrics.
 """
 
 from __future__ import annotations
@@ -81,8 +82,8 @@ def transcribe_pending(db: Database, transcriber, max_seconds: float) -> dict:
     return {"transcribed": done, "failed": failed, "remaining": len(pending) - done - failed}
 
 
-def refresh_suggestions(db: Database) -> dict:
-    """Re-assess every untagged track that has a transcript."""
+def tag_untagged(db: Database) -> dict:
+    """Re-assess every untagged track that has a transcript; tag the recognised ones."""
     transcripts = db.get_transcripts()
     lyrics = {}
     for song_id, sheet in db.get_song_sheets():
@@ -99,11 +100,13 @@ def refresh_suggestions(db: Database) -> dict:
         by_lyrics.add(song_id, text)
     by_takes = song_match.Candidates(index)
     for t in transcripts:
-        if t["song_id"] is not None and t["text"]:
+        # Only takes a person tagged are references: an automatic tag could be wrong, and
+        # matching against it would spread the mistake.
+        if t["song_id"] is not None and t["text"] and not t["auto"]:
             # key: the take's band, so a track is only compared with its own band's takes
             by_takes.add(t["song_id"], t["text"], t["group_id"])
 
-    suggested = cleared = 0
+    tagged = 0
     for t in transcripts:
         if t["song_id"] is not None:
             continue
@@ -115,12 +118,9 @@ def refresh_suggestions(db: Database) -> dict:
             allow_lyrics=lambda song, _key, g=group_id: g in song_groups[song],
             allow_takes=lambda song, key, g=group_id: key == g and g in song_groups[song],
         )
-        if found:
-            db.set_suggestion(t["track_id"], found.song_id, found.score, found.source)
-            suggested += 1
-        elif db.clear_suggestion(t["track_id"]):
-            cleared += 1
-    return {"suggested": suggested, "cleared": cleared}
+        if found and db.auto_tag_track(t["track_id"], found.song_id, found.score, found.source):
+            tagged += 1
+    return {"tagged": tagged}
 
 
 def run(db: Database, transcriber=None, max_minutes: int | None = None) -> dict:
@@ -145,6 +145,6 @@ def run(db: Database, transcriber=None, max_minutes: int | None = None) -> dict:
             summary.update(transcribe_pending(db, transcriber, max_minutes * 60))
     if summary["skipped"]:
         logger.warning("Not transcribing this run: %s", summary["skipped"])
-    summary.update(refresh_suggestions(db))
+    summary.update(tag_untagged(db))
     logger.info("Song identification run: %s", summary)
     return summary

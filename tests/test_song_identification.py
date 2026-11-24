@@ -1,4 +1,4 @@
-"""Song suggestions for untagged tracks: matching, the identification run, and the API."""
+"""Automatic song tagging of untagged tracks: matching, the nightly run, and the API."""
 
 from jam_session_processor import api, identify, song_match
 from jam_session_processor.auth import hash_password
@@ -58,11 +58,14 @@ def test_clean_transcript_collapses_loops():
     assert text == "real line here i'm alone oh oh"
 
 
-def test_run_suggests_from_lyrics_and_from_tagged_takes(client, tmp_path):  # noqa: F811
+def _songs(db, session_id):
+    return {t.id: t.song_name for t in db.get_tracks_for_session(session_id)}
+
+
+def test_run_tags_from_lyrics_and_from_tagged_takes(client, tmp_path):  # noqa: F811
     db = api._db
     gid, sid = _band(db)
-    harbor = db._get_or_create_song("Harbor Song", gid)
-    db.update_song_details(harbor, sheet=HARBOR, notes="")
+    db.update_song_details(db._get_or_create_song("Harbor Song", gid), sheet=HARBOR, notes="")
     db.update_song_details(db._get_or_create_song("Orchard Song", gid), sheet=ORCHARD, notes="")
     reference = _track(db, sid, 1, song="Garage Original", group_id=gid)
     cover = _track(db, sid, 2)
@@ -84,50 +87,64 @@ def test_run_suggests_from_lyrics_and_from_tagged_takes(client, tmp_path):  # no
     )
 
     summary = identify.run(db, transcriber=fake, max_minutes=5)
-    assert summary["transcribed"] == 5 and summary["remaining"] == 0
-    got = db.get_suggestions(session_id=sid)
-    assert got[cover]["song_name"] == "Harbor Song" and got[cover]["source"] == "lyrics"
-    assert got[original]["song_name"] == "Garage Original" and got[original]["source"] == "takes"
-    assert set(got) == {cover, original}  # nothing for chatter, silence or tagged tracks
-    assert reference not in got and noise not in got and silent not in got
+    assert summary["transcribed"] == 5 and summary["remaining"] == 0 and summary["tagged"] == 2
+    assert _songs(db, sid) == {
+        reference: "Garage Original",
+        cover: "Harbor Song",
+        original: "Garage Original",
+        noise: None,  # chatter and silence stay untagged
+        silent: None,
+    }
 
-    # A second run transcribes nothing new
-    identify.run(db, transcriber=fake, max_minutes=5)
+    # A second run transcribes nothing new and changes nothing
+    assert identify.run(db, transcriber=fake, max_minutes=5)["tagged"] == 0
     assert len(fake.calls) == 5
 
-    # The API shows the suggestion; accepting it (tagging) removes it
+    # The API marks which tags were automatic
     tracks = {t["id"]: t for t in client.get(f"/api/sessions/{sid}/tracks", headers=H).json()}
-    assert tracks[cover]["suggestion"]["song_id"] == harbor
-    assert tracks[noise]["suggestion"] is None
-    client.post(f"/api/tracks/{cover}/tag", json={"song_name": "Harbor Song"}, headers=H)
-    assert cover not in db.get_suggestions(session_id=sid)
+    assert tracks[cover]["auto_tagged"] is True and tracks[original]["auto_tagged"] is True
+    assert tracks[reference]["auto_tagged"] is False and tracks[noise]["auto_tagged"] is False
+    # ...until a person changes the tag
+    client.post(f"/api/tracks/{cover}/tag", json={"song_name": "Orchard Song"}, headers=H)
+    tracks = {t["id"]: t for t in client.get(f"/api/sessions/{sid}/tracks", headers=H).json()}
+    assert tracks[cover]["auto_tagged"] is False
 
 
-def test_dismissed_suggestion_stays_dismissed(client):  # noqa: F811
+def test_removed_auto_tag_is_not_put_back(client):  # noqa: F811
     db = api._db
     gid, sid = _band(db)
     db.update_song_details(db._get_or_create_song("Harbor Song", gid), sheet=HARBOR, notes="")
     tid = _track(db, sid, 1)
     fake = FakeTranscriber({"1.m4a": HARBOR})
     identify.run(db, transcriber=fake)
-    assert tid in db.get_suggestions(session_id=sid)
+    assert _songs(db, sid)[tid] == "Harbor Song"
 
-    assert client.delete(f"/api/tracks/{tid}/suggestion", headers=H).status_code == 204
-    identify.run(db, transcriber=fake)  # the nightly re-assessment doesn't bring it back
-    assert db.get_suggestions(session_id=sid) == {}
+    client.delete(f"/api/tracks/{tid}/tag", headers=H)
+    assert identify.run(db, transcriber=fake)["tagged"] == 0
+    assert _songs(db, sid)[tid] is None
 
 
-def test_suggestion_cleared_when_it_no_longer_holds(client):  # noqa: F811
+def test_auto_tagged_takes_are_not_references(client):  # noqa: F811
     db = api._db
     gid, sid = _band(db)
-    song = db._get_or_create_song("Harbor Song", gid)
-    db.update_song_details(song, sheet=HARBOR, notes="")
-    tid = _track(db, sid, 1)
+    db.update_song_details(db._get_or_create_song("Harbor Song", gid), sheet=HARBOR, notes="")
+    first = _track(db, sid, 1)
+    fake = FakeTranscriber({"1.m4a": HARBOR + " " + GARAGE, "2.m4a": "uh " + GARAGE})
+    identify.run(db, transcriber=fake)
+    assert _songs(db, sid)[first] == "Harbor Song"  # tagged automatically, from the lyrics
+    # A later take that only resembles that auto-tagged take is left alone
+    second = _track(db, sid, 2)
+    identify.run(db, transcriber=fake)
+    assert _songs(db, sid)[second] is None
+
+
+def test_manual_tags_are_never_changed(client):  # noqa: F811
+    db = api._db
+    gid, sid = _band(db)
+    db.update_song_details(db._get_or_create_song("Harbor Song", gid), sheet=HARBOR, notes="")
+    tid = _track(db, sid, 1, song="Something Else", group_id=gid)
     identify.run(db, transcriber=FakeTranscriber({"1.m4a": HARBOR}))
-    assert tid in db.get_suggestions()
-    db.update_song_details(song, sheet="", notes="")  # lyrics removed from the chart
-    assert identify.refresh_suggestions(db)["cleared"] == 1
-    assert db.get_suggestions() == {}
+    assert _songs(db, sid)[tid] == "Something Else"
 
 
 def test_only_the_tracks_band_is_considered(client):  # noqa: F811
@@ -135,9 +152,9 @@ def test_only_the_tracks_band_is_considered(client):  # noqa: F811
     gid, sid = _band(db)
     other, _ = _band(db, "Other Band")
     db.update_song_details(db._get_or_create_song("Harbor Song", other), sheet=HARBOR, notes="")
-    _track(db, sid, 1)
+    tid = _track(db, sid, 1)
     identify.run(db, transcriber=FakeTranscriber({"1.m4a": HARBOR}))
-    assert db.get_suggestions() == {}
+    assert _songs(db, sid)[tid] is None
 
 
 def test_changed_audio_is_transcribed_again(client):  # noqa: F811
@@ -184,14 +201,13 @@ def test_run_skips_transcribing_when_memory_is_short(client, monkeypatch):  # no
     assert "processed" in identify.run(db)["skipped"]
 
 
-def test_dismiss_needs_editor_and_admin_endpoints_need_superadmin(client):  # noqa: F811
+def test_admin_endpoints_need_superadmin(client):  # noqa: F811
     db = api._db
     gid, sid = _band(db)
-    tid = _track(db, sid, 1)
+    _track(db, sid, 1)
     uid = db.create_user("r@x.com", hash_password("password"), name="R", role="readonly")
     db.assign_user_to_group(uid, gid)
     client.post("/api/auth/login", json={"email": "r@x.com", "password": "password"})
-    assert client.delete(f"/api/tracks/{tid}/suggestion").status_code == 403
     assert client.get("/api/admin/song-identification").status_code == 403
     assert client.post("/api/admin/song-identification/run").status_code == 403
 
@@ -238,4 +254,4 @@ def test_cli_match_only(client, monkeypatch):  # noqa: F811
 
     monkeypatch.setattr(cli, "_get_db", lambda: api._db)
     result = CliRunner().invoke(cli.cli, ["identify-songs", "--match-only"])
-    assert result.exit_code == 0 and "suggested: 0" in result.output
+    assert result.exit_code == 0 and "tagged: 0" in result.output

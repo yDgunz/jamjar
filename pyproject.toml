@@ -23,8 +23,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Local speech-to-text for song suggestions (see identify.py). Optional: without it
-# the app runs as before and suggests nothing.
+# Local speech-to-text for automatic song tagging (see identify.py). Optional: without it
+# the app runs as before and tags nothing.
 transcribe = [
     "faster-whisper>=1.2",
 ]

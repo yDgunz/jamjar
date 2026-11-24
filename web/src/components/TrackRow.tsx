@@ -76,13 +76,6 @@ export default function TrackRow({
     onUpdate();
   };
 
-  const suggestion = !track.song_name && canEdit(user) ? track.suggestion ?? null : null;
-
-  const handleDismissSuggestion = async () => {
-    await api.dismissTrackSuggestion(track.id);
-    onUpdate();
-  };
-
   const handleUntag = async () => {
     await api.untagTrack(track.id);
     setTagInput("");
@@ -226,6 +219,9 @@ export default function TrackRow({
             </span>
             <span className="block truncate text-sm text-gray-500">
               <span className="tabular-nums">{formatTime(track.duration_sec)}</span>
+              {track.auto_tagged && track.song_name && (
+                <span title="Recognised from the singing. Change or remove the tag if it's wrong."> · auto-tagged</span>
+              )}
               {track.notes && <span className="italic text-gray-400"> · {track.notes}</span>}
             </span>
           </span>
@@ -240,28 +236,6 @@ export default function TrackRow({
         )}
         <MoreButton onClick={() => setSheetOpen(true)} label={`Actions for ${title}`} />
       </div>
-
-      {suggestion && !tagging && (
-        <div className="mb-2.5 ml-9 flex items-center gap-2 text-sm">
-          <button
-            onClick={() => handleTag(suggestion.song_name)}
-            title={suggestion.source === "lyrics"
-              ? "The singing matches this song's lyrics. Tap to tag."
-              : "The singing matches other takes of this song. Tap to tag."}
-            className="min-w-0 truncate rounded-full bg-accent-500/15 px-3 py-1 text-accent-300 active:bg-accent-500/30"
-          >
-            <span className="text-gray-400">Looks like </span>
-            <span className="font-medium">{suggestion.song_name}</span>
-          </button>
-          <button
-            onClick={handleDismissSuggestion}
-            aria-label={`Not ${suggestion.song_name}`}
-            className="shrink-0 px-2 py-1 text-gray-500 active:text-gray-300"
-          >
-            ✕
-          </button>
-        </div>
-      )}
 
       {tagging && canEdit(user) && (
         <div className="mb-3 ml-9 rounded-xl bg-white/[0.04] p-3">

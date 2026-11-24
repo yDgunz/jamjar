@@ -709,13 +709,6 @@ class SessionResponse(BaseModel):
     kind: str = ""
 
 
-class TrackSuggestion(BaseModel):
-    song_id: int
-    song_name: str
-    score: float
-    source: str  # "lyrics" (matched the chart's lyrics) | "takes" (sounds like tagged takes)
-
-
 class TrackResponse(BaseModel):
     id: int
     session_id: int
@@ -726,8 +719,8 @@ class TrackResponse(BaseModel):
     end_sec: float
     duration_sec: float
     notes: str
-    # "Looks like: ..." for an untagged track (see identify.py); None when there is none
-    suggestion: TrackSuggestion | None = None
+    # True when the song tag was set by the nightly identification run, not by a person
+    auto_tagged: bool = False
 
 
 class SongGroup(BaseModel):
@@ -912,12 +905,10 @@ def _session_response(session) -> SessionResponse:
     return SessionResponse(**d)
 
 
-def _track_response(track, suggestions: dict[int, dict] | None = None) -> TrackResponse:
+def _track_response(track, auto_tagged: set[int] | None = None) -> TrackResponse:
     d = track.__dict__.copy()
     d.pop("audio_path", None)
-    if suggestions:
-        d["suggestion"] = suggestions.get(track.id)
-    return TrackResponse(**d)
+    return TrackResponse(**d, auto_tagged=bool(auto_tagged and track.id in auto_tagged))
 
 
 def _song_response(
@@ -1185,8 +1176,8 @@ def get_session_tracks(session_id: int, request: Request):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _require_group_access(request, session.group_id)
-    suggestions = db.get_suggestions(session_id=session_id)
-    return [_track_response(t, suggestions) for t in db.get_tracks_for_session(session_id)]
+    auto = db.get_auto_tagged_track_ids(session_id)
+    return [_track_response(t, auto) for t in db.get_tracks_for_session(session_id)]
 
 
 @_tracked_job
@@ -2172,16 +2163,6 @@ def untag_track(track_id: int, request: Request):
     _require_role(request, "editor")
     db.untag_track(track_id)
     return {"ok": True}
-
-
-@app.delete("/api/tracks/{track_id}/suggestion", status_code=204)
-def dismiss_track_suggestion(track_id: int, request: Request):
-    """Dismiss a track's suggested song; the same song isn't suggested for it again."""
-    db = get_db()
-    _get_track_with_access(db, track_id, request)
-    _require_role(request, "editor")
-    db.dismiss_suggestion(track_id)
-    return Response(status_code=204)
 
 
 @app.put("/api/tracks/{track_id}/notes", response_model=TrackResponse)
@@ -3657,7 +3638,7 @@ def admin_log_curation_run(req: CurationRunRequest, request: Request):
 
 @app.get("/api/admin/song-identification")
 def admin_song_identification(request: Request):
-    """State of the song-suggestion pipeline (speech-to-text + matching)."""
+    """State of automatic song tagging (speech-to-text + matching)."""
     _require_role(request, "superadmin")
     from jam_session_processor import transcribe
 
