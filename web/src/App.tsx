@@ -264,7 +264,7 @@ function Layout({ children }: { children: React.ReactNode }) {
           backdrop that scrolling content slides under instead of colliding with the
           clock and camera. Zero height wherever there is no top inset. */}
       <div aria-hidden className="pointer-events-none fixed inset-x-0 top-0 z-40 h-[var(--safe-top)] bg-gray-950 sm:hidden" />
-      <main className={`mx-auto max-w-3xl overflow-x-hidden px-4 pt-[calc(var(--safe-top)+0.75rem)] ${playerItem ? "pb-[calc(10rem+env(safe-area-inset-bottom))] sm:pb-28" : "pb-[calc(5rem+env(safe-area-inset-bottom))] sm:pb-8"} sm:px-6 sm:pt-6`}>
+      <main className={`mx-auto max-w-3xl overflow-x-hidden px-4 pt-[calc(var(--safe-top)+0.25rem)] ${playerItem ? "pb-[calc(10rem+env(safe-area-inset-bottom))] sm:pb-28" : "pb-[calc(5rem+env(safe-area-inset-bottom))] sm:pb-8"} sm:px-6 sm:pt-6`}>
         {children}
       </main>
 
