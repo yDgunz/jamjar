@@ -701,6 +701,48 @@ def test_upload_short_recording_is_single_track(auth_client, tmp_path):
     assert tracks[0]["end_sec"] == 245.0
 
 
+def test_upload_short_recording_can_opt_into_detection(auth_client, tmp_path):
+    """single=false overrides the short-recording default and runs song detection."""
+    from io import BytesIO
+    from unittest.mock import MagicMock, patch
+
+    from jam_session_processor.splitter import SplitResult
+
+    client, uid, gid = auth_client
+
+    mock_meta = MagicMock()
+    mock_meta.recording_date = None
+    mock_meta.duration_seconds = 500.0
+    segments = [(0.0, 200.0), (260.0, 480.0)]
+
+    def mock_export(file_path, segments, output_dir, **kwargs):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        paths = []
+        for i, _ in enumerate(segments, 1):
+            p = output_dir / f"track{i}.m4a"
+            p.write_bytes(b"\x00" * 100)
+            paths.append(p)
+        return paths
+
+    detect = MagicMock(return_value=SplitResult(segments=segments, total_duration_sec=500.0))
+    with (
+        patch("jam_session_processor.splitter.detect_songs", detect),
+        patch("jam_session_processor.output.export_segments", side_effect=mock_export),
+        patch("jam_session_processor.metadata.extract_metadata", return_value=mock_meta),
+    ):
+        resp = client.post(
+            "/api/sessions/upload?single=false",
+            files={"file": ("short-jam.m4a", BytesIO(b"\x00" * 100), "audio/mp4")},
+        )
+        assert resp.status_code == 202
+        result = _poll_job(client, resp.json()["id"])
+
+    assert result["status"] == "completed"
+    detect.assert_called_once()
+    tracks = client.get(f"/api/sessions/{result['session_id']}/tracks").json()
+    assert len(tracks) == 2
+
+
 def test_upload_invalid_type(auth_client, tmp_path):
     from io import BytesIO
 

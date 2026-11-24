@@ -796,7 +796,8 @@ class UploadInitRequest(BaseModel):
     filename: FilenameStr
     group_id: int | None = None
     threshold: float | None = None
-    single: bool = False
+    # None = decide by length (short recordings become one track)
+    single: bool | None = None
     force: bool = False
 
 
@@ -811,7 +812,8 @@ class UploadCompleteRequest(BaseModel):
     job_id: ShortStr
     session_id: int
     threshold: float | None = None
-    single: bool = False
+    # None = decide by length (short recordings become one track)
+    single: bool | None = None
     force: bool = False
 
 
@@ -1287,8 +1289,8 @@ def get_job(job_id: str, request: Request):
     )
 
 
-# Uploads shorter than this are imported as one track without song detection
-# (they can still be split later via reprocess).
+# Uploads shorter than this default to one track without song detection
+# (overridable with an explicit single=false, or split later via reprocess).
 SINGLE_TRACK_MAX_SEC = 600
 
 
@@ -1299,7 +1301,7 @@ def _process_upload(
     source: Path,
     group_id: int,
     threshold: float,
-    single: bool,
+    single: bool | None,
     r2_key: str | None = None,
     force: bool = False,
 ):
@@ -1364,9 +1366,11 @@ def _process_upload(
                 storage.rename(r2_key, new_source_rel)
             db.update_session_source_file(session_id, new_source_rel)
 
-        # Short recordings are almost always one song, not a full jam session
-        short = bool(meta.duration_seconds) and meta.duration_seconds < SINGLE_TRACK_MAX_SEC
-        if single or short:
+        # Unless the uploader chose, short recordings are treated as one song
+        # rather than a full jam session
+        if single is None:
+            single = bool(meta.duration_seconds) and meta.duration_seconds < SINGLE_TRACK_MAX_SEC
+        if single:
             segments = [(0.0, meta.duration_seconds)]
         else:
             db.update_job_progress(job_id, "Detecting songs...")
@@ -1666,7 +1670,9 @@ async def upload_session(request: Request, file: UploadFile):
     # Parse optional threshold and single-song mode
     threshold_str = request.query_params.get("threshold")
     threshold = float(threshold_str) if threshold_str else -20.0
-    single = request.query_params.get("single") == "true"
+    # Absent = decide by length; "true"/"false" overrides
+    single_param = request.query_params.get("single")
+    single = None if single_param is None else single_param == "true"
     force = request.query_params.get("force") == "true"
 
     # Create session and job synchronously so the page is immediately viewable
@@ -1749,7 +1755,8 @@ class DriveImportRequest(BaseModel):
     group_id: int
     name: NameStr | None = None
     date: ShortStr | None = None
-    single: bool = False
+    # None = decide by length (short recordings become one track)
+    single: bool | None = None
     force: bool = False
     threshold: float | None = None
 
@@ -1914,7 +1921,7 @@ def _import_from_drive(
     dest: Path,
     group_id: int,
     threshold: float,
-    single: bool,
+    single: bool | None,
     force: bool,
     user_id: int | None,
 ):

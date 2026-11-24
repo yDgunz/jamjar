@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { api, ApiError, formatShortDate, canAdmin, SESSION_KINDS, SESSION_KIND_LABEL } from "../api";
 import type { Session, SessionKind } from "../api";
@@ -50,6 +50,9 @@ function groupByMonth(sessions: Session[], sortBy: SortBy): [string, Session[]][
   return Array.from(groups.entries());
 }
 
+// Recordings shorter than this default to one track (matches the server)
+const SINGLE_TRACK_MAX_SEC = 600;
+
 export default function SessionList() {
   const { user } = useAuth();
   const { data: sessions, loading, error: fetchError, refresh: refreshSessions } = useFetch(
@@ -73,9 +76,11 @@ export default function SessionList() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const selectedFileRef = useRef<File | null>(null);
   const [uploadGroupId, setUploadGroupId] = useState<number | null>(null);
   const [uploadThreshold, setUploadThreshold] = useState<number | string>(20);
-  const [singleSong, setSingleSong] = useState(false);
+  // null = not chosen yet (the server decides by length)
+  const [singleSong, setSingleSong] = useState<boolean | null>(null);
   const [duplicateDetected, setDuplicateDetected] = useState(false);
   const navigate = useNavigate();
   const multiGroup = user != null && user.groups.length > 1;
@@ -92,9 +97,9 @@ export default function SessionList() {
   // sessions are fetched by useFetch above
 
   const openUploadModal = () => {
-    setSelectedFile(null);
+    selectFile(null);
     setUploadThreshold(20);
-    setSingleSong(false);
+    setSingleSong(null);
     // Pre-populate group: use filter if set, or auto-select if single group
     const groups = user?.groups ?? [];
     if (groups.length === 1) {
@@ -107,6 +112,33 @@ export default function SessionList() {
     setUploadError(null);
     setDuplicateDetected(false);
     setUploadModalOpen(true);
+  };
+
+  const selectFile = (file: File | null) => {
+    setSelectedFile(file);
+    selectedFileRef.current = file;
+    setSingleSong(null);
+    if (!file) return;
+    // Default short recordings (< 10 min) to a single track; the user can
+    // still untick it. If the browser can't read the length, the server decides.
+    const url = URL.createObjectURL(file);
+    const audio = new Audio();
+    audio.preload = "metadata";
+    const done = () => {
+      URL.revokeObjectURL(url);
+      audio.removeAttribute("src");
+    };
+    audio.onloadedmetadata = () => {
+      const dur = audio.duration;
+      done();
+      if (Number.isFinite(dur) && dur > 0) {
+        if (selectedFileRef.current === file) {
+          setSingleSong((prev) => prev ?? dur < SINGLE_TRACK_MAX_SEC);
+        }
+      }
+    };
+    audio.onerror = done;
+    audio.src = url;
   };
 
   const doUpload = async (force?: boolean) => {
@@ -131,7 +163,7 @@ export default function SessionList() {
 
       // Try presigned upload flow first
       const initResp = await api.initUpload(
-        selectedFile.name, groupId ?? undefined, threshold, singleSong || undefined, force || undefined,
+        selectedFile.name, groupId ?? undefined, threshold, singleSong ?? undefined, force || undefined,
       );
 
       if (initResp.upload_url) {
@@ -153,13 +185,13 @@ export default function SessionList() {
 
         // Signal completion — server starts background processing
         await api.completeUpload(
-          initResp.job.id, initResp.session_id, threshold, singleSong || undefined, force || undefined,
+          initResp.job.id, initResp.session_id, threshold, singleSong ?? undefined, force || undefined,
         );
         navigate(`/sessions/${initResp.session_id}?job=${initResp.job.id}`);
       } else {
         // Local storage fallback: use existing direct upload
         const job = await api.uploadSession(
-          selectedFile, groupId ?? undefined, threshold, singleSong || undefined, force || undefined,
+          selectedFile, groupId ?? undefined, threshold, singleSong ?? undefined, force || undefined,
           (pct) => {
             setUploadProgress(pct);
             setUploadStatus(pct < 100 ? `Uploading... ${pct}%` : "Processing...");
@@ -337,7 +369,7 @@ export default function SessionList() {
           <input
             type="file"
             accept=".m4a,.wav,.mp3,.flac,.ogg"
-            onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
             className="w-full text-sm text-gray-300 file:mr-3 file:rounded file:border-0 file:bg-gray-800 file:px-3 file:py-1.5 file:text-sm file:text-gray-300 hover:file:bg-gray-700"
           />
         </div>
@@ -359,15 +391,15 @@ export default function SessionList() {
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
-            checked={singleSong}
+            checked={singleSong ?? false}
             onChange={(e) => setSingleSong(e.target.checked)}
             className="rounded border-gray-600 bg-gray-800 text-accent-500 focus:ring-accent-500 focus:ring-offset-0"
           />
           <span className="text-sm text-gray-300">Single song recording</span>
         </label>
-        {!singleSong && (
-          <p className="text-xs text-gray-500 -mt-2">Recordings under 10 minutes are always kept as one track.</p>
-        )}
+        <p className="text-xs text-gray-500 -mt-2">
+          On by default for recordings under 10 minutes. Turn it off to split into songs.
+        </p>
         {!singleSong && (
         <div>
           <label className="block text-xs font-medium text-gray-400 mb-1">

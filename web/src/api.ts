@@ -783,7 +783,7 @@ export const api = {
     const params = new URLSearchParams();
     if (groupId !== undefined) params.set("group_id", String(groupId));
     if (threshold !== undefined) params.set("threshold", String(threshold));
-    if (single) params.set("single", "true");
+    if (single !== undefined) params.set("single", String(single));
     if (force) params.set("force", "true");
     const qs = params.toString();
     const url = `${BASE}/sessions/upload${qs ? `?${qs}` : ""}`;
@@ -840,7 +840,7 @@ export const api = {
         filename,
         ...(groupId !== undefined && { group_id: groupId }),
         ...(threshold !== undefined && { threshold }),
-        ...(single && { single: true }),
+        ...(single !== undefined && { single }),
         ...(force && { force: true }),
       }),
     }),
@@ -859,7 +859,7 @@ export const api = {
         job_id: jobId,
         session_id: sessionId,
         ...(threshold !== undefined && { threshold }),
-        ...(single && { single: true }),
+        ...(single !== undefined && { single }),
         ...(force && { force: true }),
       }),
     }),

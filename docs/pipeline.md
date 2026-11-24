@@ -17,7 +17,7 @@ Processing runs server-side via two API endpoints:
 - **`POST /api/sessions/{id}/reprocess`** — re-run detection on an existing session with new threshold/min-duration parameters (synchronous)
 - **`POST /api/sessions/{id}/merge`** — merge other recordings of the same band into this one (`{session_ids}`), as a background job: the sources are joined into one file and the existing tracks are moved over with shifted times (no re-detection, no re-export)
 
-Both support `single=true` to skip song detection and import the whole file as one track. Uploads and Drive imports shorter than 10 minutes (`SINGLE_TRACK_MAX_SEC`) are always imported as one track, since short recordings are usually a single song rather than a full session; reprocess the recording to split one anyway.
+Both support `single=true` to skip song detection and import the whole file as one track. When `single` is left unset, uploads and Drive imports shorter than 10 minutes (`SINGLE_TRACK_MAX_SEC`) default to one track, since short recordings are usually a single song rather than a full session; pass `single=false` to run detection anyway. The upload dialog reads the file's length in the browser and pre-ticks "Single song recording" for short files, so the user can untick it.
 
 ## Data Flow
 
@@ -45,4 +45,4 @@ Audio file (.m4a/.wav/.mp3/.flac/.ogg)
 
 - **threshold** — energy threshold in dB (default: -20, higher = more selective)
 - **min_duration** — minimum song duration in seconds (default: 120)
-- **single** — skip detection, import entire file as one track (default: false; uploads under 10 minutes are always single)
+- **single** — skip detection, import entire file as one track (unset by default: uploads under 10 minutes become one track, longer ones are split; an explicit true/false overrides)
