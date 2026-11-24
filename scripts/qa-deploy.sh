@@ -102,6 +102,7 @@ services:
       - JAM_APP_URL=https://${BRANCH}.jam-jar.app
       - JAM_CORS_ORIGINS=https://${BRANCH}.jam-jar.app
       - JAM_QA_PASSWORD=${JAM_QA_PASSWORD}
+      - JAM_IDENTIFY_HOUR=off
     volumes:
       - qa-data:/data
     mem_limit: 512m

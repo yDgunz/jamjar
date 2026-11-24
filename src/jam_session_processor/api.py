@@ -7,9 +7,11 @@ import json
 import logging
 import os as _os
 import re as _re_mod
+import sys
 import threading
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlparse
@@ -87,6 +89,62 @@ async def _wait_for_jobs(grace_seconds: float, poll: float = 1.0) -> bool:
     return True
 
 
+# --- Nightly song identification ---
+# Speech-to-text needs ~0.8 GB while it runs, so it lives in its own process
+# (`jam-session identify-songs`) that the server starts once a day and that gives the
+# memory back when it exits. Work is saved per track, so killing it loses nothing.
+
+_identify_proc: asyncio.subprocess.Process | None = None
+
+
+def _identify_hour() -> int | None:
+    """Hour of day (UTC) for the nightly run; None when turned off."""
+    raw = _os.environ.get("JAM_IDENTIFY_HOUR", "8").strip().lower()
+    if raw in ("", "off", "none", "false", "no"):
+        return None
+    try:
+        return int(raw) % 24
+    except ValueError:
+        return None
+
+
+def _seconds_until_hour(hour: int, now: datetime | None = None) -> float:
+    now = now or datetime.now(timezone.utc)
+    target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
+
+
+def _identify_running() -> bool:
+    return _identify_proc is not None and _identify_proc.returncode is None
+
+
+async def _start_identify_run() -> bool:
+    """Start an identification run in a child process. False if one is running."""
+    global _identify_proc
+    if _identify_running():
+        return False
+    _identify_proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        "from jam_session_processor.cli import cli; cli()",
+        "identify-songs",
+    )
+    return True
+
+
+async def _identify_scheduler(hour: int):
+    while True:
+        await asyncio.sleep(_seconds_until_hour(hour))
+        try:
+            if await _start_identify_run():
+                await _identify_proc.wait()
+        except Exception:
+            logger.exception("Nightly song identification failed to run")
+        await asyncio.sleep(60)  # never start twice within the same minute
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     try:
@@ -95,7 +153,17 @@ async def _lifespan(app: FastAPI):
             logger.warning("Marked %d job(s) interrupted by the last restart as failed", n)
     except Exception:
         logger.exception("Could not clean up interrupted jobs")
+    from jam_session_processor import transcribe
+
+    scheduler = None
+    hour = _identify_hour()
+    if hour is not None and transcribe.is_available():
+        scheduler = asyncio.create_task(_identify_scheduler(hour))
     yield
+    if scheduler:
+        scheduler.cancel()
+    if _identify_running():
+        _identify_proc.terminate()
     await _wait_for_jobs(float(_os.environ.get("JAM_SHUTDOWN_GRACE_SEC", "270")))
 
 
@@ -641,6 +709,13 @@ class SessionResponse(BaseModel):
     kind: str = ""
 
 
+class TrackSuggestion(BaseModel):
+    song_id: int
+    song_name: str
+    score: float
+    source: str  # "lyrics" (matched the chart's lyrics) | "takes" (sounds like tagged takes)
+
+
 class TrackResponse(BaseModel):
     id: int
     session_id: int
@@ -651,6 +726,8 @@ class TrackResponse(BaseModel):
     end_sec: float
     duration_sec: float
     notes: str
+    # "Looks like: ..." for an untagged track (see identify.py); None when there is none
+    suggestion: TrackSuggestion | None = None
 
 
 class SongGroup(BaseModel):
@@ -835,9 +912,11 @@ def _session_response(session) -> SessionResponse:
     return SessionResponse(**d)
 
 
-def _track_response(track) -> TrackResponse:
+def _track_response(track, suggestions: dict[int, dict] | None = None) -> TrackResponse:
     d = track.__dict__.copy()
     d.pop("audio_path", None)
+    if suggestions:
+        d["suggestion"] = suggestions.get(track.id)
     return TrackResponse(**d)
 
 
@@ -1106,7 +1185,8 @@ def get_session_tracks(session_id: int, request: Request):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _require_group_access(request, session.group_id)
-    return [_track_response(t) for t in db.get_tracks_for_session(session_id)]
+    suggestions = db.get_suggestions(session_id=session_id)
+    return [_track_response(t, suggestions) for t in db.get_tracks_for_session(session_id)]
 
 
 @_tracked_job
@@ -2092,6 +2172,16 @@ def untag_track(track_id: int, request: Request):
     _require_role(request, "editor")
     db.untag_track(track_id)
     return {"ok": True}
+
+
+@app.delete("/api/tracks/{track_id}/suggestion", status_code=204)
+def dismiss_track_suggestion(track_id: int, request: Request):
+    """Dismiss a track's suggested song; the same song isn't suggested for it again."""
+    db = get_db()
+    _get_track_with_access(db, track_id, request)
+    _require_role(request, "editor")
+    db.dismiss_suggestion(track_id)
+    return Response(status_code=204)
 
 
 @app.put("/api/tracks/{track_id}/notes", response_model=TrackResponse)
@@ -3563,6 +3653,34 @@ def admin_log_curation_run(req: CurationRunRequest, request: Request):
     items = json.dumps([i.model_dump() for i in req.items])
     run_id = db.add_curation_run(req.summary, items)
     return _curation_run_response(next(r for r in db.list_curation_runs(1) if r["id"] == run_id))
+
+
+@app.get("/api/admin/song-identification")
+def admin_song_identification(request: Request):
+    """State of the song-suggestion pipeline (speech-to-text + matching)."""
+    _require_role(request, "superadmin")
+    from jam_session_processor import transcribe
+
+    return {
+        "available": transcribe.is_available(),
+        "model": transcribe.model_name(),
+        "nightly_hour_utc": _identify_hour(),
+        "running": _identify_running(),
+        **get_db().get_identification_stats(),
+    }
+
+
+@app.post("/api/admin/song-identification/run", status_code=202)
+async def admin_run_song_identification(request: Request):
+    """Start an identification run now instead of waiting for the nightly one."""
+    _require_role(request, "superadmin")
+    from jam_session_processor import transcribe
+
+    if not transcribe.is_available():
+        raise HTTPException(status_code=503, detail="Speech-to-text is not installed")
+    if not await _start_identify_run():
+        raise HTTPException(status_code=409, detail="A run is already in progress")
+    return {"started": True}
 
 
 @app.get("/api/admin/curation-runs", response_model=list[CurationRunResponse])

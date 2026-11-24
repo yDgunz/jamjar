@@ -46,3 +46,15 @@ Audio file (.m4a/.wav/.mp3/.flac/.ogg)
 - **threshold** — energy threshold in dB (default: -20, higher = more selective)
 - **min_duration** — minimum song duration in seconds (default: 120)
 - **single** — skip detection, import entire file as one track (default: false)
+
+## Song Suggestions (speech-to-text)
+
+Untagged tracks get a "Looks like: *Song*" suggestion on the recording page (tap to tag, ✕ to dismiss). It runs entirely on the server: no external service.
+
+1. **Transcribe** (`transcribe.py`) — a Whisper model (`small.en` by default, via faster-whisper, CPU, int8) transcribes each track's vocals. ffmpeg decodes 3-minute chunks so memory stays flat at about 0.8 GB; a track takes roughly 1/6 of its length on one core. The model (~460 MB) is downloaded once into `<JAM_DATA_DIR>/models`. The transcript is rough on purpose: it is only used for matching. It is stored in `track_transcripts` and redone only when the track's audio file changes (trim, split, merge).
+2. **Match** (`song_match.py`) — transcripts and texts are compared as TF-IDF vectors over word 1–3-grams. A track is compared with (a) the lyrics in the charts of its band's songs and (b) the transcripts of its band's already-tagged takes, which is what recognises originals with no lyrics written down. A suggestion is stored in `track_suggestions` only when the best song clearly beats the runner-up.
+3. **Nightly run** (`identify.py`, `jam-session identify-songs`) — once a day (`JAM_IDENTIFY_HOUR`, UTC) the server starts the run in a child process: it transcribes tracks without a transcript (newest recordings first, up to `JAM_IDENTIFY_MAX_MINUTES`, the rest the next night), then re-assesses **every** untagged track, so suggestions appear, change or go away as more tracks are tagged and charts gain lyrics. The run skips transcribing when free memory is below `JAM_TRANSCRIBE_MIN_FREE_MB` or a recording is being processed. Tagged tracks are transcribed too: they are the reference takes.
+
+Measured on 174 labeled takes with `small.en`: a suggestion for 103, of which 99 right; none for instrumental jams. `base.en` is about 3x faster and needs ~0.5 GB but gets noticeably fewer right.
+
+Without the `transcribe` extra installed (`pip install -e ".[transcribe]"`; the Docker image has it) nothing is transcribed and nothing else changes.
