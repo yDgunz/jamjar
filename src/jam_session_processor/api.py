@@ -2,7 +2,6 @@ import asyncio
 import functools
 import gzip
 import hmac
-import html
 import json
 import logging
 import os as _os
@@ -23,7 +22,6 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
-    HTMLResponse,
     JSONResponse,
     RedirectResponse,
     Response,
@@ -38,7 +36,7 @@ from jam_session_processor.auth import (
     verify_password,
 )
 from jam_session_processor.config import get_config
-from jam_session_processor.db import Database
+from jam_session_processor.db import Database, share_expired
 from jam_session_processor.email import send_access_request_email as _send_access_request_email
 
 logger = logging.getLogger(__name__)
@@ -2309,63 +2307,215 @@ def stream_track_audio(track_id: int, request: Request, download: int = 0):
 
 
 # --- Share link endpoints ---
+#
+# A share link gives anyone with its URL read-only access to one track, recording,
+# setlist or song chart, until it expires. The public page is the SPA's /share/:token
+# route, which reads GET /api/share/{token}.
+
+ShareKind = Literal["track", "session", "setlist", "song"]
+# Longest expiry a link can be given (about 10 years); null means never
+_MAX_SHARE_DAYS = 3650
+
+
+class ShareCreateRequest(BaseModel):
+    kind: ShareKind
+    id: int
+    # Days until the link expires; null = never; left out = the server default.
+    # Re-sharing something that already has a live link sets its expiry when given.
+    expires_in_days: Annotated[int, Field(ge=1, le=_MAX_SHARE_DAYS)] | None = None
+
+
+class ShareExpiryRequest(BaseModel):
+    expires_in_days: Annotated[int, Field(ge=1, le=_MAX_SHARE_DAYS)] | None = None
+
+
+class ShareResponse(BaseModel):
+    id: int
+    token: str
+    url: str
+    kind: str
+    target_id: int
+    title: str = ""
+    subtitle: str | None = None
+    # Where the shared thing lives in the app
+    app_path: str = ""
+    group_id: int | None = None
+    group_name: str | None = None
+    created_by: int | None = None
+    created_by_name: str | None = None
+    created_at: str
+    # UTC "YYYY-MM-DD HH:MM:SS"; null = never expires
+    expires_at: str | None = None
+    expired: bool = False
+    can_manage: bool = False
+
+
+def _share_app_path(row: dict) -> str:
+    kind, target = row["kind"], row["target_id"]
+    if kind == "track":
+        return f"/sessions/{row['track_session_id']}" if row.get("track_session_id") else ""
+    return {"session": "/sessions", "setlist": "/setlists", "song": "/songs"}[kind] + f"/{target}"
+
+
+def _can_manage_share(request: Request, row: dict) -> bool:
+    """The link's creator, an admin of its band, or a superadmin can change or revoke it."""
+    if request.state.auth_type == "api_key":
+        return True
+    user = request.state.user
+    if not user:
+        return False
+    if user.role == "superadmin" or row.get("created_by") == user.id:
+        return True
+    return user.role == "admin" and row.get("group_id") in request.state.group_ids
+
+
+def _share_response(request: Request, row: dict) -> ShareResponse:
+    fields = {k: v for k, v in row.items() if k in ShareResponse.model_fields}
+    fields.update(
+        url=f"/share/{row['token']}",
+        title=row.get("title") or "",
+        app_path=_share_app_path(row),
+        can_manage=_can_manage_share(request, row),
+    )
+    return ShareResponse(**fields)
+
+
+def _share_row(db: Database, share_id: int) -> dict:
+    row = next((r for r in db.list_shares() if r["id"] == share_id), None)
+    if not row:
+        raise HTTPException(status_code=404, detail="Share link not found")
+    return row
+
+
+def _share_target_group(db: Database, request: Request, kind: str, target_id: int) -> int | None:
+    """Check the caller can see the target and return the band the link belongs to."""
+    if kind == "track":
+        _, session = _get_track_with_access(db, target_id, request)
+        return session.group_id
+    if kind == "session":
+        session = db.get_session(target_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        _require_group_access(request, session.group_id)
+        return session.group_id
+    if kind == "setlist":
+        return _get_setlist_with_access(db, target_id, request).group_id
+    song = _get_song_with_access(db, target_id, request)
+    visible = _get_group_ids(request)
+    linked = [g["id"] for g in db.get_song_groups(song.id)]
+    mine = [g for g in linked if visible is None or g in visible]
+    return song.group_id if song.group_id in mine else (mine[0] if mine else song.group_id)
+
+
+def _require_share_manager(request: Request, row: dict):
+    if not _can_manage_share(request, row):
+        raise HTTPException(
+            status_code=403, detail="Only the link creator or an admin can change this link"
+        )
+
+
+@app.get("/api/shares", response_model=list[ShareResponse])
+def list_shares(request: Request):
+    """Share links the caller made; admins also see every link in their bands,
+    superadmins (and the API key) every link. Includes expired links."""
+    db = get_db()
+    user = request.state.user
+    if request.state.auth_type == "api_key" or (user and user.role == "superadmin"):
+        rows = db.list_shares()
+    elif user.role == "admin":
+        rows = db.list_shares(created_by=user.id, group_ids=request.state.group_ids)
+    else:
+        rows = db.list_shares(created_by=user.id)
+    return [_share_response(request, r) for r in rows]
+
+
+@app.get("/api/shares/lookup")
+def lookup_share(request: Request, kind: ShareKind, id: int):
+    """The current link for something (or null), and the default expiry for new links."""
+    db = get_db()
+    group_id = _share_target_group(db, request, kind, id)
+    link = db.get_share(kind, id, group_id)
+    return {
+        "link": _share_response(request, _share_row(db, link.id)) if link else None,
+        "default_expiry_days": get_config().share_expiry_days,
+    }
+
+
+@app.post("/api/shares", response_model=ShareResponse)
+def create_share(req: ShareCreateRequest, request: Request):
+    """Share a track, recording, setlist or song. Returns the existing link when it
+    hasn't expired (updating its expiry if one is given); an expired one is replaced."""
+    db = get_db()
+    group_id = _share_target_group(db, request, req.kind, req.id)
+    user = request.state.user
+    explicit = "expires_in_days" in req.model_fields_set
+    days = req.expires_in_days if explicit else get_config().share_expiry_days
+    existing = db.get_share(req.kind, req.id, group_id)
+    live = existing is not None and not share_expired(existing)
+    link = db.create_share(req.kind, req.id, group_id, user.id if user else None, days)
+    if live and explicit:
+        _require_share_manager(request, _share_row(db, link.id))
+        db.set_share_expiry(link.id, days)
+    return _share_response(request, _share_row(db, link.id))
+
+
+@app.put("/api/shares/{share_id}/expiry", response_model=ShareResponse)
+def update_share_expiry(share_id: int, req: ShareExpiryRequest, request: Request):
+    """Set a link to expire `expires_in_days` from now (null = never). Also revives an
+    expired link."""
+    db = get_db()
+    row = _share_row(db, share_id)
+    _require_share_manager(request, row)
+    db.set_share_expiry(share_id, req.expires_in_days)
+    return _share_response(request, _share_row(db, share_id))
+
+
+@app.delete("/api/shares/{share_id}")
+def revoke_share(share_id: int, request: Request):
+    db = get_db()
+    row = _share_row(db, share_id)
+    _require_share_manager(request, row)
+    db.delete_share(share_id)
+    return {"ok": True}
+
+
+# The original track-only endpoints, kept for existing clients
 
 
 @app.post("/api/tracks/{track_id}/share")
 def create_share_link(track_id: int, request: Request):
-    db = get_db()
-    track, session = _get_track_with_access(db, track_id, request)
-    user = request.state.user
-    link = db.create_share_link(track_id, user.id if user else None)
-    return {"token": link.token, "url": f"/share/{link.token}"}
+    resp = create_share(ShareCreateRequest(kind="track", id=track_id), request)
+    return {"token": resp.token, "url": resp.url, **resp.model_dump()}
 
 
 @app.delete("/api/tracks/{track_id}/share")
 def revoke_share_link(track_id: int, request: Request):
     db = get_db()
-    track, session = _get_track_with_access(db, track_id, request)
+    _get_track_with_access(db, track_id, request)
     link = db.get_share_link_by_track(track_id)
     if not link:
         raise HTTPException(status_code=404, detail="No share link exists for this track")
-    # Allow the link creator or any admin/superadmin
-    user = request.state.user
-    if user and link.created_by != user.id:
-        if user.role not in ("admin", "superadmin"):
-            raise HTTPException(
-                status_code=403,
-                detail="Only the link creator or an admin can revoke",
-            )
-    db.delete_share_link(track_id)
-    return {"ok": True}
+    return revoke_share(link.id, request)
 
 
-@app.get("/api/share/{token}/audio")
-def public_share_audio(token: str, download: int = 0):
-    from jam_session_processor.storage import get_storage
+# --- Public share endpoints (no auth; the token is the credential) ---
 
-    db = get_db()
-    link = db.get_share_link_by_token(token)
-    if not link:
+
+def _get_live_share(token: str, kind: str | None = None):
+    link = get_db().get_share_link_by_token(token)
+    if not link or (kind and link.kind != kind):
         raise HTTPException(status_code=404, detail="Share link not found")
+    if share_expired(link):
+        raise HTTPException(status_code=410, detail="This link has expired")
+    return link
 
-    track = db.get_track(link.track_id)
-    if not track:
-        raise HTTPException(status_code=404, detail="Track not found")
 
-    session = db.get_session(track.session_id)
+def _track_title(track) -> str:
+    return track.song_name or f"Track {track.track_number}"
 
-    # Build download filename
-    if download:
-        name_parts = []
-        if track.song_name:
-            name_parts.append(track.song_name)
-        else:
-            name_parts.append(f"Track {track.track_number}")
-        if session and session.name:
-            name_parts.append(session.name)
-        ext = Path(track.audio_path).suffix or ".m4a"
-        filename = " - ".join(name_parts) + ext
-        filename = filename.replace('"', "")
+
+def _serve_track_audio(track, session, download: int):
+    from jam_session_processor.storage import get_storage
 
     storage = get_storage()
     redirect_url = storage.url(track.audio_path)
@@ -2380,6 +2530,11 @@ def public_share_audio(token: str, download: int = 0):
     media_type = media_types.get(audio_path.suffix.lower(), "application/octet-stream")
 
     if download:
+        name_parts = [_track_title(track)]
+        if session and session.name:
+            name_parts.append(session.name)
+        ext = Path(track.audio_path).suffix or ".m4a"
+        filename = (" - ".join(name_parts) + ext).replace('"', "")
         return FileResponse(
             audio_path,
             media_type=media_type,
@@ -2388,189 +2543,117 @@ def public_share_audio(token: str, download: int = 0):
     return FileResponse(audio_path, media_type=media_type)
 
 
-@app.get("/share/{token}")
-def share_landing_page(token: str):
-    db = get_db()
-    link = db.get_share_link_by_token(token)
-    if not link:
-        raise HTTPException(status_code=404, detail="Share link not found")
+def _public_track(token: str, track, path: str) -> dict:
+    url = f"/api/share/{token}/{path}"
+    return {
+        "id": track.id,
+        "track_number": track.track_number,
+        "title": _track_title(track),
+        "duration_sec": track.duration_sec,
+        "audio_url": url,
+        "download_url": f"{url}?download=1",
+    }
 
+
+def _public_song(song) -> dict:
+    """A song's chart and reference material, without band notes or recordings."""
+    db = get_db()
+    background = None
+    if song.background:
+        background = {
+            "text": song.background,
+            "sources": json.loads(song.background_sources or "[]"),
+        }
+    return {
+        "id": song.id,
+        "name": song.name,
+        "artist": song.artist,
+        "sheet": song.sheet,
+        "tab": song.tab,
+        "background": background,
+        "links": [
+            {"id": link["id"], "kind": link["kind"], "url": link["url"], "title": link["title"]}
+            for link in db.list_song_links(song.id)
+        ],
+    }
+
+
+@app.get("/api/share/{token}")
+def public_share(token: str):
+    """What a share link points at: 404 if unknown or revoked, 410 if expired."""
+    db = get_db()
+    link = _get_live_share(token)
+    out: dict = {"kind": link.kind, "expires_at": link.expires_at}
+    if link.kind == "track":
+        track = db.get_track(link.track_id)
+        session = db.get_session(track.session_id)
+        out["track"] = {
+            **_public_track(token, track, "audio"),
+            "session_name": session.name if session else "",
+            "date": session.date if session else None,
+        }
+    elif link.kind == "session":
+        session = db.get_session(link.session_id)
+        out["session"] = {
+            "name": session.name,
+            "date": session.date,
+            "kind": session.kind,
+            "tracks": [
+                _public_track(token, t, f"tracks/{t.id}/audio")
+                for t in db.get_tracks_for_session(session.id)
+            ],
+        }
+    elif link.kind == "setlist":
+        setlist = db.get_setlist(link.setlist_id)
+        out["setlist"] = {
+            "name": setlist.name,
+            "date": setlist.date,
+            "songs": [
+                {
+                    "position": s.position,
+                    "song_id": s.song_id,
+                    "name": s.song_name,
+                    "artist": s.artist,
+                    "has_sheet": bool((s.sheet or "").strip()),
+                }
+                for s in db.get_setlist_songs(setlist.id)
+            ],
+        }
+    else:
+        out["song"] = _public_song(db.get_song(link.song_id))
+    return out
+
+
+@app.get("/api/share/{token}/audio")
+def public_share_audio(token: str, download: int = 0):
+    """Audio of a shared track."""
+    db = get_db()
+    link = _get_live_share(token, "track")
     track = db.get_track(link.track_id)
     if not track:
         raise HTTPException(status_code=404, detail="Track not found")
+    return _serve_track_audio(track, db.get_session(track.session_id), download)
 
-    session = db.get_session(track.session_id)
-    session_name = session.name if session else ""
-    session_date = session.date if session else ""
 
-    # Format date for display
-    date_display = ""
-    if session_date:
-        parts = session_date.split("-")
-        if len(parts) == 3:
-            date_display = f"{int(parts[1])}/{int(parts[2])}/{parts[0][2:]}"
-        else:
-            date_display = session_date
+@app.get("/api/share/{token}/tracks/{track_id}/audio")
+def public_share_session_track_audio(token: str, track_id: int, download: int = 0):
+    """Audio of one track of a shared recording."""
+    db = get_db()
+    link = _get_live_share(token, "session")
+    track = db.get_track(track_id)
+    if not track or track.session_id != link.session_id:
+        raise HTTPException(status_code=404, detail="Track not found")
+    return _serve_track_audio(track, db.get_session(track.session_id), download)
 
-    title = html.escape(track.song_name or f"Track {track.track_number}")
-    session_name = html.escape(session_name)
-    audio_url = f"/api/share/{token}/audio"
-    download_url = f"/api/share/{token}/audio?download=1"
 
-    page = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title} - JamJar</title>
-    <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
-            background: #030712;
-            color: #d1d5db;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 2rem;
-        }}
-        .card {{
-            max-width: 480px;
-            width: 100%;
-            background: #111827;
-            border: 1px solid #1f2937;
-            border-radius: 12px;
-            padding: 2rem;
-        }}
-        .title {{
-            font-size: 1.25rem;
-            font-weight: 700;
-            color: #f9fafb;
-            margin-bottom: 0.25rem;
-        }}
-        .meta {{
-            font-size: 0.875rem;
-            color: #6b7280;
-            margin-bottom: 1.5rem;
-        }}
-        audio {{
-            width: 100%;
-            margin-bottom: 1rem;
-        }}
-        .actions {{
-            display: flex;
-            gap: 0.5rem;
-        }}
-        .btn {{
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            background: #1f2937;
-            color: #d1d5db;
-            border: none;
-            border-radius: 8px;
-            padding: 0.625rem 1.25rem;
-            font-size: 0.875rem;
-            cursor: pointer;
-            text-decoration: none;
-            transition: background 0.15s;
-        }}
-        .btn:hover {{ background: #374151; color: #f9fafb; }}
-        .btn.copied {{ background: #065f46; color: #6ee7b7; }}
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h1 class="title">{title}</h1>
-        <p class="meta">{session_name}{(" &middot; " + date_display) if date_display else ""}</p>
-        <audio controls preload="metadata" src="{audio_url}"></audio>
-        <div class="actions">
-            <a class="btn" href="{download_url}">
-                <svg width="16" height="16" fill="none" viewBox="0 0 24 24"
-                     stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round"
-                          d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2
-                             M7 10l5 5 5-5M12 15V3"/>
-                </svg>
-                Download
-            </a>
-            <button class="btn" id="share-btn" onclick="shareTrack()">
-                <svg width="16" height="16" fill="none" viewBox="0 0 24 24"
-                     stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round"
-                          stroke-linejoin="round"
-                          d="M8.684 13.342C8.886 12.938
-                             9 12.482 9 12c0-.482-.114
-                             -.938-.316-1.342m0 2.684a3
-                             3 0 110-2.684m0 2.684l6.632
-                             3.316m-6.632-6l6.632-3.316
-                             m0 0a3 3 0 105.367-2.684
-                             3 3 0 00-5.367 2.684zm0
-                             9.316a3 3 0 105.368 2.684
-                             3 3 0 00-5.368-2.684z"/>
-                </svg>
-                <span id="share-label">Share</span>
-            </button>
-        </div>
-        <a href="/" style="display: inline-flex; align-items: center; gap: 0.4rem;
-            margin-top: 1.5rem; font-size: 0.8125rem; color: #6b7280;
-            text-decoration: none;">
-            <img src="/logo.png" alt="" style="width: 1rem; height: 1rem; border-radius: 3px;">
-            Shared with <span style="color: #34d399;">JamJar</span>
-        </a>
-        <svg id="check-icon" style="display:none"
-             width="16" height="16" fill="none"
-             viewBox="0 0 24 24" stroke="currentColor"
-             stroke-width="2">
-            <path stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M5 13l4 4L19 7"/>
-        </svg>
-        <svg id="share-icon" style="display:none"
-             width="16" height="16" fill="none"
-             viewBox="0 0 24 24" stroke="currentColor"
-             stroke-width="2">
-            <path stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M8.684 13.342C8.886 12.938 9
-                     12.482 9 12c0-.482-.114-.938
-                     -.316-1.342m0 2.684a3 3 0
-                     110-2.684m0 2.684l6.632 3.316
-                     m-6.632-6l6.632-3.316m0 0a3 3
-                     0 105.367-2.684 3 3 0
-                     00-5.367 2.684zm0 9.316a3 3 0
-                     105.368 2.684 3 3 0
-                     00-5.368-2.684z"/>
-        </svg>
-        <script>
-        function shareTrack() {{
-            var btn = document.getElementById('share-btn');
-            var label = document.getElementById('share-label');
-            var iconSlot = btn.querySelector('svg');
-            if (navigator.share) {{
-                navigator.share({{ title: '{title}', url: window.location.href }});
-            }} else {{
-                navigator.clipboard.writeText(window.location.href).then(function() {{
-                    btn.classList.add('copied');
-                    label.textContent = 'Copied!';
-                    iconSlot.replaceWith(document.getElementById('check-icon').cloneNode(true));
-                    btn.querySelector('svg').style.display = '';
-                    setTimeout(function() {{
-                        btn.classList.remove('copied');
-                        label.textContent = 'Share';
-                        btn.querySelector('svg').replaceWith(document.getElementById('share-icon').cloneNode(true));
-                        btn.querySelector('svg').style.display = '';
-                    }}, 2000);
-                }});
-            }}
-        }}
-        </script>
-    </div>
-</body>
-</html>"""
-    return HTMLResponse(content=page)
+@app.get("/api/share/{token}/songs/{song_id}")
+def public_share_setlist_song(token: str, song_id: int):
+    """The chart of a song in a shared setlist."""
+    db = get_db()
+    link = _get_live_share(token, "setlist")
+    if song_id not in {s.song_id for s in db.get_setlist_songs(link.setlist_id)}:
+        raise HTTPException(status_code=404, detail="Song not found")
+    return _public_song(db.get_song(song_id))
 
 
 # --- Song endpoints ---
@@ -4020,7 +4103,7 @@ if _static_dir:
         _no_cache_files = {"sw.js", "index.html"}
 
         # Paths handled by dedicated server-side routes (not the SPA)
-        _server_prefixes = ("/share/", "/api/")
+        _server_prefixes = ("/api/",)
 
         # Serve index.html for the root and any non-file paths (React Router)
         @app.get("/{full_path:path}")

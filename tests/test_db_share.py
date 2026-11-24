@@ -82,3 +82,82 @@ def test_share_link_user_delete_sets_null(seeded_db):
     fetched = db.get_share_link_by_token(link.token)
     assert fetched is not None
     assert fetched.created_by is None
+
+
+def test_old_track_only_table_is_migrated(tmp_path, monkeypatch):
+    """Links from before expiry keep working and get the default expiry from now."""
+    import sqlite3
+
+    from jam_session_processor.config import reset_config
+
+    monkeypatch.setenv("JAM_SHARE_EXPIRY_DAYS", "30")
+    reset_config()
+    path = tmp_path / "old.db"
+    db = Database(path)
+    uid = db.create_user("a@example.com", hash_password("pw"))
+    gid = db.create_group("Band")
+    sid = db.create_session("r.m4a", gid)
+    tid = db.create_track(sid, track_number=1, start_sec=0, end_sec=1, audio_path="t.m4a")
+    db.close()
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """DROP TABLE share_links;
+        CREATE TABLE share_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token TEXT NOT NULL UNIQUE,
+            track_id INTEGER NOT NULL UNIQUE REFERENCES tracks(id) ON DELETE CASCADE,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );"""
+    )
+    conn.execute(
+        "INSERT INTO share_links (token, track_id, created_by) VALUES ('tok', ?, ?)", (tid, uid)
+    )
+    conn.commit()
+    conn.close()
+
+    db = Database(path)
+    link = db.get_share_link_by_token("tok")
+    assert (link.kind, link.track_id, link.group_id, link.created_by) == ("track", tid, gid, uid)
+    assert link.expires_at is not None
+    from jam_session_processor.db import share_expired
+
+    assert not share_expired(link)
+    # And new kinds of link work on the rebuilt table
+    assert db.create_share("session", sid, gid, uid).session_id == sid
+    reset_config()
+
+
+def test_shares_cascade_with_their_target(seeded_db):
+    db, uid, gid, sid, tid = seeded_db
+    song = db._get_or_create_song("Song", gid)
+    setlist = db.create_setlist("Gig", gid)
+    links = [
+        db.create_share("session", sid, gid, uid),
+        db.create_share("setlist", setlist, gid, uid),
+        db.create_share("song", song, gid, uid),
+    ]
+    db.delete_setlist(setlist)
+    db.delete_song(song)
+    db.delete_session(sid)
+    assert all(db.get_share_link_by_token(link.token) is None for link in links)
+
+
+def test_song_share_follows_song_merge(seeded_db):
+    db, uid, gid, sid, tid = seeded_db
+    keep = db._get_or_create_song("Keep", gid)
+    gone = db._get_or_create_song("Gone", gid)
+    link = db.create_share("song", gone, gid, uid)
+    db.merge_songs(keep, gone)
+    assert db.get_share_link_by_token(link.token).song_id == keep
+
+
+def test_list_shares_titles(seeded_db):
+    db, uid, gid, sid, tid = seeded_db
+    db.create_share_link(tid, uid, expires_in_days=7)
+    [row] = db.list_shares(created_by=uid)
+    assert row["title"] == "Track 1"
+    assert row["kind"] == "track" and row["target_id"] == tid
+    assert row["expired"] is False
+    assert db.list_shares(created_by=uid + 1) == []
+    assert db.list_shares(group_ids=[gid])[0]["id"] == row["id"]

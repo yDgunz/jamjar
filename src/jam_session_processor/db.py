@@ -4,7 +4,22 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-SCHEMA = """
+_SHARE_LINKS_COLUMNS = """
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL DEFAULT 'track',
+    track_id INTEGER UNIQUE REFERENCES tracks(id) ON DELETE CASCADE,
+    session_id INTEGER UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+    setlist_id INTEGER UNIQUE REFERENCES setlists(id) ON DELETE CASCADE,
+    song_id INTEGER REFERENCES songs(id) ON DELETE CASCADE,
+    group_id INTEGER REFERENCES groups(id) ON DELETE CASCADE,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT,
+    UNIQUE(song_id, group_id)"""
+
+SCHEMA = (
+    """
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL UNIQUE,
@@ -190,12 +205,13 @@ CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_activity_log_event ON activity_log(event_type);
 CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at);
 
+-- Public links to one track, recording, setlist or song. Exactly one target column
+-- is set (per `kind`). group_id is the band the link belongs to (for a song, the
+-- band of whoever shared it). expires_at is UTC; NULL means it never expires.
 CREATE TABLE IF NOT EXISTS share_links (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    token TEXT NOT NULL UNIQUE,
-    track_id INTEGER NOT NULL UNIQUE REFERENCES tracks(id) ON DELETE CASCADE,
-    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+"""
+    + _SHARE_LINKS_COLUMNS
+    + """
 );
 
 CREATE TABLE IF NOT EXISTS invite_tokens (
@@ -233,6 +249,7 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 );
 
 """
+)
 
 
 VALID_ROLES = {"superadmin", "admin", "editor", "readonly"}
@@ -352,13 +369,42 @@ class SetlistSong:
     added_by: int | None = None
 
 
+# What a share link can point at, and the share_links column holding its id
+SHARE_KINDS = {
+    "track": "track_id",
+    "session": "session_id",
+    "setlist": "setlist_id",
+    "song": "song_id",
+}
+
+
 @dataclass
 class ShareLink:
     id: int
     token: str
-    track_id: int
+    kind: str
+    track_id: int | None
+    session_id: int | None
+    setlist_id: int | None
+    song_id: int | None
+    group_id: int | None
     created_by: int | None
     created_at: str
+    expires_at: str | None
+
+    @property
+    def target_id(self) -> int:
+        return getattr(self, SHARE_KINDS[self.kind])
+
+
+def share_expired(link: ShareLink) -> bool:
+    """Whether a share link's expiry (UTC, 'YYYY-MM-DD HH:MM:SS') has passed."""
+    if not link.expires_at:
+        return False
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return link.expires_at <= now
 
 
 @dataclass
@@ -527,11 +573,39 @@ class Database:
             self.conn.execute("ALTER TABLE songs ADD COLUMN score_path TEXT")
             self.conn.commit()
 
+        # Share links: any kind of target, plus an expiry. Rebuild the old
+        # track-only table (track_id NOT NULL); existing links get the default expiry.
+        share_cols = {
+            r["name"] for r in self.conn.execute("PRAGMA table_info(share_links)").fetchall()
+        }
+        if "kind" not in share_cols:
+            self._rebuild_share_links()
+
         # Shared song catalog: every song is linked to its home band.
         self.conn.execute(
             "INSERT OR IGNORE INTO group_songs (group_id, song_id) SELECT group_id, id FROM songs"
         )
         self.conn.commit()
+
+    def _rebuild_share_links(self):
+        from jam_session_processor.config import get_config
+
+        days = get_config().share_expiry_days
+        expiry = f"datetime('now', '+{int(days)} days')" if days else "NULL"
+        self.conn.execute("DROP TABLE IF EXISTS share_links_new")
+        with self.conn:
+            self.conn.execute(f"CREATE TABLE share_links_new ({_SHARE_LINKS_COLUMNS}\n)")
+            self.conn.execute(
+                "INSERT INTO share_links_new"
+                " (id, token, kind, track_id, group_id, created_by, created_at, expires_at)"
+                " SELECT l.id, l.token, 'track', l.track_id, s.group_id, l.created_by,"
+                f" l.created_at, {expiry}"
+                " FROM share_links l"
+                " LEFT JOIN tracks t ON t.id = l.track_id"
+                " LEFT JOIN sessions s ON s.id = t.session_id"
+            )
+            self.conn.execute("DROP TABLE share_links")
+            self.conn.execute("ALTER TABLE share_links_new RENAME TO share_links")
 
     def close(self):
         """Close every thread's connection."""
@@ -1336,39 +1410,147 @@ class Database:
 
     # --- Share links ---
 
-    def create_share_link(self, track_id: int, created_by: int | None) -> ShareLink | None:
-        """Create a share link for a track. Returns existing link if one exists."""
-        existing = self.get_share_link_by_track(track_id)
-        if existing:
-            return existing
+    @staticmethod
+    def _expiry_sql(days: int | None) -> tuple[str, tuple]:
+        """SQL expression (+ params) for an expiry `days` from now; NULL = never."""
+        if days is None:
+            return "NULL", ()
+        return "datetime('now', ?)", (f"+{int(days)} days",)
+
+    def get_share(self, kind: str, target_id: int, group_id: int | None = None) -> ShareLink | None:
+        """The link for a target (expired or not). Song links are per band."""
+        col = SHARE_KINDS[kind]
+        sql = f"SELECT * FROM share_links WHERE {col} = ?"
+        params: tuple = (target_id,)
+        if kind == "song":
+            sql += " AND group_id IS ?"
+            params += (group_id,)
+        row = self.conn.execute(sql, params).fetchone()
+        return ShareLink(**row) if row else None
+
+    def create_share(
+        self,
+        kind: str,
+        target_id: int,
+        group_id: int | None,
+        created_by: int | None,
+        expires_in_days: int | None = None,
+    ) -> ShareLink:
+        """Create a share link for a target, or return its current one if it hasn't
+        expired. An expired link is replaced by a new one with a new token, so the
+        old URL stays dead."""
         import secrets
 
-        token = secrets.token_urlsafe(16)
-        try:
-            self.conn.execute(
-                "INSERT INTO share_links (token, track_id, created_by) VALUES (?, ?, ?)",
-                (token, track_id, created_by),
-            )
-            self.conn.commit()
-        except sqlite3.IntegrityError:
-            # Token collision (astronomically unlikely) — retry once
+        existing = self.get_share(kind, target_id, group_id)
+        if existing and not share_expired(existing):
+            return existing
+        if existing:
+            self.delete_share(existing.id)
+        col = SHARE_KINDS[kind]
+        expiry, expiry_params = self._expiry_sql(expires_in_days)
+        for _ in range(2):  # retry once on a (practically impossible) token collision
             token = secrets.token_urlsafe(16)
-            self.conn.execute(
-                "INSERT INTO share_links (token, track_id, created_by) VALUES (?, ?, ?)",
-                (token, track_id, created_by),
-            )
-            self.conn.commit()
-        return self.get_share_link_by_track(track_id)
+            try:
+                cur = self.conn.execute(
+                    f"INSERT INTO share_links (token, kind, {col}, group_id, created_by,"
+                    f" expires_at) VALUES (?, ?, ?, ?, ?, {expiry})",
+                    (token, kind, target_id, group_id, created_by, *expiry_params),
+                )
+                self.conn.commit()
+                return self.get_share_by_id(cur.lastrowid)
+            except sqlite3.IntegrityError:
+                self.conn.rollback()
+                if self.get_share(kind, target_id, group_id):
+                    return self.get_share(kind, target_id, group_id)
+        raise RuntimeError("Could not create a share link")
+
+    def get_share_by_id(self, share_id: int) -> ShareLink | None:
+        row = self.conn.execute("SELECT * FROM share_links WHERE id = ?", (share_id,)).fetchone()
+        return ShareLink(**row) if row else None
 
     def get_share_link_by_token(self, token: str) -> ShareLink | None:
+        """The link with this token, expired or not (callers check `share_expired`)."""
         row = self.conn.execute("SELECT * FROM share_links WHERE token = ?", (token,)).fetchone()
         return ShareLink(**row) if row else None
 
+    def set_share_expiry(self, share_id: int, expires_in_days: int | None):
+        """Set a link to expire `expires_in_days` from now (None = never)."""
+        expiry, params = self._expiry_sql(expires_in_days)
+        self.conn.execute(
+            f"UPDATE share_links SET expires_at = {expiry} WHERE id = ?", (*params, share_id)
+        )
+        self.conn.commit()
+
+    def delete_share(self, share_id: int):
+        self.conn.execute("DELETE FROM share_links WHERE id = ?", (share_id,))
+        self.conn.commit()
+
+    def list_shares(
+        self, created_by: int | None = None, group_ids: list[int] | None = None
+    ) -> list[dict]:
+        """Share links made by `created_by` or belonging to one of `group_ids`
+        (both None = every link), newest first, with what each one points at."""
+        where, params = [], []
+        if created_by is not None:
+            where.append("l.created_by = ?")
+            params.append(created_by)
+        if group_ids:
+            where.append(f"l.group_id IN ({','.join('?' * len(group_ids))})")
+            params.extend(group_ids)
+        if created_by is not None or group_ids is not None:
+            clause = " WHERE " + (" OR ".join(where) if where else "0")
+        else:
+            clause = ""
+        rows = self.conn.execute(
+            f"""SELECT l.*, g.name AS group_name, u.name AS created_by_name,
+                   CASE l.kind
+                     WHEN 'track' THEN COALESCE(ts.name, 'Track ' || t.track_number)
+                     WHEN 'session' THEN s.name
+                     WHEN 'setlist' THEN sl.name
+                     WHEN 'song' THEN so.name
+                   END AS title,
+                   CASE l.kind
+                     WHEN 'track' THEN ss.name
+                     WHEN 'session' THEN s.date
+                     WHEN 'setlist' THEN sl.date
+                     WHEN 'song' THEN so.artist
+                   END AS subtitle,
+                   CASE l.kind WHEN 'track' THEN t.session_id END AS track_session_id,
+                   (l.expires_at IS NOT NULL AND l.expires_at <= datetime('now')) AS expired
+                FROM share_links l
+                LEFT JOIN groups g ON g.id = l.group_id
+                LEFT JOIN users u ON u.id = l.created_by
+                LEFT JOIN tracks t ON t.id = l.track_id
+                LEFT JOIN songs ts ON ts.id = t.song_id
+                LEFT JOIN sessions ss ON ss.id = t.session_id
+                LEFT JOIN sessions s ON s.id = l.session_id
+                LEFT JOIN setlists sl ON sl.id = l.setlist_id
+                LEFT JOIN songs so ON so.id = l.song_id
+                {clause}
+                ORDER BY l.created_at DESC, l.id DESC""",
+            params,
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["expired"] = bool(d["expired"])
+            d["target_id"] = d[SHARE_KINDS[d["kind"]]]
+            out.append(d)
+        return out
+
+    # Track-link helpers (the original, track-only API)
+
+    def create_share_link(
+        self, track_id: int, created_by: int | None, expires_in_days: int | None = None
+    ) -> ShareLink:
+        track = self.get_track(track_id)
+        session = self.get_session(track.session_id) if track else None
+        return self.create_share(
+            "track", track_id, session.group_id if session else None, created_by, expires_in_days
+        )
+
     def get_share_link_by_track(self, track_id: int) -> ShareLink | None:
-        row = self.conn.execute(
-            "SELECT * FROM share_links WHERE track_id = ?", (track_id,)
-        ).fetchone()
-        return ShareLink(**row) if row else None
+        return self.get_share("track", track_id)
 
     def delete_share_link(self, track_id: int):
         self.conn.execute("DELETE FROM share_links WHERE track_id = ?", (track_id,))
@@ -1741,6 +1923,11 @@ class Database:
             )
             self.conn.execute(
                 "UPDATE video_flags SET song_id = ? WHERE song_id = ?", (keep_id, merge_id)
+            )
+            # Song share links follow the song (a band's link to the kept song wins)
+            self.conn.execute(
+                "UPDATE OR IGNORE share_links SET song_id = ? WHERE song_id = ?",
+                (keep_id, merge_id),
             )
             self.conn.execute(
                 """INSERT INTO song_activity (user_id, song_id, last_opened_at, last_performed_at)

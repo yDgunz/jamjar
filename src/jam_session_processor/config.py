@@ -37,6 +37,8 @@ class Config:
     app_url: str
     access_request_email: str
     google_service_account: str = ""
+    # Default lifetime of a new share link in days; None = links never expire
+    share_expiry_days: int | None = 30
 
     def resolve_path(self, stored: str) -> Path:
         """Resolve a stored path to absolute.
@@ -106,7 +108,20 @@ def _build_config() -> Config:
         app_url=os.environ.get("JAM_APP_URL", "http://localhost:5173"),
         access_request_email=os.environ.get("JAM_ACCESS_REQUEST_EMAIL", ""),
         google_service_account=os.environ.get("JAM_GOOGLE_SERVICE_ACCOUNT", ""),
+        share_expiry_days=_share_expiry_days(os.environ.get("JAM_SHARE_EXPIRY_DAYS", "30")),
     )
+
+
+def _share_expiry_days(raw: str) -> int | None:
+    """`JAM_SHARE_EXPIRY_DAYS`: a number of days, or 0/never/off for links that never expire."""
+    raw = raw.strip().lower()
+    if raw in ("", "0", "never", "off", "none"):
+        return None
+    try:
+        days = int(raw)
+    except ValueError:
+        return 30
+    return days if days > 0 else None
 
 
 _config: Config | None = None
