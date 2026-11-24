@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router";
 import { api, formatLongDate, canEdit, canAdmin, SESSION_KINDS, SESSION_KIND_LABEL } from "../api";
 import type { Session, SessionKind, Track, Song } from "../api";
-import ActionSheet from "../components/ActionSheet";
+import ActionSheet, { MoreIcon } from "../components/ActionSheet";
 import ShareDialog from "../share/ShareDialog";
 import { ShareIcon } from "../share/ShareIcon";
 import type { SheetSection } from "../components/ActionSheet";
@@ -387,10 +387,11 @@ export default function SessionDetail() {
           {sheetSections.length > 0 && (
             <button
               onClick={() => setSheetOpen(true)}
+              aria-label="More actions"
               className="flex shrink-0 items-center gap-1.5 rounded-xl bg-white/[0.08] px-4 py-3 text-[15px] font-medium text-gray-200 transition hover:bg-white/[0.12] active:bg-white/[0.12]"
             >
-              <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z" /><path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5Z" /></svg>
-              Edit
+              <MoreIcon className="h-4 w-4" />
+              More
             </button>
           )}
         </div>
