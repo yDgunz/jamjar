@@ -488,6 +488,35 @@ export interface ServerHealth {
   storage: ServerHealthStorage;
 }
 
+export type ShareKind = "track" | "session" | "setlist" | "song";
+
+export interface ShareLink {
+  id: number;
+  token: string;
+  /** Path of the public page, e.g. /share/abc */
+  url: string;
+  kind: ShareKind;
+  target_id: number;
+  title: string;
+  subtitle: string | null;
+  /** Where the shared thing lives in the app */
+  app_path: string;
+  group_id: number | null;
+  group_name: string | null;
+  created_by: number | null;
+  created_by_name: string | null;
+  created_at: string;
+  /** UTC "YYYY-MM-DD HH:MM:SS"; null = never expires */
+  expires_at: string | null;
+  expired: boolean;
+  can_manage: boolean;
+}
+
+/** Parse a UTC "YYYY-MM-DD HH:MM:SS" timestamp from the API. */
+export function parseUtc(ts: string): Date {
+  return new Date(ts.replace(" ", "T") + "Z");
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -1002,15 +1031,32 @@ export const api = {
     fetchJson<{ ok: boolean }>(`${BASE}/setlists/${id}`, { method: "DELETE" }),
 
   // Share links
-  createShareLink: (trackId: number) =>
-    fetchJson<{ token: string; url: string }>(`${BASE}/tracks/${trackId}/share`, {
+  lookupShare: (kind: ShareKind, id: number) =>
+    fetchJson<{ link: ShareLink | null; default_expiry_days: number | null }>(
+      `${BASE}/shares/lookup?kind=${kind}&id=${id}`,
+    ),
+
+  /** Share something. `expiresInDays`: a number, null for never, undefined for the default. */
+  createShare: (kind: ShareKind, id: number, expiresInDays?: number | null) =>
+    fetchJson<ShareLink>(`${BASE}/shares`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        expiresInDays === undefined ? { kind, id } : { kind, id, expires_in_days: expiresInDays },
+      ),
     }),
 
-  deleteShareLink: (trackId: number) =>
-    fetchJson<{ ok: boolean }>(`${BASE}/tracks/${trackId}/share`, {
-      method: "DELETE",
+  listShares: () => fetchJson<ShareLink[]>(`${BASE}/shares`),
+
+  setShareExpiry: (shareId: number, expiresInDays: number | null) =>
+    fetchJson<ShareLink>(`${BASE}/shares/${shareId}/expiry`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expires_in_days: expiresInDays }),
     }),
+
+  revokeShare: (shareId: number) =>
+    fetchJson<{ ok: boolean }>(`${BASE}/shares/${shareId}`, { method: "DELETE" }),
 
   // Admin
   adminListUsers: () => fetchJson<AdminUser[]>(`${BASE}/admin/users`),

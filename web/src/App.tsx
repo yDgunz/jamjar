@@ -20,6 +20,8 @@ import Tuner from "./pages/Tuner";
 import Metronome from "./pages/Metronome";
 import Practice from "./pages/Practice";
 import Admin from "./pages/Admin";
+import SharedLinks from "./pages/SharedLinks";
+import PublicShare from "./share/PublicShare";
 import AcceptInvite from "./pages/AcceptInvite";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
@@ -182,6 +184,7 @@ function MoreMenu({ onChangePassword }: { onChangePassword: () => void }) {
       <div className="mt-2 border-t border-white/[0.07] px-4 pb-2 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
         {user?.name || user?.email}
       </div>
+      <NavLink to="/shares" className={row}>Shared links</NavLink>
       {user && isSuperAdmin(user) && <NavLink to="/admin" className={row}>Admin</NavLink>}
       <button onClick={onChangePassword} className={row}>Change password</button>
       <button onClick={logout} className={`${row} text-red-400`}>Sign out</button>
@@ -202,7 +205,7 @@ function Layout({ children }: { children: React.ReactNode }) {
   // Detail pages get a Back button in the bottom bar (no top breadcrumb on phones)
   const parent = parentPath(location.pathname);
   const goBack = useBack(parent ?? "/songs");
-  const moreActive = ["/tuner", "/metronome", "/practice", "/admin"].some((p) => location.pathname.startsWith(p));
+  const moreActive = ["/tuner", "/metronome", "/practice", "/shares", "/admin"].some((p) => location.pathname.startsWith(p));
 
   // Close the menu on navigation
   useEffect(() => { setMoreOpen(false); }, [location.pathname]);
@@ -343,6 +346,7 @@ function AuthenticatedApp() {
               <Route path="/songs/:id" element={<SongHistory />} />
               <Route path="/setlists" element={<SetlistList />} />
               <Route path="/setlists/:id" element={<SetlistDetail />} />
+              <Route path="/shares" element={<SharedLinks />} />
               <Route path="/admin" element={<Admin />} />
               <Route path="*" element={<Navigate to="/songs" replace />} />
             </Routes>
@@ -364,6 +368,8 @@ export default function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password/:token" element={<ResetPassword />} />
           <Route path="/invite/:token" element={<AcceptInvite />} />
+          <Route path="/share/:token" element={<PublicShare />} />
+          <Route path="/share/:token/songs/:songId" element={<PublicShare />} />
           <Route path="*" element={<AuthenticatedApp />} />
         </Routes>
       </BrowserRouter>

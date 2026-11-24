@@ -35,13 +35,11 @@ export default defineConfig({
         // No navigateFallback — use NetworkFirst for navigations instead,
         // so the browser always fetches fresh index.html from the server.
         // Hashed JS/CSS bundles are still precached and served instantly.
-        // Don't let the SW handle /share/ navigations — those are server-rendered
-        navigateFallbackDenylist: [/^\/share\//],
         runtimeCaching: [
           {
             // SPA navigations — always try network first for fresh index.html,
             // fall back to cache only when offline
-            urlPattern: ({request, url}) => request.mode === 'navigate' && !url.pathname.startsWith('/share/'),
+            urlPattern: ({request}) => request.mode === 'navigate',
             handler: 'NetworkFirst',
             options: { cacheName: 'navigation', expiration: { maxEntries: 5, maxAgeSeconds: 24 * 60 * 60 } },
           },
@@ -68,7 +66,8 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
-            // Public share audio — never cache
+            // Public share links (data and audio) — never cache, so a revoked or
+            // expired link stops working at once
             urlPattern: /^\/api\/share\//,
             handler: 'NetworkOnly',
           },
@@ -87,7 +86,6 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': 'http://localhost:8000',
-      '/share': 'http://localhost:8000',
     },
   },
 })

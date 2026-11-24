@@ -5,6 +5,7 @@ import ActionSheet, { MoreButton } from "./ActionSheet";
 import type { SheetAction, SheetSection } from "./ActionSheet";
 import Modal from "./Modal";
 import Spinner from "./Spinner";
+import ShareDialog from "../share/ShareDialog";
 import { useAuth } from "../context/AuthContext";
 import { formatTime, usePlayer } from "../context/PlayerContext";
 
@@ -53,7 +54,7 @@ export default function TrackRow({
   const [confirmingSplit, setConfirmingSplit] = useState(false);
   const [confirmingTrim, setConfirmingTrim] = useState<"start" | "end" | null>(null);
   const [confirmingExtend, setConfirmingExtend] = useState<{ direction: "start" | "end"; seconds: number } | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const title = track.song_name ?? `Track ${track.track_number}`;
 
@@ -130,24 +131,6 @@ export default function TrackRow({
     });
   };
 
-  const handleShare = async () => {
-    try {
-      const result = await api.createShareLink(track.id);
-      const fullUrl = `${window.location.origin}${result.url}`;
-      if (navigator.share) {
-        await navigator.share({ title, url: fullUrl });
-      } else {
-        await navigator.clipboard.writeText(fullUrl);
-        setToast("Link copied");
-        setTimeout(() => setToast(null), 2000);
-      }
-    } catch (err) {
-      // User cancelling the share sheet is not an error
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      onError(`Share failed: ${err instanceof Error ? err.message : err}`);
-    }
-  };
-
   // Song suggestions while tagging — max 4
   const suggestions = tagInput.trim()
     ? songs
@@ -167,7 +150,7 @@ export default function TrackRow({
     if (track.song_name) main.push({ label: "Remove song tag", onClick: handleUntag });
     main.push({ label: track.notes ? "Edit notes" : "Add notes", onClick: () => { setNotesInput(track.notes ?? ""); setEditingNotes(true); } });
   }
-  main.push({ label: "Share link", onClick: handleShare });
+  main.push({ label: "Share…", onClick: () => setShareOpen(true) });
   main.push({ label: "Download", href: `${api.trackAudioUrl(track.id)}?download=1`, download: `${title}.m4a` });
   sections.push({ actions: main });
 
@@ -300,11 +283,7 @@ export default function TrackRow({
         </div>
       )}
 
-      {toast && (
-        <div className="pointer-events-none fixed inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-50 flex justify-center">
-          <div className="rounded-full bg-gray-800 px-4 py-2 text-sm text-white shadow-lg">{toast}</div>
-        </div>
-      )}
+      <ShareDialog open={shareOpen} kind="track" id={track.id} title={title} onClose={() => setShareOpen(false)} />
 
       <ActionSheet
         open={sheetOpen}

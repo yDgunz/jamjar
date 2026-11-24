@@ -24,6 +24,8 @@ import EditableField from "../components/EditableField";
 import FormModal from "../components/FormModal";
 import Modal, { Toast } from "../components/Modal";
 import FetchError from "../components/FetchError";
+import ShareDialog from "../share/ShareDialog";
+import { ShareIcon } from "../share/ShareIcon";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
 
@@ -127,6 +129,7 @@ export default function SetlistDetail() {
   const [dateInput, setDateInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [addSongId, setAddSongId] = useState<number | "">("");
   const [searchQuery, setSearchQuery] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -398,6 +401,14 @@ export default function SetlistDetail() {
                   Perform
                 </Link>
               )}
+              <button
+                onClick={() => setShareOpen(true)}
+                className="rounded-lg p-2 text-gray-400 transition hover:bg-white/10 hover:text-white"
+                title="Share setlist"
+                aria-label="Share setlist"
+              >
+                <ShareIcon className="h-5 w-5" />
+              </button>
               {canAdmin(user) && (
                 <button
                   onClick={() => setShowDelete(true)}
@@ -545,6 +556,13 @@ export default function SetlistDetail() {
         variant="danger"
         onConfirm={handleDelete}
         onCancel={() => setShowDelete(false)}
+      />
+      <ShareDialog
+        open={shareOpen}
+        kind="setlist"
+        id={setlistId}
+        title={setlist?.name ?? "Setlist"}
+        onClose={() => setShareOpen(false)}
       />
       {errorMsg && (
         <Toast message={errorMsg} variant="error" onClose={() => setErrorMsg(null)} />
