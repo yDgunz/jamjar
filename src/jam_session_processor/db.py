@@ -110,6 +110,18 @@ CREATE TABLE IF NOT EXISTS video_flags (
 
 CREATE INDEX IF NOT EXISTS idx_video_flags_song ON video_flags(song_id);
 
+-- Kinds of video the library-curation routine looked for and couldn't get for a
+-- song, so it doesn't search again every night. 'not_found' counts for
+-- VIDEO_MISS_DAYS; 'not_applicable' (e.g. a backing track for a solo piano
+-- piece) for good. Adding a video of that kind to the song removes the row.
+CREATE TABLE IF NOT EXISTS video_misses (
+    song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT 'not_found',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (song_id, kind)
+);
+
 -- Per-user song activity, for "recently opened / performed" sorting.
 CREATE TABLE IF NOT EXISTS song_activity (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -610,6 +622,7 @@ class Database:
             DROP TABLE IF EXISTS activity_log;
             DROP TABLE IF EXISTS song_activity;
             DROP TABLE IF EXISTS video_flags;
+            DROP TABLE IF EXISTS video_misses;
             DROP TABLE IF EXISTS song_links;
             DROP TABLE IF EXISTS group_songs;
             DROP TABLE IF EXISTS setlist_songs;
@@ -1903,6 +1916,16 @@ class Database:
                 "UPDATE OR IGNORE share_links SET song_id = ? WHERE song_id = ?",
                 (keep_id, merge_id),
             )
+            # The kept song's own misses stay; ones for a kind it now has go.
+            self.conn.execute(
+                "UPDATE OR IGNORE video_misses SET song_id = ? WHERE song_id = ?",
+                (keep_id, merge_id),
+            )
+            self.conn.execute(
+                """DELETE FROM video_misses WHERE song_id = ? AND kind IN
+                     (SELECT kind FROM song_links WHERE song_id = ?)""",
+                (keep_id, keep_id),
+            )
             self.conn.execute(
                 """INSERT INTO song_activity (user_id, song_id, last_opened_at, last_performed_at)
                    SELECT user_id, ?, last_opened_at, last_performed_at
@@ -1960,6 +1983,9 @@ class Database:
         cur = self.conn.execute(
             "INSERT INTO song_links (song_id, kind, url, title, created_by) VALUES (?, ?, ?, ?, ?)",
             (song_id, kind, url, title, created_by),
+        )
+        self.conn.execute(
+            "DELETE FROM video_misses WHERE song_id = ? AND kind = ?", (song_id, kind)
         )
         self.conn.commit()
         return cur.lastrowid
@@ -2036,6 +2062,36 @@ class Database:
     def clear_video_flags(self, song_id: int, video_key: str):
         self.conn.execute(
             "DELETE FROM video_flags WHERE song_id = ? AND video_key = ?", (song_id, video_key)
+        )
+        self.conn.commit()
+
+    # --- Videos the curation routine couldn't find ---
+
+    VIDEO_MISS_DAYS = 30
+
+    def set_video_miss(self, song_id: int, kind: str, reason: str = "not_found"):
+        self.conn.execute(
+            """INSERT INTO video_misses (song_id, kind, reason) VALUES (?, ?, ?)
+               ON CONFLICT(song_id, kind) DO UPDATE SET
+                 reason = excluded.reason, created_at = datetime('now')""",
+            (song_id, kind, reason),
+        )
+        self.conn.commit()
+
+    def list_video_misses(self) -> list[dict]:
+        """The (song, kind) pairs not worth searching for right now: every
+        'not_applicable' one and 'not_found' ones from the last VIDEO_MISS_DAYS."""
+        rows = self.conn.execute(
+            """SELECT song_id, kind, reason, created_at FROM video_misses
+               WHERE reason = 'not_applicable' OR created_at >= datetime('now', ?)
+               ORDER BY song_id, kind""",
+            (f"-{self.VIDEO_MISS_DAYS} days",),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_video_miss(self, song_id: int, kind: str):
+        self.conn.execute(
+            "DELETE FROM video_misses WHERE song_id = ? AND kind = ?", (song_id, kind)
         )
         self.conn.commit()
 
