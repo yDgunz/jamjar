@@ -27,7 +27,7 @@ fi
 if [ -d "$WORKSPACE" ]; then
     echo "Stopping Docker Compose project..."
     cd "$WORKSPACE"
-    docker compose -p "$PROJECT_NAME" -f docker-compose.qa.yml down -v 2>/dev/null || true
+    docker compose -p "$PROJECT_NAME" -f docker-compose.qa.yml down -v --rmi all 2>/dev/null || true
     cd /
 fi
 

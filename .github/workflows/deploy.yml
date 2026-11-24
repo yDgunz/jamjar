@@ -4,9 +4,69 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
+# One deploy at a time; a newer push waits for the running deploy to finish
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  # Must match the server's CPU (the deploy refuses a mismatch before touching the
+  # running app). For an ARM server use linux/arm64 and runs-on: ubuntu-24.04-arm.
+  IMAGE_PLATFORM: linux/amd64
+
 jobs:
-  deploy:
+  build:
+    name: Build image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Image name
+        id: image
+        run: |
+          # GHCR names must be lowercase
+          echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "ref=ghcr.io/${GITHUB_REPOSITORY,,}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ env.IMAGE_PLATFORM }}
+          # pull refreshes base images so OS packages (OpenSSL, ffmpeg) get security updates
+          pull: true
+          push: true
+          # One plain manifest per build (no attestation manifests), so old versions are easy to prune
+          provenance: false
+          tags: |
+            ${{ steps.image.outputs.ref }}
+            ${{ steps.image.outputs.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to VPS
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Pre-deploy database backup
         uses: appleboy/ssh-action@v1
@@ -22,23 +82,49 @@ jobs:
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+          GHCR_USER: ${{ github.actor }}
+          # Short-lived token (expires when this job ends), used only to pull the image
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          envs: IMAGE,GHCR_USER,GHCR_TOKEN
           script: |
             set -e
             cd /opt/jamjar
 
             PREV_COMMIT=$(git rev-parse HEAD)
             PREV_SHORT=$(git rev-parse --short HEAD)
+            # The image serving right now, kept as jamjar:previous for rollback
+            PREV_IMAGE=$(docker inspect --format '{{.Image}}' "$(docker compose ps -q app)" 2>/dev/null || true)
+
+            # Pull the image CI built. Nothing is built on this server. Until the new
+            # image is here and checked, the running app is not touched.
+            trap 'docker logout ghcr.io > /dev/null 2>&1 || true' EXIT
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            docker pull "$IMAGE"
+
+            IMAGE_ARCH=$(docker image inspect --format '{{.Architecture}}' "$IMAGE")
+            HOST_ARCH=$(docker version --format '{{.Server.Arch}}')
+            if [ "$IMAGE_ARCH" != "$HOST_ARCH" ]; then
+              echo "ERROR: image is built for $IMAGE_ARCH but this server is $HOST_ARCH."
+              echo "Set IMAGE_PLATFORM in .github/workflows/deploy.yml to linux/$HOST_ARCH. Nothing was changed."
+              docker rmi "$IMAGE" > /dev/null 2>&1 || true
+              exit 1
+            fi
+
             git pull
             echo "Deploying $(git rev-parse --short HEAD) (previous: $PREV_SHORT)"
 
-            # --pull refreshes base images so OS packages (OpenSSL, ffmpeg) get security updates
-            docker compose build --pull
-            docker compose up -d
+            if [ -n "$PREV_IMAGE" ]; then
+              docker tag "$PREV_IMAGE" jamjar:previous
+            fi
+            docker tag "$IMAGE" jamjar:live
+            docker compose up -d --no-build
 
             # /health queries the DB; give the app up to ~60s to come up
             healthy() {
@@ -58,8 +144,10 @@ jobs:
               docker compose logs --tail 100 app || true
               # reset (not checkout) keeps the branch attached so the next git pull works
               git reset --hard "$PREV_COMMIT"
-              docker compose build
-              docker compose up -d
+              if [ -n "$PREV_IMAGE" ]; then
+                docker tag jamjar:previous jamjar:live
+              fi
+              docker compose up -d --no-build || true
               if healthy; then
                 echo "Rollback succeeded; previous version is serving."
               else
@@ -68,7 +156,12 @@ jobs:
               exit 1
             fi
 
+            # Keep only jamjar:live and jamjar:previous: drop the registry tag, the image
+            # name older deploys built under, and the build cache those builds left behind
+            docker rmi "$IMAGE" > /dev/null 2>&1 || true
+            docker rmi jamjar-app > /dev/null 2>&1 || true
             docker image prune -f
+            docker builder prune -f > /dev/null 2>&1 || true
 
       - name: Set up daily backup cron job
         uses: appleboy/ssh-action@v1
@@ -80,3 +173,18 @@ jobs:
           script: |
             CRON_CMD="0 3 * * * cd /opt/jamjar && docker compose exec -T app /app/scripts/backup-db.sh >> /var/log/jam-backup.log 2>&1"
             (crontab -l 2>/dev/null | grep -v "backup-db.sh" ; echo "$CRON_CMD") | crontab -
+
+  prune-registry:
+    name: Prune old images from the registry
+    needs: deploy
+    runs-on: ubuntu-latest
+    # Housekeeping only; a failure here must not fail a deploy that succeeded
+    continue-on-error: true
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ github.event.repository.name }}
+          package-type: container
+          min-versions-to-keep: 10

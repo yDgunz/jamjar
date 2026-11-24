@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
 # Deploy a QA environment for a feature branch.
-# Usage: qa-deploy.sh <sanitized-branch-name> <git-repo-url> <git-ref>
+# Usage: qa-deploy.sh <sanitized-branch-name> <git-repo-url> <git-ref> [image]
 #
 # Expects JAM_QA_PASSWORD to be set in the environment.
-# Creates workspace at /opt/jamjar-qa/<branch>/, builds and starts a Docker
-# Compose project, seeds the DB, and registers a Caddy route.
+# Creates workspace at /opt/jamjar-qa/<branch>/, starts a Docker Compose
+# project, seeds the DB, and registers a Caddy route.
+#
+# With [image] (a registry reference the server can pull, built by CI) nothing
+# is built here. Without it the image is built on the server from the branch.
 
 set -euo pipefail
 
 BRANCH="$1"
 REPO_URL="$2"
 GIT_REF="$3"
+IMAGE="${4:-}"
 
 QA_BASE="/opt/jamjar-qa"
 WORKSPACE="${QA_BASE}/${BRANCH}"
 PROJECT_NAME="jamjar-qa-${BRANCH}"
 CADDY_SITES="/etc/caddy/qa-sites"
 CADDYFILE="/etc/caddy/Caddyfile"
-MAX_QA_ENVS=3
+MAX_QA_ENVS=1
 PORT_START=8001
 
 # --- Validate environment ---
@@ -33,7 +37,9 @@ if [ -d "$WORKSPACE" ]; then
     active_count=$((active_count - 1))
 fi
 if [ "$active_count" -ge "$MAX_QA_ENVS" ]; then
-    echo "ERROR: Maximum $MAX_QA_ENVS QA environments already running. Tear one down first."
+    echo "ERROR: Maximum $MAX_QA_ENVS QA environment(s) already running. Tear one down first:"
+    echo "  remove the deploy-qa label from its PR."
+    find "$QA_BASE" -mindepth 1 -maxdepth 1 -type d ! -path "$WORKSPACE" -exec basename {} \; | sed 's/^/  running: /'
     exit 1
 fi
 
@@ -89,10 +95,16 @@ echo "=== Assigned port ${PORT} ==="
 # --- Generate docker-compose.qa.yml ---
 JWT_SECRET=$(openssl rand -hex 32)
 
+if [ -n "$IMAGE" ]; then
+    IMAGE_LINE="image: ${IMAGE}"
+else
+    IMAGE_LINE="build: ."
+fi
+
 cat > "${WORKSPACE}/docker-compose.qa.yml" <<YAML
 services:
   app:
-    build: .
+    ${IMAGE_LINE}
     ports:
       - "127.0.0.1:${PORT}:8000"
     environment:
@@ -113,9 +125,15 @@ volumes:
   qa-data:
 YAML
 
-# --- Build and start ---
-echo "=== Building and starting QA environment ==="
-docker compose -p "$PROJECT_NAME" -f docker-compose.qa.yml up --build -d
+# --- Start (pull the CI-built image, or build here when none was given) ---
+if [ -n "$IMAGE" ]; then
+    echo "=== Pulling ${IMAGE} and starting QA environment ==="
+    docker compose -p "$PROJECT_NAME" -f docker-compose.qa.yml pull
+    docker compose -p "$PROJECT_NAME" -f docker-compose.qa.yml up -d
+else
+    echo "=== Building and starting QA environment ==="
+    docker compose -p "$PROJECT_NAME" -f docker-compose.qa.yml up --build -d
+fi
 
 # --- Seed the database ---
 echo "=== Seeding database ==="
