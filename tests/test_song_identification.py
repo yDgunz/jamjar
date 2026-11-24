@@ -223,16 +223,84 @@ def test_admin_status_and_run(client, monkeypatch):  # noqa: F811
     assert status["nightly_hour_utc"] == 8
     assert client.post("/api/admin/song-identification/run", headers=H).status_code == 503
 
-    started = []
-
-    async def fake_start():
-        started.append(1)
-        return len(started) == 1
-
     monkeypatch.setattr("jam_session_processor.transcribe.is_available", lambda: True)
-    monkeypatch.setattr(api, "_start_identify_run", fake_start)
+    launched = _fake_launcher(monkeypatch)
     assert client.post("/api/admin/song-identification/run", headers=H).status_code == 202
     assert client.post("/api/admin/song-identification/run", headers=H).status_code == 409
+    assert launched == [None]
+    assert client.get("/api/admin/song-identification", headers=H).json()["running"] is True
+
+
+class _FakeProc:
+    def __init__(self):
+        self.done = False
+
+    def poll(self):
+        return 0 if self.done else None
+
+    def terminate(self):
+        self.done = True
+
+
+def _fake_launcher(monkeypatch):
+    """Replace the child process with a fake that runs until told to finish."""
+    launched = []
+
+    def launch(session_id):
+        launched.append(session_id)
+        api._identify_proc = _FakeProc()
+        api._identify_current = session_id
+
+    monkeypatch.setattr(api, "_launch_identify", launch)
+    monkeypatch.setattr(api, "_identify_proc", None)
+    monkeypatch.setattr(api, "_identify_current", None)
+    monkeypatch.setattr(api, "_identify_pending", [])
+    return launched
+
+
+def test_runs_queue_one_at_a_time(monkeypatch):
+    launched = _fake_launcher(monkeypatch)
+    assert api._request_identify(7) is True  # starts
+    assert api._request_identify(7) is False  # already running
+    assert api._request_identify(8) is True  # queued behind it
+    assert api._request_identify(8) is False  # already queued
+    assert api._request_identify(None) is True  # the nightly run queues too
+    assert launched == [7] and api._identify_pending == [8, None]
+
+    class Done:
+        def wait(self):
+            api._identify_proc.done = True
+
+    proc = api._identify_proc
+    proc.wait = Done().wait
+    api._after_identify(proc)  # the run ends: the next one starts
+    assert launched == [7, 8] and api._identify_pending == [None]
+
+
+def test_upload_starts_tagging_for_that_recording(client, monkeypatch):  # noqa: F811
+    launched = _fake_launcher(monkeypatch)
+    monkeypatch.setattr("jam_session_processor.transcribe.is_available", lambda: False)
+    api._tag_after_processing(5)
+    assert launched == []  # speech-to-text not installed: nothing to start
+    monkeypatch.setattr("jam_session_processor.transcribe.is_available", lambda: True)
+    monkeypatch.setenv("JAM_IDENTIFY_HOUR", "off")
+    api._tag_after_processing(5)
+    assert launched == []  # automatic runs turned off
+    monkeypatch.delenv("JAM_IDENTIFY_HOUR")
+    api._tag_after_processing(5)
+    assert launched == [5]
+
+
+def test_run_for_one_recording_only_transcribes_its_tracks(client):  # noqa: F811
+    db = api._db
+    gid, sid = _band(db)
+    other = db.create_session("other.m4a", gid, date="2026-02-02")
+    _track(db, sid, 1)
+    _track(db, other, 1)
+    fake = FakeTranscriber({"1.m4a": CHATTER})
+    summary = identify.run(db, transcriber=fake, session_id=sid)
+    assert summary["transcribed"] == 1 and fake.calls == [f"{db.db_path.parent}/tracks/{sid}/1.m4a"]
+    assert len(db.tracks_needing_transcript()) == 1
 
 
 def test_nightly_hour_setting(monkeypatch):

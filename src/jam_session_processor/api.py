@@ -7,6 +7,7 @@ import json
 import logging
 import os as _os
 import re as _re_mod
+import subprocess
 import sys
 import threading
 import time
@@ -89,16 +90,21 @@ async def _wait_for_jobs(grace_seconds: float, poll: float = 1.0) -> bool:
     return True
 
 
-# --- Nightly song identification ---
+# --- Automatic song tagging runs ---
 # Speech-to-text needs ~0.8 GB while it runs, so it lives in its own process
-# (`jam-session identify-songs`) that the server starts once a day and that gives the
-# memory back when it exits. Work is saved per track, so killing it loses nothing.
+# (`jam-session identify-songs`) that gives the memory back when it exits. The server
+# starts one nightly (everything pending) and one after each upload or re-split (that
+# recording only). One runs at a time; the rest wait in a queue. Work is saved per
+# track, so killing a run loses nothing.
 
-_identify_proc: asyncio.subprocess.Process | None = None
+_identify_lock = threading.Lock()
+_identify_proc: subprocess.Popen | None = None
+_identify_current: int | None = None  # recording of the running run; None = full run
+_identify_pending: list[int | None] = []
 
 
 def _identify_hour() -> int | None:
-    """Hour of day (UTC) for the nightly run; None when turned off."""
+    """Hour of day (UTC) for the nightly run; None when automatic runs are off."""
     raw = _os.environ.get("JAM_IDENTIFY_HOUR", "8").strip().lower()
     if raw in ("", "off", "none", "false", "no"):
         return None
@@ -117,29 +123,61 @@ def _seconds_until_hour(hour: int, now: datetime | None = None) -> float:
 
 
 def _identify_running() -> bool:
-    return _identify_proc is not None and _identify_proc.returncode is None
+    return _identify_proc is not None and _identify_proc.poll() is None
 
 
-async def _start_identify_run() -> bool:
-    """Start an identification run in a child process. False if one is running."""
-    global _identify_proc
-    if _identify_running():
-        return False
-    _identify_proc = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-c",
-        "from jam_session_processor.cli import cli; cli()",
-        "identify-songs",
-    )
-    return True
+def _launch_identify(session_id: int | None) -> None:
+    """Start a run in a child process (call with the lock held)."""
+    global _identify_proc, _identify_current
+    cmd = [sys.executable, "-c", "from jam_session_processor.cli import cli; cli()"]
+    cmd.append("identify-songs")
+    if session_id is not None:
+        cmd += ["--session", str(session_id)]
+    _identify_proc = subprocess.Popen(cmd)
+    _identify_current = session_id
+    threading.Thread(target=_after_identify, args=(_identify_proc,), daemon=True).start()
+
+
+def _after_identify(proc: subprocess.Popen) -> None:
+    """When a run ends, start the next queued one."""
+    proc.wait()
+    with _identify_lock:
+        if _identify_proc is proc and _identify_pending:
+            _launch_identify(_identify_pending.pop(0))
+
+
+def _request_identify(session_id: int | None = None) -> bool:
+    """Start a tagging run (for one recording, or everything), or queue it behind the
+    running one. False when the same run is already running or queued."""
+    with _identify_lock:
+        if session_id in _identify_pending:
+            return False
+        if _identify_running():
+            if _identify_current == session_id:
+                return False
+            _identify_pending.append(session_id)
+        else:
+            _launch_identify(session_id)
+        return True
+
+
+def _tag_after_processing(session_id: int) -> None:
+    """A recording was just split into tracks: try to tag them right away."""
+    from jam_session_processor import transcribe
+
+    try:
+        if _identify_hour() is not None and transcribe.is_available():
+            _request_identify(session_id)
+    except Exception:
+        # Never fail the upload over this; the nightly run picks the recording up
+        logger.exception("Could not start song tagging for recording %s", session_id)
 
 
 async def _identify_scheduler(hour: int):
     while True:
         await asyncio.sleep(_seconds_until_hour(hour))
         try:
-            if await _start_identify_run():
-                await _identify_proc.wait()
+            _request_identify(None)
         except Exception:
             logger.exception("Nightly song identification failed to run")
         await asyncio.sleep(60)  # never start twice within the same minute
@@ -162,8 +200,10 @@ async def _lifespan(app: FastAPI):
     yield
     if scheduler:
         scheduler.cancel()
-    if _identify_running():
-        _identify_proc.terminate()
+    with _identify_lock:
+        _identify_pending.clear()
+        if _identify_running():
+            _identify_proc.terminate()
     await _wait_for_jobs(float(_os.environ.get("JAM_SHUTDOWN_GRACE_SEC", "270")))
 
 
@@ -1269,6 +1309,7 @@ def _process_reprocess(
                     storage.put(rel_path, audio_path.resolve())
 
         db.complete_job(job_id, session_id)
+        _tag_after_processing(session_id)
     except Exception as e:
         logger.exception("Reprocess failed")
         db.fail_job(job_id, str(e))
@@ -1459,6 +1500,7 @@ def _process_upload(
                     storage.put(rel_path, audio_path.resolve())
 
         db.complete_job(job_id, session_id)
+        _tag_after_processing(session_id)
     except Exception as e:
         logger.exception("Background upload processing failed")
         db.fail_job(job_id, str(e))
@@ -3647,19 +3689,20 @@ def admin_song_identification(request: Request):
         "model": transcribe.model_name(),
         "nightly_hour_utc": _identify_hour(),
         "running": _identify_running(),
+        "queued": len(_identify_pending),
         **get_db().get_identification_stats(),
     }
 
 
 @app.post("/api/admin/song-identification/run", status_code=202)
-async def admin_run_song_identification(request: Request):
+def admin_run_song_identification(request: Request):
     """Start an identification run now instead of waiting for the nightly one."""
     _require_role(request, "superadmin")
     from jam_session_processor import transcribe
 
     if not transcribe.is_available():
         raise HTTPException(status_code=503, detail="Speech-to-text is not installed")
-    if not await _start_identify_run():
+    if not _request_identify(None):
         raise HTTPException(status_code=409, detail="A run is already in progress")
     return {"started": True}
 

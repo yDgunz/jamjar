@@ -1,6 +1,7 @@
 """Tag untagged tracks with the song they are recognised as.
 
-One run (nightly, or ``jam-session identify-songs``):
+One run (nightly for everything, right after an upload or re-split for that recording,
+or ``jam-session identify-songs`` by hand):
 
 1. Transcribes tracks that have no transcript yet (or whose audio changed), newest
    recordings first, within a time budget. Tagged tracks are transcribed too: they are
@@ -51,12 +52,14 @@ def available_memory_mb() -> int | None:
     return None
 
 
-def transcribe_pending(db: Database, transcriber, max_seconds: float) -> dict:
+def transcribe_pending(
+    db: Database, transcriber, max_seconds: float, session_id: int | None = None
+) -> dict:
     """Transcribe tracks lacking a current transcript until the time budget runs out."""
     cfg = get_config()
     storage = get_storage()
     deadline = time.monotonic() + max_seconds
-    pending = db.tracks_needing_transcript()
+    pending = db.tracks_needing_transcript(session_id)
     done = failed = 0
     for row in pending:
         if time.monotonic() >= deadline:
@@ -123,8 +126,14 @@ def tag_untagged(db: Database) -> dict:
     return {"tagged": tagged}
 
 
-def run(db: Database, transcriber=None, max_minutes: int | None = None) -> dict:
-    """One identification run. ``transcriber=None`` uses the local model if installed."""
+def run(
+    db: Database,
+    transcriber=None,
+    max_minutes: int | None = None,
+    session_id: int | None = None,
+) -> dict:
+    """One identification run. ``transcriber=None`` uses the local model if installed.
+    ``session_id`` limits transcribing to one recording (the run after an upload)."""
     from jam_session_processor import transcribe
 
     summary: dict = {"transcribed": 0, "failed": 0, "remaining": 0, "skipped": ""}
@@ -142,7 +151,7 @@ def run(db: Database, transcriber=None, max_minutes: int | None = None) -> dict:
                 transcriber = transcribe.Transcriber(model_dir=get_config().data_dir / "models")
             if max_minutes is None:
                 max_minutes = _env_int("JAM_IDENTIFY_MAX_MINUTES", DEFAULT_MAX_MINUTES)
-            summary.update(transcribe_pending(db, transcriber, max_minutes * 60))
+            summary.update(transcribe_pending(db, transcriber, max_minutes * 60, session_id))
     if summary["skipped"]:
         logger.warning("Not transcribing this run: %s", summary["skipped"])
     summary.update(tag_untagged(db))

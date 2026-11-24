@@ -436,7 +436,8 @@ def list_groups():
 @cli.command("identify-songs")
 @click.option("--max-minutes", type=int, default=None, help="Time budget for transcribing.")
 @click.option("--match-only", is_flag=True, help="Skip transcribing; only re-assess tracks.")
-def identify_songs(max_minutes: int | None, match_only: bool):
+@click.option("--session", "session_id", type=int, default=None, help="Only this recording.")
+def identify_songs(max_minutes: int | None, match_only: bool, session_id: int | None):
     """Transcribe new tracks and tag untagged ones it recognises (the nightly run)."""
     import logging
     import os
@@ -452,7 +453,7 @@ def identify_songs(max_minutes: int | None, match_only: bool):
     if match_only:
         summary = identify.tag_untagged(db)
     else:
-        summary = identify.run(db, max_minutes=max_minutes)
+        summary = identify.run(db, max_minutes=max_minutes, session_id=session_id)
     click.echo(", ".join(f"{k}: {v}" for k, v in summary.items() if v != ""))
 
 

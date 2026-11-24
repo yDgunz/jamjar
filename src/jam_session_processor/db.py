@@ -1192,15 +1192,18 @@ class Database:
 
     # --- Automatic song tagging (speech-to-text matching, see identify.py) ---
 
-    def tracks_needing_transcript(self) -> list[sqlite3.Row]:
-        """Tracks with no transcript of their current audio, newest recordings first."""
+    def tracks_needing_transcript(self, session_id: int | None = None) -> list[sqlite3.Row]:
+        """Tracks with no transcript of their current audio, newest recordings first
+        (optionally only one recording's tracks)."""
         return self.conn.execute(
             """SELECT t.id, t.audio_path
                FROM tracks t
                JOIN sessions s ON s.id = t.session_id
                LEFT JOIN track_transcripts tt ON tt.track_id = t.id
-               WHERE tt.track_id IS NULL OR tt.audio_path != t.audio_path
-               ORDER BY s.date DESC, s.id DESC, t.track_number"""
+               WHERE (tt.track_id IS NULL OR tt.audio_path != t.audio_path)
+                 AND (? IS NULL OR t.session_id = ?)
+               ORDER BY s.date DESC, s.id DESC, t.track_number""",
+            (session_id, session_id),
         ).fetchall()
 
     def save_transcript(self, track_id: int, audio_path: str, model: str, text: str):
