@@ -310,6 +310,18 @@ export interface Job {
   progress: string;
   session_id: number | null;
   error: string | null;
+  /** Structured progress; absent on jobs that only report text */
+  step?: string | null;
+  steps?: string[] | null;
+  current?: number | null;
+  total?: number | null;
+  /** Seconds since the work started (null until it has, and once it is over) */
+  elapsed_sec?: number | null;
+  duration_sec?: number | null;
+  /** The songs found, as [start, end] in seconds */
+  segments?: [number, number][] | null;
+  /** Loudness along the recording, 0..1 */
+  levels?: number[] | null;
 }
 
 export interface DriveInfo {

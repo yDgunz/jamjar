@@ -57,3 +57,78 @@ export default function FilterChip<T extends string>({
     </span>
   );
 }
+
+const SortIcon = (
+  <svg className="h-3.5 w-3.5 shrink-0 opacity-70" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+    <path fillRule="evenodd" d="M2.24 6.8a.75.75 0 0 0 1.06-.04l1.95-2.1v8.59a.75.75 0 0 0 1.5 0V4.66l1.95 2.1a.75.75 0 1 0 1.1-1.02l-3.25-3.5a.75.75 0 0 0-1.1 0L2.2 5.74a.75.75 0 0 0 .04 1.06Zm8 6.4a.75.75 0 0 0-.04 1.06l3.25 3.5a.75.75 0 0 0 1.1 0l3.25-3.5a.75.75 0 1 0-1.1-1.02l-1.95 2.1V6.75a.75.75 0 0 0-1.5 0v8.59l-1.95-2.1a.75.75 0 0 0-1.06-.04Z" clipRule="evenodd" />
+  </svg>
+);
+
+/**
+ * The sort chip that opens a list's filter bar: always neutral, marked with
+ * the sort arrows. `short` is the text on the chip when the option's full
+ * label is too long for it.
+ */
+export function SortChip<T extends string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  value: T;
+  options: { value: T; label: string; short?: string }[];
+  onChange: (value: T) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <FilterChip
+      value={value}
+      options={options}
+      onChange={onChange}
+      ariaLabel={ariaLabel}
+      display={(v) => { const o = options.find((x) => x.value === v); return o?.short ?? o?.label ?? ""; }}
+      icon={SortIcon}
+    />
+  );
+}
+
+/** Band filter chip; renders nothing for people in a single band. */
+export function BandChip({
+  groups,
+  value,
+  onChange,
+}: {
+  groups: { id: number; name: string }[];
+  value: number | null;
+  onChange: (groupId: number | null) => void;
+}) {
+  if (groups.length <= 1) return null;
+  return (
+    <FilterChip
+      value={value === null ? "" : String(value)}
+      options={[{ value: "", label: "All bands" }, ...groups.map((g) => ({ value: String(g.id), label: g.name }))]}
+      onChange={(v) => onChange(v ? Number(v) : null)}
+      ariaLabel="Filter by band"
+      defaultValue=""
+      placeholder="Band"
+    />
+  );
+}
+
+/**
+ * The row of chips under a list page's title/search: sort first, then filters
+ * (highlighted when set). Scrolls sideways on narrow screens. Pass `onClear`
+ * while any filter is set to show a Clear button at the end.
+ */
+export function FilterBar({ children, onClear }: { children: ReactNode; onClear?: () => void }) {
+  return (
+    <div className="no-scrollbar -mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
+      {children}
+      {onClear && (
+        <button onClick={onClear} className="shrink-0 px-1 text-sm text-gray-400 hover:text-gray-200">
+          Clear
+        </button>
+      )}
+    </div>
+  );
+}

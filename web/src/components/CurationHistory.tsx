@@ -62,8 +62,9 @@ export default function CurationHistory() {
               onClick={() => setOpen(expanded ? null : run.id)}
               className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-gray-900/50"
             >
-              <span className="w-28 shrink-0 text-xs leading-5 text-gray-500">{when(run.created_at)}</span>
+              <span className="hidden w-28 shrink-0 text-xs leading-5 text-gray-500 sm:block">{when(run.created_at)}</span>
               <span className="min-w-0 flex-1">
+                <span className="block text-xs text-gray-500 sm:hidden">{when(run.created_at)}</span>
                 <span className="block text-sm text-gray-200">{run.summary || "Run"}</span>
                 {run.items.length > 0 && (
                   <span className="mt-0.5 block text-xs text-gray-500">
@@ -82,12 +83,12 @@ export default function CurationHistory() {
             {expanded && (
               <ul className="divide-y divide-gray-800/50 border-t border-gray-800">
                 {run.items.map((item, i) => (
-                  <li key={i} className="flex items-baseline gap-3 px-3 py-1.5 text-sm">
+                  <li key={i} className="flex items-baseline gap-3 px-3 py-2 text-sm sm:py-1.5">
                     <span className="w-28 shrink-0 text-xs text-gray-500">{ACTION_LABELS[item.action] || item.action}</span>
                     {item.song_id ? (
-                      <Link to={`/songs/${item.song_id}`} className="text-gray-200 hover:text-white">{item.song_name}</Link>
+                      <Link to={`/songs/${item.song_id}`} className="min-w-0 break-words text-gray-200 hover:text-white">{item.song_name}</Link>
                     ) : (
-                      <span className="text-gray-300">{item.song_name}</span>
+                      <span className="min-w-0 break-words text-gray-300">{item.song_name}</span>
                     )}
                   </li>
                 ))}

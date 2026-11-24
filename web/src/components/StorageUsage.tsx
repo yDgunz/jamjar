@@ -78,8 +78,8 @@ export default function StorageUsage() {
         <div className="divide-y divide-gray-800/50 rounded-lg border border-gray-800">
           {data.prefixes.map((p) => (
             <div key={p.prefix} className="flex items-baseline justify-between px-3 py-2 text-sm">
-              <span className="font-mono text-gray-300">{p.prefix}/</span>
-              <span className="text-gray-400">
+              <span className="min-w-0 break-all font-mono text-gray-300">{p.prefix}/</span>
+              <span className="shrink-0 pl-3 text-gray-400">
                 {bytes(p.bytes)} <span className="text-xs text-gray-600">· {p.objects.toLocaleString()} files</span>
               </span>
             </div>
@@ -100,8 +100,11 @@ export default function StorageUsage() {
                 <div className="h-full bg-accent-600" style={{ width: `${(r.total_bytes / max) * 100}%` }} />
               </div>
               <div className="mt-1 text-xs text-gray-500">
-                {[r.group_name, r.date].filter(Boolean).join(" · ")} · original {bytes(r.source_bytes)} · {r.track_count}{" "}
-                {r.track_count === 1 ? "track" : "tracks"} {bytes(r.track_bytes)}
+                <span className="block truncate sm:inline">{[r.group_name, r.date].filter(Boolean).join(" · ")}</span>
+                <span className="hidden sm:inline"> · </span>
+                <span className="block sm:inline">
+                  original {bytes(r.source_bytes)} · {r.track_count} {r.track_count === 1 ? "track" : "tracks"} {bytes(r.track_bytes)}
+                </span>
               </div>
             </Link>
           ))}
