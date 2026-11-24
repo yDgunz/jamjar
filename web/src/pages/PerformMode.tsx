@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link, useLocation, useNavigate } from "react-router";
 import { api, recordSongActivity } from "../api";
 import FetchError from "../components/FetchError";
@@ -8,16 +8,21 @@ import { isChordPro, transposeChordPro } from "../utils/chordpro";
 import ChordSheet from "../components/ChordSheet";
 import NotebookSheet, { NotebookPage } from "../components/NotebookSheet";
 import PerformControls from "../components/PerformControls";
+import SongQuickSearch from "../components/SongQuickSearch";
 import { usePerformMode } from "../hooks/usePerformMode";
 
 export default function PerformMode() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   // Leaving Perform mode pops it off history, so Back afterwards doesn't land here again
+  // (after switching songs through the search, history's previous entry belongs to the
+  // first song, so the link goes to this song's page in place of Perform mode instead)
   const exit = (e: React.MouseEvent) => {
-    if (location.key !== "default") { e.preventDefault(); navigate(-1); }
+    if (location.key !== "default" && !switched) { e.preventDefault(); navigate(-1); }
   };
   const location = useLocation();
+  const switched = !!(location.state as { switched?: boolean } | null)?.switched;
+  const [searching, setSearching] = useState(false);
   const songId = Number(id);
   const { data: song, loading, error: fetchError, refresh } = useFetch(
     () => api.getSong(songId),
@@ -25,6 +30,22 @@ export default function PerformMode() {
   );
   const perform = usePerformMode();
   useEffect(() => { recordSongActivity(songId, "performed"); }, [songId]);
+
+  const openSearch = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    perform.setScrolling(false);
+    perform.setShowSettings(false);
+    setSearching(true);
+  };
+  // Perform another song in place of this one (no extra history entry)
+  const switchSong = (otherId: number) => {
+    setSearching(false);
+    perform.resetForSong();
+    navigate(`/songs/${otherId}/perform`, {
+      replace: true,
+      state: { ...(location.state as object | null), switched: true },
+    });
+  };
 
   if (loading) return (
     <div className="min-h-screen bg-gray-950 p-4">
@@ -68,6 +89,7 @@ export default function PerformMode() {
           <Link
             to={`/songs/${songId}`}
             onClick={exit}
+            replace={switched}
             state={location.state}
             className="shrink-0 p-2 text-lg text-gray-400 hover:text-white"
             title="Back to song"
@@ -93,6 +115,16 @@ export default function PerformMode() {
           ) : (
             <div className="w-9 shrink-0" />
           )}
+          <button
+            onClick={openSearch}
+            className="shrink-0 rounded-xl p-2.5 text-gray-300 hover:text-white active:bg-gray-800"
+            title="Perform another song"
+            aria-label="Perform another song"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+              <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clipRule="evenodd" />
+            </svg>
+          </button>
         </div>
 
         <PerformControls hasSheet={hasSheet} perform={perform} />
@@ -132,6 +164,13 @@ export default function PerformMode() {
       )}
       </div>
 
+      {searching && (
+        <SongQuickSearch
+          currentSongId={songId}
+          onPick={(s) => switchSong(s.id)}
+          onClose={() => setSearching(false)}
+        />
+      )}
     </div>
   );
 }

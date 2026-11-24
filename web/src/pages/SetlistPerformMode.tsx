@@ -8,6 +8,7 @@ import { isChordPro, transposeChordPro } from "../utils/chordpro";
 import ChordSheet from "../components/ChordSheet";
 import NotebookSheet, { NotebookPage } from "../components/NotebookSheet";
 import PerformControls from "../components/PerformControls";
+import SongQuickSearch from "../components/SongQuickSearch";
 import { usePerformMode } from "../hooks/usePerformMode";
 
 export default function SetlistPerformMode() {
@@ -25,7 +26,10 @@ export default function SetlistPerformMode() {
   );
   const setlist = fetchedData?.[0] ?? null;
   const songs = fetchedData?.[1] ?? [];
-  const [currentIdx, setCurrentIdx] = useState(0);
+  // Coming back from a song opened through the search returns to the same place in the set
+  const [rawIdx, setCurrentIdx] = useState(() => (location.state as { idx?: number } | null)?.idx ?? 0);
+  const currentIdx = Math.min(rawIdx, Math.max(0, songs.length - 1));
+  const [searching, setSearching] = useState(false);
   const perform = usePerformMode();
   const currentSongId = songs[currentIdx]?.song_id;
   useEffect(() => {
@@ -38,6 +42,18 @@ export default function SetlistPerformMode() {
     perform.resetForSong();
     setCurrentIdx(idx);
   }, [songs.length, perform.resetForSong]);
+
+  const openSearch = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    perform.setScrolling(false);
+    perform.setShowSettings(false);
+    setSearching(true);
+  };
+  // Perform a song outside the set: leaves the setlist, Back returns to this song in it
+  const performOther = (otherId: number) => {
+    navigate(location, { replace: true, state: { ...(location.state as object | null), idx: currentIdx } });
+    navigate(`/songs/${otherId}/perform`);
+  };
 
   if (loading) return (
     <div className="min-h-screen bg-gray-950 p-4">
@@ -138,6 +154,16 @@ export default function SetlistPerformMode() {
           ) : (
             <div className="w-9 shrink-0" />
           )}
+          <button
+            onClick={openSearch}
+            className="shrink-0 rounded-xl p-2 text-gray-300 hover:text-white active:bg-gray-800"
+            title="Perform another song"
+            aria-label="Perform another song"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+              <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clipRule="evenodd" />
+            </svg>
+          </button>
         </div>
 
         <PerformControls hasSheet={hasSheet} perform={perform} />
@@ -202,6 +228,14 @@ export default function SetlistPerformMode() {
         </div>
       )}
       </div>
+
+      {searching && (
+        <SongQuickSearch
+          currentSongId={currentSong.song_id}
+          onPick={(s) => performOther(s.id)}
+          onClose={() => setSearching(false)}
+        />
+      )}
     </div>
   );
 }
