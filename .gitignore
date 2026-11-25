@@ -43,3 +43,4 @@ web/dist/
 
 # pytest-cov
 .coverage
+pid
