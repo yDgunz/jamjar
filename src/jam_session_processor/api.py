@@ -173,6 +173,37 @@ def _tag_after_processing(session_id: int) -> None:
         logger.exception("Could not start song tagging for recording %s", session_id)
 
 
+async def _resume_identify(delay_sec: float = 90):
+    """After a restart, pick up the tagging of freshly detected recordings again: a
+    deploy kills the run in progress and forgets the queue."""
+    await asyncio.sleep(delay_sec)  # let the server settle first
+    try:
+        for session_id in get_db().sessions_awaiting_tagging():
+            _request_identify(session_id)
+    except Exception:
+        logger.exception("Could not resume song tagging after the restart")
+
+
+def _tagging_status(session_id: int) -> dict | None:
+    """Whether a tagging run is working on (or about to work on) this recording."""
+    with _identify_lock:
+        running, current = _identify_running(), _identify_current
+        pending = list(_identify_pending)
+    if not running and not pending:
+        return None
+    db = get_db()
+    left = len(db.tracks_needing_transcript(session_id))
+    # A full run (None) covers this recording only while it has tracks to transcribe
+    if running and (current == session_id or (current is None and left)):
+        state = "running"
+    elif session_id in pending or (None in pending and left):
+        state = "queued"
+    else:
+        return None
+    total = len(db.get_tracks_for_session(session_id))
+    return {"state": state, "transcribed": max(total - left, 0), "total": total}
+
+
 async def _identify_scheduler(hour: int):
     while True:
         await asyncio.sleep(_seconds_until_hour(hour))
@@ -193,13 +224,15 @@ async def _lifespan(app: FastAPI):
         logger.exception("Could not clean up interrupted jobs")
     from jam_session_processor import transcribe
 
-    scheduler = None
+    scheduler = resume = None
     hour = _identify_hour()
     if hour is not None and transcribe.is_available():
         scheduler = asyncio.create_task(_identify_scheduler(hour))
+        resume = asyncio.create_task(_resume_identify())
     yield
-    if scheduler:
-        scheduler.cancel()
+    for task in (scheduler, resume):
+        if task:
+            task.cancel()
     with _identify_lock:
         _identify_pending.clear()
         if _identify_running():
@@ -747,6 +780,9 @@ class SessionResponse(BaseModel):
     updated_by_name: str | None = None
     updated_at: str | None = None
     kind: str = ""
+    # Set (by GET /api/sessions/{id} only) while a tagging run is working on this
+    # recording or queued for it: {state: running|queued, transcribed, total}
+    tagging: dict | None = None
 
 
 class TrackResponse(BaseModel):
@@ -1140,7 +1176,9 @@ def get_session(session_id: int, request: Request):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _require_group_access(request, session.group_id)
-    return _session_response(session)
+    response = _session_response(session)
+    response.tagging = _tagging_status(session_id)
+    return response
 
 
 @app.put("/api/sessions/{session_id}/name", response_model=SessionResponse)

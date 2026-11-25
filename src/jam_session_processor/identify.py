@@ -34,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_MINUTES = 180
 DEFAULT_MIN_FREE_MB = 950
+# How long a run waits for the server to be free before it gives up on transcribing
+DEFAULT_WAIT_MINUTES = 30
+WAIT_STEP_SEC = 30
 
 
 def _env_int(name: str, default: int) -> int:
@@ -187,27 +190,53 @@ def tag_untagged(db: Database) -> dict:
     return {"tagged": tagged}
 
 
+def _busy(db: Database) -> str:
+    """Why the server can't transcribe right now ('' when it can)."""
+    if db.has_active_jobs():
+        return "a recording is being processed"
+    free = available_memory_mb()
+    need = _env_int("JAM_TRANSCRIBE_MIN_FREE_MB", DEFAULT_MIN_FREE_MB)
+    if free is not None and free < need:
+        return f"only {free} MB of memory free (needs {need})"
+    return ""
+
+
+def _wait_until_free(db: Database, wait_minutes: float) -> str:
+    """Wait for the server to be free to transcribe; the reason it still isn't, or ''.
+
+    Several recordings are often uploaded or re-detected together: the run for the
+    first starts while the others are still being split, and used to give up at once."""
+    deadline = time.monotonic() + wait_minutes * 60
+    reason = _busy(db)
+    while reason and time.monotonic() < deadline:
+        logger.info("Waiting to transcribe: %s", reason)
+        time.sleep(WAIT_STEP_SEC)
+        reason = _busy(db)
+    return reason
+
+
 def run(
     db: Database,
     transcriber=None,
     max_minutes: int | None = None,
     session_id: int | None = None,
+    wait_minutes: float | None = None,
 ) -> dict:
     """One identification run. ``transcriber=None`` uses the local model if installed.
-    ``session_id`` limits transcribing to one recording (the run after an upload)."""
+    ``session_id`` limits transcribing to one recording (the run after an upload).
+    ``wait_minutes``: how long to wait for other processing to finish and memory to be
+    free before skipping the transcribing (default ``JAM_IDENTIFY_WAIT_MINUTES``)."""
     from jam_session_processor import transcribe
 
     summary: dict = {"transcribed": 0, "failed": 0, "remaining": 0, "skipped": ""}
     if transcriber is None and not transcribe.is_available():
         summary["skipped"] = "speech-to-text is not installed"
-    elif transcriber is None and db.has_active_jobs():
-        summary["skipped"] = "a recording is being processed"
     else:
-        free = available_memory_mb()
-        need = _env_int("JAM_TRANSCRIBE_MIN_FREE_MB", DEFAULT_MIN_FREE_MB)
-        if transcriber is None and free is not None and free < need:
-            summary["skipped"] = f"only {free} MB of memory free (needs {need})"
-        else:
+        if transcriber is None:
+            if wait_minutes is None:
+                wait_minutes = _env_int("JAM_IDENTIFY_WAIT_MINUTES", DEFAULT_WAIT_MINUTES)
+            summary["skipped"] = _wait_until_free(db, wait_minutes)
+        if not summary["skipped"]:
             if transcriber is None:
                 transcriber = transcribe.Transcriber(model_dir=get_config().data_dir / "models")
             if max_minutes is None:

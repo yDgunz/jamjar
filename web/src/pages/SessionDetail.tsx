@@ -130,6 +130,23 @@ export default function SessionDetail() {
     return () => { cancelled = true; };
   }, [activeJobId, sessionId, jobId, setSearchParams]);
 
+  // While the server is recognising the songs, keep checking: it re-cuts and tags the
+  // tracks at the end of its run, not one by one.
+  const tagging = activeJobId ? null : session?.tagging ?? null;
+  const taggingActive = tagging !== null;
+  useEffect(() => {
+    if (!taggingActive) return;
+    const timer = setInterval(() => {
+      Promise.all([api.getSession(sessionId), api.getSessionTracks(sessionId)])
+        .then(([s, t]) => {
+          setSession(s);
+          setTracks(t);
+        })
+        .catch(() => {});
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [taggingActive, sessionId]);
+
   const refresh = () => {
     api.getSessionTracks(sessionId).then(setTracks);
     api.getSession(sessionId).then((s) => {
@@ -444,6 +461,19 @@ export default function SessionDetail() {
           {merging && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/80">
               <div className="flex items-center gap-2 text-sm text-gray-300"><Spinner size="sm" /> Merging…</div>
+            </div>
+          )}
+          {tagging && (
+            <div className="mb-3 flex items-start gap-2.5 rounded-xl bg-white/[0.04] px-3.5 py-2.5 text-sm text-gray-300">
+              <span className="mt-0.5"><Spinner size="sm" /></span>
+              <p>
+                {tagging.state === "queued"
+                  ? "Waiting to recognise the songs."
+                  : tagging.transcribed < tagging.total
+                    ? `Recognising the songs: listened to ${tagging.transcribed} of ${tagging.total} tracks.`
+                    : "Recognising the songs: almost done."}
+                <span className="text-gray-500"> Tags appear when it finishes; tracks may be split or joined.</span>
+              </p>
             </div>
           )}
           <h2 className="mb-1 text-[13px] font-semibold uppercase tracking-wide text-gray-500">

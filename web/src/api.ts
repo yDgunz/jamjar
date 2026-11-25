@@ -211,6 +211,8 @@ export interface Session {
   updated_by_name: string | null;
   updated_at: string | null;
   kind: SessionKind;
+  /** Set while the server is recognising this recording's songs (or is about to). */
+  tagging?: { state: "running" | "queued"; transcribed: number; total: number } | null;
 }
 
 export interface Track {
