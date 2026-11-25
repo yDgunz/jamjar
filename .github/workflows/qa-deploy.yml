@@ -29,10 +29,17 @@ jobs:
         env:
           RAW_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
+          # The branch name ends up in commands run on the server: allow only
+          # characters that mean nothing to a shell
+          if [[ ! "$RAW_BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "::error::Branch name has characters a QA deploy doesn't allow (use letters, digits, . _ / -)"
+            exit 1
+          fi
+
           SANITIZED=$(echo "$RAW_BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's|[^a-z0-9-]|-|g' | sed 's|-\+|-|g' | sed 's|^-\+||;s|-\+$||' | cut -c1-63)
 
-          if [[ "$SANITIZED" =~ ^(main|master|prod)$ ]]; then
-            echo "::error::Reserved branch name: $SANITIZED"
+          if [[ -z "$SANITIZED" || "$SANITIZED" =~ ^(main|master|prod|www|audio|api)$ ]]; then
+            echo "::error::Branch name can't be used for a QA environment: '$SANITIZED'"
             exit 1
           fi
 
@@ -74,23 +81,24 @@ jobs:
           GHCR_USER: ${{ github.actor }}
           # Short-lived token (expires when this job ends), used only to pull the image
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Passed as environment variables, never pasted into the script text
+          QA_NAME: ${{ steps.branch.outputs.name }}
+          QA_REPO_URL: https://github.com/${{ github.repository }}.git
+          QA_REF: ${{ steps.branch.outputs.raw }}
+          QA_IMAGE: ${{ steps.branch.outputs.image }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          envs: GHCR_USER,GHCR_TOKEN
+          envs: GHCR_USER,GHCR_TOKEN,QA_NAME,QA_REPO_URL,QA_REF,QA_IMAGE
           script: |
             set -e
             source /opt/jamjar/.env
             export JAM_QA_PASSWORD
             trap 'docker logout ghcr.io > /dev/null 2>&1 || true' EXIT
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            /opt/jamjar/scripts/qa-deploy.sh \
-              "${{ steps.branch.outputs.name }}" \
-              "https://github.com/${{ github.repository }}.git" \
-              "${{ steps.branch.outputs.raw }}" \
-              "${{ steps.branch.outputs.image }}"
+            /opt/jamjar/scripts/qa-deploy.sh "$QA_NAME" "$QA_REPO_URL" "$QA_REF" "$QA_IMAGE"
 
       - name: Comment on PR
         uses: actions/github-script@v9

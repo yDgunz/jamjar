@@ -43,6 +43,10 @@ class Storage(Protocol):
         """Check if a file exists in storage."""
         ...
 
+    def size(self, key: str) -> int | None:
+        """Size of a stored file in bytes, or None when it can't be read."""
+        ...
+
     def url(self, key: str) -> str | None:
         """Return a URL to access the file, or None for local backend."""
         ...
@@ -91,6 +95,12 @@ class LocalStorage:
     def exists(self, key: str) -> bool:
         cfg = get_config()
         return cfg.resolve_path(key).exists()
+
+    def size(self, key: str) -> int | None:
+        try:
+            return get_config().resolve_path(key).stat().st_size
+        except OSError:
+            return None
 
     def url(self, key: str) -> str | None:
         return None
@@ -197,6 +207,13 @@ class R2Storage:
             return True
         except Exception:
             return False
+
+    def size(self, key: str) -> int | None:
+        try:
+            head = self._client.head_object(Bucket=self._bucket, Key=key)
+        except Exception:
+            return None
+        return int(head.get("ContentLength", 0))
 
     def url(self, key: str) -> str | None:
         if self._custom_domain:

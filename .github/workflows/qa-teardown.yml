@@ -23,18 +23,25 @@ jobs:
           RAW_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           SANITIZED=$(echo "$RAW_BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's|[^a-z0-9-]|-|g' | sed 's|-\+|-|g' | sed 's|^-\+||;s|-\+$||' | cut -c1-63)
+          if [[ -z "$SANITIZED" ]]; then
+            echo "::error::Branch name can't belong to a QA environment"
+            exit 1
+          fi
           echo "name=$SANITIZED" >> "$GITHUB_OUTPUT"
 
       - name: Teardown QA environment
         uses: appleboy/ssh-action@v1
+        env:
+          QA_NAME: ${{ steps.branch.outputs.name }}
         with:
+          envs: QA_NAME
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
             set -e
-            /opt/jamjar/scripts/qa-teardown.sh "${{ steps.branch.outputs.name }}"
+            /opt/jamjar/scripts/qa-teardown.sh "$QA_NAME"
 
       - name: Update PR comment
         uses: actions/github-script@v9

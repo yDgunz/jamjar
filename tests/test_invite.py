@@ -106,7 +106,7 @@ class TestInviteEmail:
         with patch("jam_session_processor.email.smtplib.SMTP", mock_smtp_class):
             send_invite_email("alice@example.com", "test-token-abc", "Alice")
 
-        mock_smtp_class.assert_called_once_with("smtp.example.com", 587)
+        mock_smtp_class.assert_called_once_with("smtp.example.com", 587, timeout=30)
         mock_smtp_instance.starttls.assert_called_once()
         mock_smtp_instance.login.assert_called_once_with("user@example.com", "secret")
         mock_smtp_instance.send_message.assert_called_once()

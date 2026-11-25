@@ -247,6 +247,8 @@ app = FastAPI(title="Jam Session Processor", version="0.1.0", lifespan=_lifespan
 # Applied to every string field in request models so oversized input is rejected
 # with a 422 before it reaches the database.
 ShortStr = Annotated[str, Field(max_length=64)]  # enums, dates, times, ids
+# A Google Drive file id: it is put into a request path and a local directory name
+DriveIdStr = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")]
 NameStr = Annotated[str, Field(max_length=200)]
 EmailStr_ = Annotated[str, Field(max_length=254)]
 PasswordStr = Annotated[str, Field(max_length=128)]
@@ -316,6 +318,43 @@ class JSONGzipMiddleware:
             headers.append((b"content-length", str(len(body)).encode()))
             await send({**start, "headers": headers})
             await send({"type": "http.response.body", "body": body})
+
+        await self.app(scope, receive, wrapped)
+
+
+class SecurityHeadersMiddleware:
+    """Baseline browser hardening on every response: no MIME sniffing, no framing
+    by other sites (the app is never embedded), no full URLs in referrers (invite,
+    reset and share links carry their token in the path), and HTTPS-only once the
+    app is served over HTTPS. Headers a route already set are kept."""
+
+    def __init__(self, app):
+        self.app = app
+        self._headers: list[tuple[bytes, bytes]] | None = None
+
+    def _defaults(self) -> list[tuple[bytes, bytes]]:
+        if self._headers is None:
+            headers = [
+                (b"x-content-type-options", b"nosniff"),
+                (b"x-frame-options", b"DENY"),
+                (b"referrer-policy", b"same-origin"),
+            ]
+            if get_config().app_url.startswith("https"):
+                headers.append((b"strict-transport-security", b"max-age=31536000"))
+            self._headers = headers
+        return self._headers
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        async def wrapped(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                present = {k.lower() for k, _ in headers}
+                headers += [(k, v) for k, v in self._defaults() if k not in present]
+                message = {**message, "headers": headers}
+            await send(message)
 
         await self.app(scope, receive, wrapped)
 
@@ -470,6 +509,11 @@ async def auth_middleware(request: Request, call_next):
         user = db.get_user(int(payload["sub"]))
         if not user:
             return JSONResponse(status_code=401, content={"detail": "User not found"})
+        # Changing or resetting a password signs out every other session. Logins
+        # from before this check existed carry no issue time: they count as old
+        # once the password has been set again, and are left alone until then.
+        if user.password_changed_at and payload.get("iat", 0) < user.password_changed_at:
+            return JSONResponse(status_code=401, content={"detail": "Invalid or expired token"})
         request.state.auth_type = "cookie"
         request.state.user = user
         request.state.group_ids = db.get_group_ids_for_user(user.id)
@@ -480,6 +524,11 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+
+
+# Added last so it is the outermost layer: responses the auth check itself sends
+# (401s) get the headers too.
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 # --- Helper: get group_id for the current request's session/track ---
@@ -515,6 +564,18 @@ def _require_role(request: Request, min_role: str):
 
 
 # --- Auth endpoints ---
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key="jam_session",
+        value=token,
+        httponly=True,
+        secure=get_config().app_url.startswith("https"),
+        samesite="lax",
+        max_age=7 * 24 * 3600,
+        path="/",
+    )
 
 
 class LoginRequest(BaseModel):
@@ -564,15 +625,7 @@ def login(req: LoginRequest, request: Request):
             "groups": [{"id": g.id, "name": g.name} for g in groups],
         }
     )
-    response.set_cookie(
-        key="jam_session",
-        value=token,
-        httponly=True,
-        secure=get_config().app_url.startswith("https"),
-        samesite="lax",
-        max_age=7 * 24 * 3600,
-        path="/",
-    )
+    _set_session_cookie(response, token)
     return response
 
 
@@ -618,7 +671,10 @@ def change_password(req: ChangePasswordRequest, request: Request):
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     db = get_db()
     db.update_user_password(user.id, hash_password(req.new_password))
-    return {"ok": True}
+    # Every earlier login is now signed out; keep this browser signed in
+    response = JSONResponse(content={"ok": True})
+    _set_session_cookie(response, create_jwt(user.id, user.email))
+    return response
 
 
 @app.post("/api/auth/logout")
@@ -707,15 +763,7 @@ def reset_password(req: ResetPasswordRequest, request: Request):
             "groups": [{"id": g.id, "name": g.name} for g in groups],
         }
     )
-    response.set_cookie(
-        key="jam_session",
-        value=token,
-        httponly=True,
-        secure=get_config().app_url.startswith("https"),
-        samesite="lax",
-        max_age=7 * 24 * 3600,
-        path="/",
-    )
+    _set_session_cookie(response, token)
     return response
 
 
@@ -1772,6 +1820,8 @@ async def upload_complete(req: UploadCompleteRequest, request: Request):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     _require_group_access(request, session.group_id)
+    if job.session_id != session.id:
+        raise HTTPException(status_code=400, detail="Job does not belong to this session")
 
     from jam_session_processor.storage import get_storage
 
@@ -1781,6 +1831,16 @@ async def upload_complete(req: UploadCompleteRequest, request: Request):
         raise HTTPException(status_code=400, detail="File not found in storage")
 
     cfg = get_config()
+    # A direct-to-storage upload bypasses the size check the server-side path has
+    size = storage.size(r2_key)
+    if size is not None and size > cfg.max_upload_mb * 1024 * 1024:
+        storage.delete(r2_key)
+        db.fail_job(job.id, "File too large")
+        db.delete_session(session.id)
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum upload size is {cfg.max_upload_mb} MB.",
+        )
     source = cfg.resolve_path(r2_key)
     single = req.single
     force = req.force
@@ -1973,7 +2033,7 @@ class DriveFolderGroupRequest(BaseModel):
 
 
 class DriveImportRequest(BaseModel):
-    file_id: ShortStr
+    file_id: DriveIdStr
     group_id: int
     name: NameStr | None = None
     date: ShortStr | None = None
@@ -1984,7 +2044,7 @@ class DriveImportRequest(BaseModel):
 
 
 class DriveSkipRequest(BaseModel):
-    file_id: ShortStr
+    file_id: DriveIdStr
     file_name: NameStr = ""
     skipped: bool = True
 
@@ -2384,43 +2444,8 @@ def trim_track_endpoint(track_id: int, req: TrimRequest, request: Request):
 
 @app.get("/api/tracks/{track_id}/audio")
 def stream_track_audio(track_id: int, request: Request, download: int = 0):
-    from jam_session_processor.storage import get_storage
-
-    db = get_db()
-    track, session = _get_track_with_access(db, track_id, request)
-
-    # Build a download filename from song name or track number
-    if download:
-        name_parts = []
-        if track.song_name:
-            name_parts.append(track.song_name)
-        else:
-            name_parts.append(f"Track {track.track_number}")
-        if session.name:
-            name_parts.append(session.name)
-        ext = Path(track.audio_path).suffix or ".m4a"
-        filename = " - ".join(name_parts) + ext
-        filename = filename.replace('"', "")
-
-    storage = get_storage()
-    redirect_url = storage.url(track.audio_path)
-    if redirect_url:
-        return RedirectResponse(redirect_url, status_code=307)
-
-    cfg = get_config()
-    audio_path = cfg.resolve_path(track.audio_path)
-    if not audio_path.exists():
-        raise HTTPException(status_code=404, detail="Audio file not found")
-    media_types = {".ogg": "audio/ogg", ".m4a": "audio/mp4", ".wav": "audio/wav"}
-    media_type = media_types.get(audio_path.suffix.lower(), "application/octet-stream")
-
-    if download:
-        return FileResponse(
-            audio_path,
-            media_type=media_type,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-    return FileResponse(audio_path, media_type=media_type)
+    track, session = _get_track_with_access(get_db(), track_id, request)
+    return _serve_track_audio(track, session, download)
 
 
 # --- Share link endpoints ---
@@ -2632,11 +2657,13 @@ def _serve_track_audio(track, session, download: int):
         if session and session.name:
             name_parts.append(session.name)
         ext = Path(track.audio_path).suffix or ".m4a"
-        filename = (" - ".join(name_parts) + ext).replace('"', "")
+        # FileResponse encodes the name for the header (names can hold any
+        # character: accents, curly quotes, other scripts)
         return FileResponse(
             audio_path,
             media_type=media_type,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            filename=" - ".join(name_parts) + ext,
+            content_disposition_type="attachment",
         )
     return FileResponse(audio_path, media_type=media_type)
 
@@ -2906,6 +2933,21 @@ def delete_song(song_id: int, request: Request):
     db = get_db()
     song = _get_song_with_access(db, song_id, request)
     _require_role(request, "admin")
+    # Songs are shared between bands: deleting one takes it (chart, tags on takes,
+    # setlist entries) away from all of them. Only someone in every band that plays
+    # it may do that; anyone else removes it from their own band instead.
+    visible = _get_group_ids(request)
+    user = request.state.user
+    if visible is not None and not (user and user.role == "superadmin"):
+        others = [g for g in db.get_song_groups(song_id) if g["id"] not in visible]
+        if others:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Another band also plays this song. Remove it from your band"
+                    " instead of deleting it."
+                ),
+            )
     db.delete_song(song_id)
     if song.score_path:
         from jam_session_processor.storage import get_storage
@@ -3653,15 +3695,7 @@ def invite_accept(req: InviteAcceptRequest, request: Request):
             "groups": [{"id": g.id, "name": g.name} for g in groups],
         }
     )
-    response.set_cookie(
-        key="jam_session",
-        value=token,
-        httponly=True,
-        secure=get_config().app_url.startswith("https"),
-        samesite="lax",
-        max_age=7 * 24 * 3600,
-        path="/",
-    )
+    _set_session_cookie(response, token)
     return response
 
 
@@ -3760,6 +3794,8 @@ def admin_create_user(req: CreateUserRequest, request: Request):
         valid = ", ".join(sorted(VALID_ROLES))
         raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {valid}")
     if req.password:
+        if len(req.password) < 8:
+            raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
         pw_hash = hash_password(req.password)
     else:
         pw_hash = ""
@@ -3813,6 +3849,8 @@ def admin_reset_password(user_id: int, req: PasswordRequest, request: Request):
     user = db.get_user(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if len(req.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     pw_hash = hash_password(req.password)
     db.update_user_password(user_id, pw_hash)
     return {"ok": True}

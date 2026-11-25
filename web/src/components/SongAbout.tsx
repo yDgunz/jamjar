@@ -1,13 +1,6 @@
 import { Fragment } from "react";
 import type { SongBackground } from "../api";
-
-function hostname(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-}
+import { hostname } from "../utils/youtube";
 
 /** A song's short written history, with [n] markers rendered as source links. */
 export default function SongAbout({ background }: { background: SongBackground }) {

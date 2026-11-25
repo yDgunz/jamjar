@@ -31,24 +31,39 @@ export function useFetch<T>(
   fetcherRef.current = fetcher;
   onSuccessRef.current = options?.onSuccess;
 
+  // Number of the latest request. A response is applied only while its request
+  // is still the latest, so one for a previous key (or an older refresh) can't
+  // overwrite newer state.
+  const requestRef = useRef(0);
+
   const run = useCallback(() => {
+    const request = ++requestRef.current;
+    const stale = () => request !== requestRef.current;
     setLoading(true);
     setError(null);
     fetcherRef
       .current()
       .then((result) => {
+        if (stale()) return;
         setData(result);
         onSuccessRef.current?.(result);
       })
       .catch((err) => {
+        if (stale()) return;
         setError(err instanceof Error ? err.message : String(err));
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!stale()) setLoading(false);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
   useEffect(() => {
     run();
+    // Dependencies changed or unmounted: cancel whatever is still in flight
+    return () => {
+      requestRef.current++;
+    };
   }, [run]);
 
   return { data, loading, error, refresh: run };

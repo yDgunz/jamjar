@@ -1081,7 +1081,7 @@ def test_admin_create_user_with_role(client, tmp_path):
 
     resp = client.post(
         "/api/admin/users",
-        json={"email": "new@test.com", "password": "pw", "name": "New", "role": "readonly"},
+        json={"email": "new@test.com", "password": "password1", "name": "New", "role": "readonly"},
     )
     assert resp.status_code == 201
     assert resp.json()["role"] == "readonly"

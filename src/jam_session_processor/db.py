@@ -1,3 +1,4 @@
+import functools
 import json
 import re
 import sqlite3
@@ -303,6 +304,8 @@ class User:
     password_hash: str
     created_at: str
     last_active_at: str | None = None
+    # Unix time the password was last set; logins from before it are refused
+    password_changed_at: int | None = None
 
 
 @dataclass
@@ -486,6 +489,39 @@ def clean_session_name(source_file: str) -> str:
     return name.strip()
 
 
+def _rollback_on_error(method):
+    """Roll this thread's connection back when a Database method fails.
+
+    Each thread keeps one long-lived connection. Without this, a statement that
+    fails halfway through a method (a constraint, a full disk) leaves that
+    connection inside an open transaction: it holds SQLite's write lock, so every
+    other thread's writes time out, and whatever it had written so far is committed
+    later by an unrelated request. Only the outermost call rolls back, so a method
+    that calls another and handles its error keeps working as before.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        local = self._local
+        depth = getattr(local, "depth", 0)
+        local.depth = depth + 1
+        try:
+            return method(self, *args, **kwargs)
+        except BaseException:
+            if depth == 0:
+                conn = getattr(self._local, "conn", None)
+                if conn is not None and conn.in_transaction:
+                    try:
+                        conn.rollback()
+                    except sqlite3.Error:
+                        pass
+            raise
+        finally:
+            local.depth = depth
+
+    return wrapper
+
+
 class Database:
     def __init__(self, db_path: Path | None = None):
         if db_path is None:
@@ -588,6 +624,8 @@ class Database:
 
         if "last_active_at" not in cols:
             self.conn.execute("ALTER TABLE users ADD COLUMN last_active_at TEXT")
+        if "password_changed_at" not in cols:
+            self.conn.execute("ALTER TABLE users ADD COLUMN password_changed_at INTEGER")
             self.conn.commit()
 
         # Add creator/updater tracking columns
@@ -653,6 +691,19 @@ class Database:
         )
         self.conn.commit()
 
+        # Indexes for the lookups every page makes (a recording's tracks, a song's
+        # takes, a band's recordings) and for cascading deletes. Created here, after
+        # the column migrations, so every indexed column exists on old databases.
+        self.conn.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_tracks_session ON tracks(session_id);
+            CREATE INDEX IF NOT EXISTS idx_tracks_song ON tracks(song_id);
+            CREATE INDEX IF NOT EXISTS idx_sessions_group ON sessions(group_id);
+            CREATE INDEX IF NOT EXISTS idx_jobs_session ON jobs(session_id);
+            CREATE INDEX IF NOT EXISTS idx_setlists_group ON setlists(group_id);
+            CREATE INDEX IF NOT EXISTS idx_setlist_songs_song ON setlist_songs(song_id);
+            CREATE INDEX IF NOT EXISTS idx_user_groups_group ON user_groups(group_id);
+        """)
+
     def close(self):
         """Close every thread's connection."""
         with self._conns_lock:
@@ -666,31 +717,21 @@ class Database:
         self._closed = True
 
     def reset(self):
-        """Drop all tables and recreate the schema."""
-        self.conn.executescript("""
-            DROP TABLE IF EXISTS event_responses;
-            DROP TABLE IF EXISTS events;
-            DROP TABLE IF EXISTS invite_tokens;
-            DROP TABLE IF EXISTS activity_log;
-            DROP TABLE IF EXISTS song_activity;
-            DROP TABLE IF EXISTS video_flags;
-            DROP TABLE IF EXISTS tab_flags;
-            DROP TABLE IF EXISTS video_misses;
-            DROP TABLE IF EXISTS song_links;
-            DROP TABLE IF EXISTS group_songs;
-            DROP TABLE IF EXISTS setlist_songs;
-            DROP TABLE IF EXISTS setlists;
-            DROP TABLE IF EXISTS jobs;
-            DROP TABLE IF EXISTS share_links;
-            DROP TABLE IF EXISTS track_auto_tags;
-            DROP TABLE IF EXISTS track_transcripts;
-            DROP TABLE IF EXISTS tracks;
-            DROP TABLE IF EXISTS songs;
-            DROP TABLE IF EXISTS sessions;
-            DROP TABLE IF EXISTS user_groups;
-            DROP TABLE IF EXISTS groups;
-            DROP TABLE IF EXISTS users;
-        """)
+        """Drop every table and recreate the schema."""
+        tables = [
+            row["name"]
+            for row in self.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+        ]
+        self.conn.commit()
+        self.conn.execute("PRAGMA foreign_keys = OFF")
+        try:
+            for name in tables:
+                self.conn.execute(f'DROP TABLE IF EXISTS "{name}"')
+            self.conn.commit()
+        finally:
+            self.conn.execute("PRAGMA foreign_keys = ON")
         self._init_schema()
 
     # --- Activity tracking ---
@@ -905,7 +946,8 @@ class Database:
 
     def update_user_password(self, user_id: int, password_hash: str):
         self.conn.execute(
-            "UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id)
+            "UPDATE users SET password_hash = ?, password_changed_at = ? WHERE id = ?",
+            (password_hash, int(time.time()), user_id),
         )
         self.conn.commit()
 
@@ -967,12 +1009,6 @@ class Database:
         self.conn.execute("UPDATE groups SET features = ? WHERE id = ?", (features, group_id))
         self.conn.commit()
 
-    def group_has_feature(self, group_id: int, feature: str) -> bool:
-        row = self.conn.execute("SELECT features FROM groups WHERE id = ?", (group_id,)).fetchone()
-        if not row or not row["features"]:
-            return False
-        return feature in row["features"].split(",")
-
     # --- Membership ---
 
     def assign_user_to_group(self, user_id: int, group_id: int):
@@ -1014,13 +1050,6 @@ class Database:
             (group_id,),
         ).fetchall()
         return [User(**row) for row in rows]
-
-    def get_group_member_count(self, group_id: int) -> int:
-        row = self.conn.execute(
-            "SELECT COUNT(*) as cnt FROM user_groups WHERE group_id = ?",
-            (group_id,),
-        ).fetchone()
-        return row["cnt"]
 
     def group_stats(self) -> dict[int, dict]:
         """Per-group totals for the admin Groups page, keyed by group id."""
@@ -2651,27 +2680,33 @@ class Database:
         added_by: int | None = None,
     ):
         """Add a song at a given position (or append to the end)."""
-        if position is None:
-            row = self.conn.execute(
-                "SELECT COALESCE(MAX(position), 0) as max_pos"
+        with self.conn:
+            last = self.conn.execute(
+                "SELECT COALESCE(MAX(position), 0) AS max_pos"
                 " FROM setlist_songs WHERE setlist_id = ?",
                 (setlist_id,),
-            ).fetchone()
-            position = row["max_pos"] + 1
-        else:
-            # Shift existing songs at or after this position
+            ).fetchone()["max_pos"]
+            position = last + 1 if position is None else min(max(position, 1), last + 1)
+            if position <= last:
+                # Shift the songs at or after this position down by one. Going
+                # through negative numbers keeps UNIQUE(setlist_id, position)
+                # satisfied row by row, whatever order SQLite updates them in.
+                self.conn.execute(
+                    "UPDATE setlist_songs SET position = -(position + 1)"
+                    " WHERE setlist_id = ? AND position >= ?",
+                    (setlist_id, position),
+                )
+                self.conn.execute(
+                    "UPDATE setlist_songs SET position = -position"
+                    " WHERE setlist_id = ? AND position < 0",
+                    (setlist_id,),
+                )
             self.conn.execute(
-                "UPDATE setlist_songs SET position = position + 1"
-                " WHERE setlist_id = ? AND position >= ?",
-                (setlist_id, position),
+                "INSERT INTO setlist_songs"
+                " (setlist_id, song_id, position, added_by)"
+                " VALUES (?, ?, ?, ?)",
+                (setlist_id, song_id, position, added_by),
             )
-        self.conn.execute(
-            "INSERT INTO setlist_songs"
-            " (setlist_id, song_id, position, added_by)"
-            " VALUES (?, ?, ?, ?)",
-            (setlist_id, song_id, position, added_by),
-        )
-        self.conn.commit()
 
     def remove_song_from_setlist(self, setlist_id: int, position: int):
         """Remove the song at a given position and renumber remaining songs."""
@@ -2686,3 +2721,15 @@ class Database:
             (setlist_id, position),
         )
         self.conn.commit()
+
+
+def _wrap_public_methods(cls) -> None:
+    for name, attr in list(vars(cls).items()):
+        if name.startswith("_") or name == "close" or not callable(attr):
+            continue
+        if isinstance(attr, (staticmethod, classmethod, property)):
+            continue
+        setattr(cls, name, _rollback_on_error(attr))
+
+
+_wrap_public_methods(Database)

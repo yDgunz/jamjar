@@ -2,6 +2,7 @@
 
 import logging
 import smtplib
+import ssl
 from email.mime.text import MIMEText
 
 from jam_session_processor.config import get_config
@@ -22,8 +23,9 @@ def _send_email(to_email: str, subject: str, body: str) -> bool:
     msg["To"] = to_email
 
     try:
-        with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port) as server:
-            server.starttls()
+        with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=30) as server:
+            # Verify the server's certificate: these mails carry sign-in links
+            server.starttls(context=ssl.create_default_context())
             if cfg.smtp_user and cfg.smtp_password:
                 server.login(cfg.smtp_user, cfg.smtp_password)
             server.send_message(msg)
