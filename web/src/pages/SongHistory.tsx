@@ -14,7 +14,7 @@ import FormModal from "../components/FormModal";
 import KindBadge from "../components/KindBadge";
 import ScoreViewer from "../components/ScoreViewer";
 import SongAbout from "../components/SongAbout";
-import SongTab from "../components/SongTab";
+import SongTab, { FlagTabDialog } from "../components/SongTab";
 import SongVideos, { RemoveVideoDialog } from "../components/SongVideos";
 import Modal, { Toast } from "../components/Modal";
 import { DetailSkeleton } from "../components/PageLoadingSkeleton";
@@ -139,6 +139,7 @@ export default function SongHistory() {
   const [uploadingScore, setUploadingScore] = useState(false);
   const [showRemoveScore, setShowRemoveScore] = useState(false);
   const [editingTab, setEditingTab] = useState(false);
+  const [flaggingTab, setFlaggingTab] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [editingNotesField, setEditingNotesField] = useState(false);
   const [addingVideo, setAddingVideo] = useState(false);
@@ -373,6 +374,9 @@ export default function SongHistory() {
     sheetActions.push({ actions: [
       { label: song.sheet ? "Edit chart" : "Add chart", onClick: () => { setTab("chart"); setEditingSheet(true); } },
       { label: song.tab ? "Edit tab" : "Add tab", hint: "riffs & solos", onClick: () => { setTab("tab"); setEditingTab(true); } },
+      ...(song.tab
+        ? [{ label: "Mark tab as bad…", hint: "messy, wrong", onClick: () => { setTab("tab"); setFlaggingTab(true); } }]
+        : []),
       {
         label: song.score_format ? "Replace sheet music…" : "Add sheet music…",
         hint: uploadingScore ? "uploading…" : "MusicXML file",
@@ -685,6 +689,20 @@ export default function SongHistory() {
           className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
         />
       </FormModal>
+      <FlagTabDialog
+        open={flaggingTab}
+        onCancel={() => setFlaggingTab(false)}
+        onFlag={async (reason) => {
+          setFlaggingTab(false);
+          try {
+            const updated = await api.flagSongTab(songId, reason);
+            setSong(updated);
+            if (!updated.tab) setTab("chart");
+          } catch (err) {
+            setErrorMsg(`Couldn't mark the tab: ${err instanceof Error ? err.message : err}`);
+          }
+        }}
+      />
       <RemoveVideoDialog
         link={removingLink}
         onFlag={async (link, reason) => {

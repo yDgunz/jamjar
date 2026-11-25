@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router";
 import { formatDate } from "../api";
 import type { SessionKind, SongBackground, SongLink, SongLinkKind } from "../api";
 import AudioPlayer from "../components/AudioPlayer";
+import TabSheet from "../components/TabSheet";
 import ChordSheet from "../components/ChordSheet";
 import KindBadge from "../components/KindBadge";
 import SongAbout from "../components/SongAbout";
@@ -25,6 +26,7 @@ interface PublicSong {
   artist: string;
   sheet: string;
   tab: string;
+  tab_source?: string;
   background: SongBackground | null;
   links: { id: number; kind: SongLinkKind; url: string; title: string }[];
 }
@@ -306,8 +308,8 @@ function SongView({ song }: { song: PublicSong }) {
           )}
         </>
       ) : tab === "tab" ? (
-        <div className="mt-5 text-[17px]">
-          <ChordSheet text={song.tab} wrapText />
+        <div className="mt-5">
+          <TabSheet text={song.tab} source={song.tab_source} />
         </div>
       ) : song.background ? (
         <SongAbout background={song.background} />

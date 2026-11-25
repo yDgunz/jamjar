@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { Song } from "../api";
-import ChordSheet from "./ChordSheet";
+import type { TabFlagReason } from "../api";
+import TabSheet from "./TabSheet";
 
 /** A song's guitar tab (intros, riffs, solos): kept apart from the chords/lyrics chart. */
 export default function SongTab({
@@ -73,8 +74,74 @@ export default function SongTab({
   }
 
   return (
-    <div className="mt-5 text-[17px]">
-      <ChordSheet text={song.tab ?? ""} wrapText />
+    <div className="mt-5">
+      {song.tab_flag === "messy" && (
+        <p className="mb-4 rounded-lg bg-white/[0.05] px-3 py-2 text-[13px] text-gray-400">
+          Marked as messy. It gets a closer cleanup with the next library update.
+        </p>
+      )}
+      <TabSheet text={song.tab ?? ""} source={song.tab_source} />
+    </div>
+  );
+}
+
+const FLAG_REASONS: [TabFlagReason, string, string][] = [
+  ["messy", "Messy or cluttered", "Tidied in place"],
+  ["wrong_song", "Wrong song or version", "Replaced overnight"],
+  ["inaccurate", "Doesn't sound right", "Replaced overnight"],
+  ["other", "Something else", "Replaced overnight"],
+];
+
+/** Asked when marking a tab as bad: what's wrong decides what happens to it. */
+export function FlagTabDialog({
+  open,
+  onFlag,
+  onCancel,
+}: {
+  open: boolean;
+  onFlag: (reason: TabFlagReason) => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [open, onCancel]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60" onClick={onCancel} />
+      <div className="relative mx-4 w-full max-w-sm rounded-lg border border-gray-700 bg-gray-900 px-6 py-5 shadow-xl">
+        <h3 className="text-sm font-semibold text-white">Mark this tab as bad</h3>
+        <p className="mt-1 text-xs text-gray-500">
+          What's wrong with it? A messy tab stays while it's tidied; any other is removed now and a different version is looked for overnight.
+        </p>
+        <div className="mt-3 flex flex-col gap-2">
+          {FLAG_REASONS.map(([reason, label, effect]) => (
+            <button
+              key={reason}
+              onClick={() => onFlag(reason)}
+              className="flex items-baseline justify-between gap-3 rounded-lg bg-white/[0.08] px-3 py-2 text-left text-sm text-gray-200 transition hover:bg-white/[0.14] active:bg-white/20"
+            >
+              {label}
+              <span className="shrink-0 text-xs text-gray-500">{effect}</span>
+            </button>
+          ))}
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={onCancel}
+            className="rounded px-4 py-2 text-sm text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
