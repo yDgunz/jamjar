@@ -15,7 +15,7 @@ import { useAuth } from "../context/AuthContext";
 import { useFetch } from "../hooks/useFetch";
 import { NO_ARTIST, countArtists } from "../utils/artists";
 
-type SortKey = "opened" | "performed" | "recorded" | "added" | "takes";
+type SortKey = "opened" | "performed" | "recorded" | "added" | "takes" | "name";
 
 const SORT_OPTIONS: { key: SortKey; label: string; short: string }[] = [
   { key: "opened", label: "Recently opened", short: "Opened" },
@@ -23,6 +23,7 @@ const SORT_OPTIONS: { key: SortKey; label: string; short: string }[] = [
   { key: "recorded", label: "Recently recorded", short: "Recorded" },
   { key: "added", label: "Recently added", short: "Added" },
   { key: "takes", label: "Most recorded", short: "Most takes" },
+  { key: "name", label: "Name (A–Z)", short: "A–Z" },
 ];
 
 const SORT_KEYS = SORT_OPTIONS.map((o) => o.key) as string[];
@@ -185,6 +186,7 @@ export default function SongCatalog() {
       recorded: (a, b) => byRecent(a.last_date, b.last_date, a.name, b.name),
       added: (a, b) => byRecent(a.created_at, b.created_at, a.name, b.name),
       takes: (a, b) => b.take_count - a.take_count || a.name.localeCompare(b.name),
+      name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true }),
     };
     // When searching, title/artist matches come before lyric-only matches
     return list.sort((a, b) =>
