@@ -5,7 +5,7 @@ Usage:
     python scripts/seed-db.py              # uses default DB path from config
     python scripts/seed-db.py /path/to.db  # explicit DB path
 
-Creates: 2 groups, 3 users, 15 sessions, 8 songs, ~55 tracks.
+Creates: 2 groups, 3 users, 15 sessions, 8 songs (plus 75 covers with artists), ~55 tracks.
 Generates short .m4a audio files (sine tones) for each track so playback works.
 """
 
@@ -47,6 +47,81 @@ SONGS = {
         "Low Tide",
         "Copper Wire",
     ],
+}
+
+# Covers (no charts or takes), so lists that filter or group by artist have
+# something to show: a few artists with many songs and a long tail with one.
+COVERS: dict[str, list[str]] = {
+    "The Beatles": [
+        "Blackbird",
+        "Come Together",
+        "Don't Let Me Down",
+        "Get Back",
+        "Here Comes the Sun",
+        "Hey Jude",
+        "I've Just Seen a Face",
+        "In My Life",
+        "Let It Be",
+        "Norwegian Wood",
+        "Something",
+        "Two of Us",
+    ],
+    "Neil Young": [
+        "Cinnamon Girl",
+        "Down by the River",
+        "Harvest Moon",
+        "Heart of Gold",
+        "Old Man",
+        "Powderfinger",
+        "Rockin' in the Free World",
+    ],
+    "Tom Petty": [
+        "American Girl",
+        "Free Fallin'",
+        "Learning to Fly",
+        "Wildflowers",
+        "You Don't Know How It Feels",
+    ],
+    "The Rolling Stones": [
+        "Dead Flowers",
+        "Honky Tonk Women",
+        "Wild Horses",
+        "You Can't Always Get What You Want",
+    ],
+    "Grateful Dead": ["Bertha", "Friend of the Devil", "Ripple", "Uncle John's Band"],
+    "Wilco": ["California Stars", "Jesus, Etc.", "Passenger Side"],
+    "The Band": ["The Weight", "Up on Cripple Creek", "Ophelia"],
+    "Creedence Clearwater Revival": ["Bad Moon Rising", "Lodi", "Up Around the Bend"],
+    "Bob Dylan": ["Don't Think Twice, It's All Right", "You Ain't Goin' Nowhere"],
+    "Fleetwood Mac": ["Dreams", "The Chain"],
+    "Traditional": ["Goodnight, Irene", "Wayfaring Stranger"],
+    "Pixies": ["Here Comes Your Man", "Where Is My Mind?"],
+    "Bill Withers": ["Ain't No Sunshine"],
+    "Big Star": ["Thirteen"],
+    "Bruce Springsteen": ["Atlantic City"],
+    "Cat Stevens": ["Wild World"],
+    "David Bowie": ["Ziggy Stardust"],
+    "Elliott Smith": ["Between the Bars"],
+    "Gillian Welch": ["Look at Miss Ohio"],
+    "John Prine": ["Angel from Montgomery"],
+    "Johnny Cash": ["Folsom Prison Blues"],
+    "Led Zeppelin": ["Going to California"],
+    "Lucinda Williams": ["Car Wheels on a Gravel Road"],
+    "Modest Mouse": ["Float On"],
+    "Nirvana": ["About a Girl"],
+    "Old Crow Medicine Show": ["Wagon Wheel"],
+    "Otis Redding": ["(Sittin' On) The Dock of the Bay"],
+    "Pavement": ["Range Life"],
+    "R.E.M.": ["Driver 8"],
+    "Radiohead": ["High and Dry"],
+    "Sam Cooke": ["Bring It On Home to Me"],
+    "The Kinks": ["Waterloo Sunset"],
+    "The Velvet Underground": ["Sweet Jane"],
+    "Townes Van Zandt": ["Pancho and Lefty"],
+    "Van Morrison": ["Into the Mystic"],
+    "Violent Femmes": ["Blister in the Sun"],
+    "Warren Zevon": ["Carmelita"],
+    "Weezer": ["Say It Ain't So"],
 }
 
 # Song details: (sheet, notes)
@@ -701,16 +776,25 @@ def _generate_m4a(path: Path, duration_sec: float, freq: float) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [
-            "ffmpeg", "-y", "-f", "lavfi",
-            "-i", f"sine=frequency={freq}:duration={duration_sec}:sample_rate=44100",
-            "-c:a", "aac", "-b:a", "192k", str(path),
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency={freq}:duration={duration_sec}:sample_rate=44100",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            str(path),
         ],
         capture_output=True,
     )
 
 
 def _build_session_timeline(
-    tracks: list[tuple[int, int, str | None, str]], freq_base: int,
+    tracks: list[tuple[int, int, str | None, str]],
+    freq_base: int,
 ) -> list[dict]:
     """Compute compressed start/end/freq for each track within a session."""
     timeline = []
@@ -718,14 +802,16 @@ def _build_session_timeline(
     for i, (orig_start, orig_end, song_name, track_notes) in enumerate(tracks):
         dur = _compressed_duration(orig_end - orig_start)
         freq = AUDIO_FREQUENCIES[(freq_base + i) % len(AUDIO_FREQUENCIES)]
-        timeline.append({
-            "start": round(cursor, 3),
-            "end": round(cursor + dur, 3),
-            "duration": round(dur, 3),
-            "freq": freq,
-            "song_name": song_name,
-            "track_notes": track_notes,
-        })
+        timeline.append(
+            {
+                "start": round(cursor, 3),
+                "end": round(cursor + dur, 3),
+                "duration": round(dur, 3),
+                "freq": freq,
+                "song_name": song_name,
+                "track_notes": track_notes,
+            }
+        )
         cursor += dur + GAP_DUR
     return timeline
 
@@ -755,10 +841,14 @@ def _generate_session_audio(path: Path, timeline: list[dict]) -> float:
                 idx += 1
 
         # Tone for this track
-        inputs.extend([
-            "-f", "lavfi",
-            "-i", f"sine=frequency={seg['freq']}:duration={seg['duration']}:sample_rate=44100",
-        ])
+        inputs.extend(
+            [
+                "-f",
+                "lavfi",
+                "-i",
+                f"sine=frequency={seg['freq']}:duration={seg['duration']}:sample_rate=44100",
+            ]
+        )
         filters.append(f"[{idx}:a]")
         idx += 1
 
@@ -769,10 +859,18 @@ def _generate_session_audio(path: Path, timeline: list[dict]) -> float:
 
     concat_filter = "".join(filters) + f"concat=n={idx}:v=0:a=1[out]"
     subprocess.run(
-        ["ffmpeg", "-y"] + inputs + [
-            "-filter_complex", concat_filter,
-            "-map", "[out]",
-            "-c:a", "aac", "-b:a", "192k", str(path),
+        ["ffmpeg", "-y"]
+        + inputs
+        + [
+            "-filter_complex",
+            concat_filter,
+            "-map",
+            "[out]",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            str(path),
         ],
         capture_output=True,
     )
@@ -782,7 +880,10 @@ def _generate_session_audio(path: Path, timeline: list[dict]) -> float:
 
 
 def _generate_track_audio(
-    data_dir: Path, source_stem: str, track_num: int, seg: dict,
+    data_dir: Path,
+    source_stem: str,
+    track_num: int,
+    seg: dict,
 ) -> str:
     """Generate a single track .m4a and return the relative DB path."""
     start_label = round(seg["start"])
@@ -840,6 +941,19 @@ def seed(db: Database, data_dir: Path):
             song_ids[(group_name, song_name)] = sid
     print(f"  Songs: {sum(len(s) for s in SONGS.values())} created")
 
+    # Covers go to the first band (the one the "test" user is in)
+    cover_gid = group_ids[GROUPS[0]]
+    cover_count = 0
+    for artist, names in COVERS.items():
+        for name in names:
+            sid = db._get_or_create_song(
+                name, cover_gid, created_by=pick_user(GROUPS[0], cover_count)
+            )
+            db.conn.execute("UPDATE songs SET artist = ? WHERE id = ?", (artist, sid))
+            cover_count += 1
+    db.conn.commit()
+    print(f"  Covers: {cover_count} songs by {len(COVERS)} artists")
+
     # Song details (sheets and notes) — edited by a different user than the creator
     details_count = 0
     for (group_name, song_name), sid in song_ids.items():
@@ -857,7 +971,11 @@ def seed(db: Database, data_dir: Path):
         gid = group_ids[group_name]
         uploader = pick_user(group_name, sess_idx)
         session_id = db.create_session(
-            source_file, gid, date=date, notes=notes, created_by=uploader,
+            source_file,
+            gid,
+            date=date,
+            notes=notes,
+            created_by=uploader,
         )
         # Some sessions have notes edited by someone else
         if notes and sess_idx % 3 == 0:
@@ -868,7 +986,8 @@ def seed(db: Database, data_dir: Path):
         # Build compressed timeline and generate audio
         timeline = _build_session_timeline(tracks, freq_base=total_tracks)
         session_duration = _generate_session_audio(
-            data_dir / source_file, timeline,
+            data_dir / source_file,
+            timeline,
         )
         db.update_session_duration(session_id, session_duration)
 
@@ -923,19 +1042,27 @@ def seed(db: Database, data_dir: Path):
         gid = group_ids[group_name]
         creator = pick_user(group_name, sl_idx)
         sl_id = db.create_setlist(
-            setlist_name, gid, date=date, notes=notes, created_by=creator,
+            setlist_name,
+            gid,
+            date=date,
+            notes=notes,
+            created_by=creator,
         )
         # Add songs individually so each gets an added_by
         for song_idx, sn in enumerate(setlist_songs):
             adder = pick_user(group_name, sl_idx + song_idx)
             db.add_song_to_setlist(
-                sl_id, song_ids[(group_name, sn)], added_by=adder,
+                sl_id,
+                song_ids[(group_name, sn)],
+                added_by=adder,
             )
         # Mark one setlist as edited by a different user
         if sl_idx == 0:
             editor = pick_user(group_name, sl_idx + 1)
             db.update_setlist_notes(
-                sl_id, notes, updated_by=editor,
+                sl_id,
+                notes,
+                updated_by=editor,
             )
     print(f"  Setlists: {len(setlist_data)}")
 
