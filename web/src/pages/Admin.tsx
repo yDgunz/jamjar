@@ -10,6 +10,42 @@ import { AdminSkeleton } from "../components/PageLoadingSkeleton";
 import { useAuth } from "../context/AuthContext";
 
 const ROLES: Role[] = ["readonly", "editor", "admin", "superadmin"];
+
+// What each role can do. Each role includes everything the ones before it can do,
+// and all of them only apply to the bands the user belongs to.
+const ROLE_INFO: Record<Role, { label: string; summary: string; can: string }> = {
+  readonly: {
+    label: "Read-only",
+    summary: "Can look and listen, but not change anything.",
+    can: "Browse and play recordings, open songs, charts and setlists, use Perform mode, and share links.",
+  },
+  editor: {
+    label: "Editor",
+    summary: "Can edit songs and setlists and tag recordings.",
+    can: "Tag takes with songs; add songs and edit charts, tabs, sheet music, videos and notes; create and edit setlists; rename, date and annotate recordings.",
+  },
+  admin: {
+    label: "Admin",
+    summary: "Can also upload, re-cut and delete.",
+    can: "Upload and import recordings; split, merge and trim tracks; delete recordings, songs and setlists; merge songs and move things between bands; manage the band's share links.",
+  },
+  superadmin: {
+    label: "Superadmin",
+    summary: "Can also manage users and this admin console.",
+    can: "Add, edit and remove users and groups, reset passwords, and see usage, library, storage and server health.",
+  },
+};
+
+function RoleHelp({ role }: { role: Role }) {
+  const idx = ROLES.indexOf(role);
+  return (
+    <p className="mt-1.5 text-xs text-gray-400">
+      {ROLE_INFO[role].can}
+      {idx > 0 && <span className="text-gray-500"> Plus everything {ROLE_INFO[ROLES[idx - 1]].label} can do.</span>}
+    </p>
+  );
+}
+
 type Tab = "users" | "groups" | "usage" | "library" | "storage" | "health";
 
 const EVENT_LABELS: Record<string, string> = {
@@ -36,35 +72,30 @@ function relativeTime(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
-function formatTimestamp(iso: string): string {
-  const d = new Date(iso + "Z");
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffDays = Math.floor(diffMs / 86400000);
-  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  if (diffDays === 0) return `Today ${time}`;
-  if (diffDays === 1) return `Yesterday ${time}`;
-  if (diffDays < 7) {
-    const day = d.toLocaleDateString([], { weekday: "short" });
-    return `${day} ${time}`;
-  }
-  return d.toLocaleDateString([], { month: "short", day: "numeric" }) + ` ${time}`;
-}
-
 function eventLabel(type: string): string {
   return EVENT_LABELS[type] ?? type;
 }
 
-function eventAction(type: string): string {
-  const actions: Record<string, string> = {
-    login: "logged in",
-    upload: "uploaded",
-    tag: "tagged",
-    song_edit: "edited song",
-    setlist_create: "created setlist",
-    setlist_edit: "edited setlist",
-  };
-  return actions[type] ?? type;
+function formatDay(iso: string): string {
+  const d = new Date(iso.length > 10 ? iso.replace(" ", "T") + "Z" : iso + "T00:00:00");
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+}
+
+function formatHours(totalSeconds: number): string {
+  const mins = Math.round(totalSeconds / 60);
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+function GroupStat({ label, value, note }: { label: string; value: number | string; note?: string }) {
+  return (
+    <div>
+      <dt className="text-xs text-gray-500">{label}</dt>
+      <dd className="text-base font-medium tabular-nums text-white">{value}</dd>
+      {note && <dd className="text-xs text-gray-500">{note}</dd>}
+    </div>
+  );
 }
 
 function formatDuration(totalSeconds: number): string {
@@ -374,16 +405,10 @@ export default function Admin() {
       {/* === Users Tab === */}
       {tab === "users" && (
         <section>
-          <div className="mb-3 flex items-center gap-4">
-            <div className="hidden sm:flex items-center gap-4 text-xs text-gray-400">
-              <span><span className="text-gray-300">readonly</span> view</span>
-              <span><span className="text-gray-300">editor</span> edit & tag</span>
-              <span><span className="text-gray-300">admin</span> upload & delete</span>
-              <span><span className="text-gray-300">superadmin</span> manage users</span>
-            </div>
+          <div className="mb-3 flex justify-end">
             <button
               onClick={openAddUser}
-              className="ml-auto rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500"
+              className="rounded bg-accent-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-accent-500"
             >
               Add User
             </button>
@@ -394,7 +419,7 @@ export default function Admin() {
               <div key={user.id} className="px-3 py-3">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="min-w-0 truncate text-sm font-medium text-white">{user.name || user.email}</span>
-                  <span className="shrink-0 text-xs text-gray-400">{user.role}</span>
+                  <span className="shrink-0 text-xs text-gray-400">{ROLE_INFO[user.role as Role]?.label ?? user.role}</span>
                 </div>
                 {user.name && <div className="truncate text-xs text-gray-500">{user.email}</div>}
                 <div className="mt-1.5 flex flex-wrap gap-1 text-xs text-gray-300">
@@ -452,7 +477,7 @@ export default function Admin() {
                   <tr key={user.id} className="hover:bg-gray-900/50">
                     <td className="px-3 py-2 text-white">{user.email}</td>
                     <td className="px-3 py-2 text-gray-300">{user.name || <span className="text-gray-600">—</span>}</td>
-                    <td className="px-3 py-2 text-gray-300">{user.role}</td>
+                    <td className="px-3 py-2 text-gray-300">{ROLE_INFO[user.role as Role]?.label ?? user.role}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-300">
                       {user.groups.length === 0 && <span className="text-gray-600">None</span>}
                       {user.groups.length >= 1 && (
@@ -498,6 +523,22 @@ export default function Admin() {
               <p className="px-3 py-4 text-center text-sm text-gray-500">No users yet.</p>
             )}
           </div>
+
+          <div className="mt-6">
+            <h2 className="text-sm font-semibold text-gray-300">What each role can do</h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Each role includes everything the one before it can do. Roles only apply to the groups a user is in.
+            </p>
+            <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+              {ROLES.map((r) => (
+                <div key={r} className="rounded-lg border border-gray-800 p-3">
+                  <dt className="text-sm font-medium text-white">{ROLE_INFO[r].label}</dt>
+                  <dd className="mt-1 text-xs text-gray-300">{ROLE_INFO[r].summary}</dd>
+                  <dd className="mt-1 text-xs text-gray-400">{ROLE_INFO[r].can}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         </section>
       )}
 
@@ -512,36 +553,53 @@ export default function Admin() {
               Add Group
             </button>
           </div>
-          <div className="overflow-x-auto rounded-lg border border-gray-800">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-800 bg-gray-900 text-left text-xs text-gray-400">
-                  <th className="px-3 py-2 font-medium">Name</th>
-                  <th className="px-3 py-2 font-medium">Members</th>
-                  <th className="px-3 py-2 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800/50">
-                {groups.map((group) => (
-                  <tr key={group.id} className="hover:bg-gray-900/50">
-                    <td className="px-3 py-2 text-white">{group.name}</td>
-                    <td className="px-3 py-2 text-gray-300">
-                      {group.member_count} member{group.member_count !== 1 ? "s" : ""}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <button
-                        onClick={() => setDeleteModal({ type: "group", id: group.id, name: group.name })}
-                        className="rounded px-2 py-1 text-xs text-red-400 transition hover:bg-red-950 hover:text-red-300"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-3">
+            {groups.map((group) => {
+              const taggedPct = group.track_count
+                ? Math.round((group.tagged_track_count / group.track_count) * 100)
+                : null;
+              return (
+                <div key={group.id} className="rounded-lg border border-gray-800 p-3 sm:p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-medium text-white">{group.name}</h3>
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        {group.created_at ? `Created ${formatDay(group.created_at)}` : ""}
+                        {group.created_at && " · "}
+                        {group.last_session_date
+                          ? `Last recording ${formatDay(group.last_session_date)}`
+                          : "No recordings yet"}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setDeleteModal({ type: "group", id: group.id, name: group.name })}
+                      className="shrink-0 rounded px-2 py-1 text-xs text-red-400 transition hover:bg-red-950 hover:text-red-300"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-3 sm:grid-cols-6">
+                    <GroupStat label="Members" value={group.member_count} />
+                    <GroupStat label="Songs" value={group.song_count} />
+                    <GroupStat label="Setlists" value={group.setlist_count} />
+                    <GroupStat label="Recordings" value={group.session_count} />
+                    <GroupStat label="Recorded" value={formatHours(group.recorded_sec)} />
+                    <GroupStat
+                      label="Tracks"
+                      value={group.track_count}
+                      note={taggedPct === null ? undefined : `${taggedPct}% tagged`}
+                    />
+                  </dl>
+                  <p className="mt-3 text-xs text-gray-400">
+                    {group.members.length === 0
+                      ? <span className="text-gray-600">No members</span>
+                      : group.members.join(", ")}
+                  </p>
+                </div>
+              );
+            })}
             {groups.length === 0 && (
-              <p className="px-3 py-4 text-center text-sm text-gray-500">No groups yet.</p>
+              <p className="rounded-lg border border-gray-800 px-3 py-4 text-center text-sm text-gray-500">No groups yet.</p>
             )}
           </div>
         </section>
@@ -601,25 +659,6 @@ export default function Admin() {
                 </table>
               </div>
 
-              <div>
-                <h2 className="mb-3 text-sm font-semibold text-gray-300">Recent Activity</h2>
-                {stats.recent_activity.length === 0 ? (
-                  <p className="text-sm text-gray-500">No activity yet.</p>
-                ) : (
-                  <div className="space-y-1">
-                    {stats.recent_activity.map((a, i) => (
-                      <div key={i} className="flex items-baseline gap-3 rounded py-1.5 text-sm sm:px-3 sm:hover:bg-gray-900/50">
-                        <span className="w-28 shrink-0 text-xs text-gray-500">{formatTimestamp(a.created_at)}</span>
-                        <span className="min-w-0 break-words text-gray-300">
-                          <span className="font-medium text-white">{a.user_name}</span>
-                          {" "}{eventAction(a.event_type)}
-                          {a.detail && <span className="text-accent-400"> {a.detail}</span>}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </>
           )}
         </section>
@@ -767,9 +806,10 @@ export default function Admin() {
             className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
           >
             {ROLES.map((r) => (
-              <option key={r} value={r}>{r}</option>
+              <option key={r} value={r}>{ROLE_INFO[r].label}</option>
             ))}
           </select>
+          <RoleHelp role={newRole} />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-400 mb-1">Groups</label>
@@ -840,9 +880,10 @@ export default function Admin() {
             className="w-full rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-base sm:text-sm text-white focus:border-accent-500 focus:outline-none"
           >
             {ROLES.map((r) => (
-              <option key={r} value={r}>{r}</option>
+              <option key={r} value={r}>{ROLE_INFO[r].label}</option>
             ))}
           </select>
+          <RoleHelp role={editRole} />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-400 mb-1">Groups</label>

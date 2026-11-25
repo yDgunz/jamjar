@@ -1022,6 +1022,34 @@ class Database:
         ).fetchone()
         return row["cnt"]
 
+    def group_stats(self) -> dict[int, dict]:
+        """Per-group totals for the admin Groups page, keyed by group id."""
+        rows = self.conn.execute(
+            """SELECT g.id, g.created_at,
+                   (SELECT COUNT(*) FROM group_songs gs WHERE gs.group_id = g.id) AS song_count,
+                   (SELECT COUNT(*) FROM setlists sl WHERE sl.group_id = g.id) AS setlist_count,
+                   (SELECT COUNT(*) FROM sessions s WHERE s.group_id = g.id) AS session_count,
+                   (SELECT COALESCE(SUM(s.duration_sec), 0) FROM sessions s
+                     WHERE s.group_id = g.id) AS recorded_sec,
+                   (SELECT MAX(s.date) FROM sessions s WHERE s.group_id = g.id)
+                     AS last_session_date,
+                   (SELECT COUNT(*) FROM tracks t JOIN sessions s ON s.id = t.session_id
+                     WHERE s.group_id = g.id) AS track_count,
+                   (SELECT COUNT(*) FROM tracks t JOIN sessions s ON s.id = t.session_id
+                     WHERE s.group_id = g.id AND t.song_id IS NOT NULL) AS tagged_track_count
+               FROM groups g"""
+        ).fetchall()
+        stats = {row["id"]: {**dict(row), "members": []} for row in rows}
+        members = self.conn.execute(
+            """SELECT ug.group_id, u.name, u.email FROM user_groups ug
+               JOIN users u ON u.id = ug.user_id
+               ORDER BY LOWER(COALESCE(NULLIF(u.name, ''), u.email))"""
+        ).fetchall()
+        for m in members:
+            if m["group_id"] in stats:
+                stats[m["group_id"]]["members"].append(m["name"] or m["email"])
+        return stats
+
     # --- Sessions ---
 
     def create_session(

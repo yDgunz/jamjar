@@ -1952,3 +1952,37 @@ def test_job_reports_structured_progress(auth_client):
     assert len(levels) == 10
     assert levels[0] == 0.0 and levels[-1] == 1.0
     assert _waveform_levels([]) == []
+
+
+def test_admin_groups_include_stats(client, tmp_path):
+    db = api._db
+    key = {"X-API-Key": "test-api-key"}
+    _, gid = _create_user_and_group(db)
+    empty = db.create_group("Empty Band")
+    sid = db.create_session("a.m4a", gid, date="2026-03-01")
+    db.conn.execute("UPDATE sessions SET duration_sec = 600 WHERE id = ?", (sid,))
+    db.create_session("b.m4a", gid, date="2026-05-02")
+    song = db._get_or_create_song("Tune", gid)
+    for n, tagged in ((1, song), (2, None)):
+        db.conn.execute(
+            "INSERT INTO tracks (session_id, song_id, track_number, start_sec, end_sec,"
+            " duration_sec, audio_path) VALUES (?, ?, ?, 0, 60, 60, ?)",
+            (sid, tagged, n, f"t{n}.m4a"),
+        )
+    db.conn.commit()
+
+    resp = client.get("/api/admin/groups", headers=key)
+    assert resp.status_code == 200
+    by_id = {g["id"]: g for g in resp.json()}
+    g = by_id[gid]
+    assert g["member_count"] == 1 and len(g["members"]) == 1
+    assert g["song_count"] == 1
+    assert g["session_count"] == 2
+    assert g["track_count"] == 2
+    assert g["tagged_track_count"] == 1
+    assert g["recorded_sec"] == 600
+    assert g["last_session_date"] == "2026-05-02"
+    assert g["created_at"]
+    e = by_id[empty]
+    assert e["member_count"] == 0 and e["session_count"] == 0
+    assert e["recorded_sec"] == 0 and e["last_session_date"] is None
