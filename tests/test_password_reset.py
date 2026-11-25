@@ -97,7 +97,7 @@ class TestPasswordResetEmail:
         with patch("jam_session_processor.email.smtplib.SMTP", mock_smtp_class):
             send_password_reset_email("alice@example.com", "reset-token-abc", "Alice")
 
-        mock_smtp_class.assert_called_once_with("smtp.example.com", 587)
+        mock_smtp_class.assert_called_once_with("smtp.example.com", 587, timeout=30)
         mock_smtp_instance.send_message.assert_called_once()
 
         msg = mock_smtp_instance.send_message.call_args[0][0]
