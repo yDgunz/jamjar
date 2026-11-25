@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, formatRelative, formatShortDate, canEdit, localSongActivity } from "../api";
 import type { Song } from "../api";
+import ArtistPicker from "../components/ArtistPicker";
 import FetchError from "../components/FetchError";
 import FormModal from "../components/FormModal";
 import FilterChip, { BandChip, FilterBar, SortChip } from "../components/FilterChip";
@@ -12,6 +13,7 @@ import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import SearchInput from "../components/SearchInput";
 import { useAuth } from "../context/AuthContext";
 import { useFetch } from "../hooks/useFetch";
+import { NO_ARTIST, countArtists } from "../utils/artists";
 
 type SortKey = "opened" | "performed" | "recorded" | "added" | "takes";
 
@@ -122,14 +124,14 @@ export default function SongCatalog() {
     return () => { cancelled = true; clearTimeout(t); };
   }, [q]);
 
-  // Artists with song counts, most songs first
-  const artists = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const s of songs ?? []) {
-      if (s.artist) counts.set(s.artist, (counts.get(s.artist) ?? 0) + 1);
-    }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  }, [songs]);
+  // Artists (with song counts) of the band being looked at
+  const inBand = useMemo(
+    () => (songs ?? []).filter(
+      (s) => groupFilter === null || (s.groups ?? []).some((g) => g.id === groupFilter) || s.group_id === groupFilter,
+    ),
+    [songs, groupFilter],
+  );
+  const { artists, none: noArtistCount } = useMemo(() => countArtists(inBand), [inBand]);
 
   const results = useMemo(() => {
     const local = localSongActivity();
@@ -141,7 +143,8 @@ export default function SongCatalog() {
       },
       hit: q ? matches(s, q, lyricHits) : ("name" as const),
     }));
-    if (artistFilter) list = list.filter((r) => r.song.artist === artistFilter);
+    if (artistFilter === NO_ARTIST) list = list.filter((r) => !r.song.artist);
+    else if (artistFilter) list = list.filter((r) => r.song.artist === artistFilter);
     if (recordedFilter !== "any") list = list.filter((r) => (r.song.take_count > 0) === (recordedFilter === "yes"));
     if (activityFilter !== "any") {
       list = list.filter(
@@ -232,14 +235,12 @@ export default function SongCatalog() {
           ariaLabel="Sort songs"
         />
         <BandChip groups={user?.groups ?? []} value={groupFilter} onChange={setGroupFilter} />
-        <FilterChip
+        <ArtistPicker
           value={artistFilter}
-          options={[{ value: "", label: "All artists" }, ...artists.map(([a, n]) => ({ value: a, label: `${a} (${n})` }))]}
+          artists={artists}
+          noArtistCount={noArtistCount}
+          total={inBand.length}
           onChange={setArtistFilter}
-          ariaLabel="Filter by artist"
-          display={(v) => v}
-          defaultValue=""
-          placeholder="Artist"
         />
         <FilterChip
           value={recordedFilter}
