@@ -61,15 +61,19 @@ function SortableRow({
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900 px-4 py-3`}
+      className="flex items-stretch rounded-lg border border-gray-800 bg-gray-900"
     >
-      {!readOnly && (
-        <div
-          ref={setActivatorNodeRef}
-          {...attributes}
-          {...listeners}
-          className="cursor-grab touch-none text-gray-500 active:cursor-grabbing"
-        >
+      {/* The grip and the number are one grab area, as tall as the row. */}
+      <div
+        ref={readOnly ? undefined : setActivatorNodeRef}
+        {...(readOnly ? {} : attributes)}
+        {...(readOnly ? {} : listeners)}
+        aria-label={readOnly ? undefined : `Reorder ${item.song_name}`}
+        className={`flex shrink-0 items-center gap-2 rounded-l-lg py-3 pl-4 pr-3 text-gray-500 ${
+          readOnly ? "" : "cursor-grab touch-none hover:bg-gray-800/60 active:cursor-grabbing"
+        }`}
+      >
+        {!readOnly && (
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
             <circle cx="9" cy="6" r="1.5" />
             <circle cx="15" cy="6" r="1.5" />
@@ -78,30 +82,29 @@ function SortableRow({
             <circle cx="9" cy="18" r="1.5" />
             <circle cx="15" cy="18" r="1.5" />
           </svg>
-        </div>
-      )}
-      <span className="w-6 text-center text-sm font-medium text-gray-500">
-        {item.position}
-      </span>
-      <div className="min-w-0 flex-1">
-        <Link
-          to={`/songs/${item.song_id}`}
-          state={{ from: back }}
-          className="text-sm font-medium text-gray-200 hover:text-accent-400"
-        >
+        )}
+        <span className="w-6 text-center text-sm font-medium">{item.position}</span>
+      </div>
+      {/* The rest of the row opens the song. */}
+      <Link
+        to={`/songs/${item.song_id}`}
+        state={{ from: back }}
+        className={`group min-w-0 flex-1 py-3 pl-1 pr-3 hover:bg-gray-800/60 ${readOnly ? "rounded-r-lg" : ""}`}
+      >
+        <span className="text-sm font-medium text-gray-200 group-hover:text-accent-400">
           {item.song_name}
-        </Link>
+        </span>
         {item.artist && (
           <span className="ml-2 text-xs text-gray-500">{item.artist}</span>
         )}
         {item.added_by_name && (
           <span className="ml-2 text-xs text-gray-600">added by {item.added_by_name}</span>
         )}
-      </div>
+      </Link>
       {!readOnly && (
         <button
           onClick={onRemove}
-          className="rounded p-2 text-gray-600 hover:bg-red-950 hover:text-red-400"
+          className="shrink-0 rounded-r-lg px-3 text-gray-600 hover:bg-red-950 hover:text-red-400"
           title="Remove from setlist"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
