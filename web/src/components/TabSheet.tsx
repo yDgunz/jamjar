@@ -17,7 +17,6 @@ export default function TabSheet({ text, source }: { text: string; source?: stri
   const rootRef = useRef<HTMLDivElement>(null);
   const probeRef = useRef<HTMLSpanElement>(null);
   const [grid, setGrid] = useState<Grid>({ cols: 0, ch: 0, font: 0 });
-  const cols = grid.cols;
 
   // How many monospace characters fit across a staff block
   useLayoutEffect(() => {
