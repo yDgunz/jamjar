@@ -12,7 +12,7 @@
 #   backup_dir = $JAM_DATA_DIR/backups        (or ./backups)
 #
 # Cron example (daily at 3 AM):
-#   0 3 * * * /opt/jam-session-processor/scripts/backup-db.sh >> /var/log/jam-backup.log 2>&1
+#   0 3 * * * /opt/jamjar/scripts/backup-db.sh >> /var/log/jam-backup.log 2>&1
 
 set -euo pipefail
 
