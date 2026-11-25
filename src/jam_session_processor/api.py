@@ -3606,6 +3606,15 @@ class AdminGroupResponse(BaseModel):
     name: str
     member_count: int
     features: list[str] = []
+    members: list[str] = []
+    song_count: int = 0
+    setlist_count: int = 0
+    session_count: int = 0
+    track_count: int = 0
+    tagged_track_count: int = 0
+    recorded_sec: float = 0
+    last_session_date: str | None = None
+    created_at: str | None = None
 
 
 class CreateUserRequest(BaseModel):
@@ -3635,14 +3644,20 @@ def _admin_user_response(db, user) -> AdminUserResponse:
     )
 
 
-def _admin_group_response(db, group) -> AdminGroupResponse:
-    count = db.get_group_member_count(group.id)
+def _admin_group_response(db, group, stats: dict | None = None) -> AdminGroupResponse:
+    if stats is None:
+        stats = db.group_stats()
+    st = dict(stats.get(group.id) or {})
+    st.pop("id", None)
+    members = st.pop("members", [])
     features = [f for f in (group.features or "").split(",") if f]
     return AdminGroupResponse(
         id=group.id,
         name=group.name,
-        member_count=count,
+        member_count=len(members),
+        members=members,
         features=features,
+        **st,
     )
 
 
@@ -3786,7 +3801,8 @@ def admin_remove_user_from_group(user_id: int, group_id: int, request: Request):
 def admin_list_groups(request: Request):
     _require_role(request, "superadmin")
     db = get_db()
-    return [_admin_group_response(db, g) for g in db.list_groups()]
+    stats = db.group_stats()
+    return [_admin_group_response(db, g, stats) for g in db.list_groups()]
 
 
 @app.post("/api/admin/groups", response_model=AdminGroupResponse, status_code=201)

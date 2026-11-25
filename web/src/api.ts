@@ -396,6 +396,15 @@ export interface AdminGroup {
   name: string;
   member_count: number;
   features: string[];
+  members: string[];
+  song_count: number;
+  setlist_count: number;
+  session_count: number;
+  track_count: number;
+  tagged_track_count: number;
+  recorded_sec: number;
+  last_session_date: string | null;
+  created_at: string | null;
 }
 
 export interface UsageStatsUser {
