@@ -109,12 +109,11 @@ def _lyric_trigrams(sheet: str) -> set[tuple[str, ...]]:
     return out
 
 
-def _has_chords_over_lyrics(sheet: str) -> bool:
-    lines = sheet.split("\n")
-    return any(
-        is_chord_line(a) and b.strip() and not is_chord_line(b) and not is_staff_line(b)
-        for a, b in zip(lines, lines[1:])
-    )
+def _chart_has_the_song(sheet: str) -> bool:
+    """Does the chart hold the chords and the words? Over the lyrics, or as
+    shorthand ("Verse: Bm | F# | A | E") with the lyrics under it."""
+    chords = sum(_is_chord_token(t) for t in re.split(r"[\s|]+", sheet))
+    return chords >= 4 and len(_lyric_trigrams(sheet)) >= 20
 
 
 def _is_title_line(line: str, name_words: list[str], artist_words: list[str]) -> bool:
@@ -150,7 +149,7 @@ def clean_tab(tab: str, song_name: str = "", artist: str = "", sheet: str = "") 
     lines = [ln.rstrip() for ln in text.split("\n")]
     name_words, artist_words = _words(song_name), _words(artist)
     lyrics = _lyric_trigrams(sheet)
-    drop_lyrics = _has_chords_over_lyrics(sheet)
+    drop_lyrics = _chart_has_the_song(sheet)
     source = ""
 
     def nxt(i: int) -> str:

@@ -7,7 +7,11 @@ CHART = """[Verse]
        Dm9
 You've got to be crazy, you've got to have a real need
           Bbadd4
-You gotta sleep on your toes when you're on the street"""
+You gotta sleep on your toes when you're on the street
+                                                       Asus2
+You got to be able to pick out the easy meat with your eyes closed
+Absus2
+You've got to strike when the moment is right without thinking"""
 
 
 def test_source_line_becomes_the_source():
@@ -65,9 +69,17 @@ def test_verses_the_chart_has_are_dropped():
     assert c.text == f"[Intro]\n{STAFF}\n\n[Solo]\n(with intro chords)\n{STAFF}"
 
 
-def test_verses_stay_when_the_song_has_no_chart():
+def test_verses_stay_when_the_chart_lacks_chords_or_words():
     tab = f"[Intro]\n{STAFF}\n\n{CHART}"
     assert clean_tab(tab, sheet="").text == tab
+    assert clean_tab(tab, sheet="Verse: Dm9 | Bbadd4 | Asus2 | Absus2").text == tab
+
+
+def test_a_shorthand_chart_with_lyrics_counts_as_having_the_song():
+    words = "\n".join(ln for ln in CHART.split("\n")[1:] if ln.startswith("You"))
+    tab = f"[Intro]\n{STAFF}\n\n{CHART}"
+    sheet = f"Verse: Dm9 | Bbadd4 | Asus2 | Absus2\n\n{words}"
+    assert clean_tab(tab, sheet=sheet).text == f"[Intro]\n{STAFF}"
 
 
 def test_cues_and_labels_on_a_staff_stay():
