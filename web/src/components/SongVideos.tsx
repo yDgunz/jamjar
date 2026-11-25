@@ -44,6 +44,9 @@ export default function SongVideos({
               key={active.id}
               src={`https://www.youtube-nocookie.com/embed/${activeYt}?autoplay=1&playsinline=1&rel=0&start=${youTubeStart(active.url)}`}
               title={active.title || "Video"}
+              // YouTube refuses to play (error 153) without a Referer, and the
+              // app's own Referrer-Policy (same-origin) sends none to other sites.
+              referrerPolicy="strict-origin-when-cross-origin"
               allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
               allowFullScreen
               className="absolute inset-0 h-full w-full"
