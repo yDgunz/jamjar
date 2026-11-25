@@ -451,7 +451,7 @@ def identify_songs(max_minutes: int | None, match_only: bool, session_id: int | 
         pass
     db = _get_db()
     if match_only:
-        summary = identify.tag_untagged(db)
+        summary = identify.log_match_only(db)
     else:
         summary = identify.run(db, max_minutes=max_minutes, session_id=session_id)
     click.echo(", ".join(f"{k}: {v}" for k, v in summary.items() if v != ""))

@@ -393,3 +393,49 @@ def test_admin_run_one_recording(client, monkeypatch):  # noqa: F811
     # A full run queues behind it
     assert client.post(url, headers=H).status_code == 202
     assert launched == [sid] and api._identify_pending == [None]
+
+
+def test_runs_are_logged_for_the_admin_activity_page(client, tmp_path):  # noqa: F811
+    db = api._db
+    gid, sid = _band(db)
+    song = db._get_or_create_song("Harbor Song", gid)
+    db.update_song_details(song, sheet=HARBOR, notes="")
+    # A tag from before runs were logged shows up as a backfilled entry
+    old = _track(db, sid, 1)
+    db.auto_tag_track(old, song, 0.5, "lyrics")
+    db.conn.execute("UPDATE track_auto_tags SET created_at = '2026-01-02 08:00:00'")
+    db.create_job("job1", gid, session_id=sid)
+    db.update_job_progress("job1", "Exporting", {"segments": [[0, 100], [120, 300]]})
+    db.complete_job("job1", sid)
+    db.conn.commit()
+    _track(db, sid, 2)
+
+    identify.run(db, transcriber=FakeTranscriber({"1.m4a": "", "2.m4a": HARBOR}))
+    identify.run(db, transcriber=FakeTranscriber({}))  # nothing new
+    db.start_tagging_run()  # killed before it finished
+
+    h = {"x-api-key": "test-api-key"}
+    body = client.get("/api/admin/background-activity", headers=h).json()
+    assert body["tagging"]["running"] is False
+    runs = [e for e in body["entries"] if e["kind"] == "tagging"]
+    assert [r["status"] for r in runs] == ["interrupted", "completed", "completed", "completed"]
+    assert runs[1]["tagged"] == 0 and runs[1]["items"] == []
+    assert runs[2]["transcribed"] == 2 and runs[2]["tagged"] == 1
+    assert runs[2]["items"] == [
+        {
+            "action": "tagged",
+            "session_id": sid,
+            "session_name": db.get_session(sid).name,
+            "track_number": 2,
+            "song_id": song,
+            "song_name": "Harbor Song",
+            "score": runs[2]["items"][0]["score"],
+            "source": "lyrics",
+        }
+    ]
+    assert runs[3]["backfilled"] and runs[3]["items"][0]["kept"] is True
+    (job,) = [e for e in body["entries"] if e["kind"] == "processing"]
+    assert job["status"] == "completed" and job["tracks"] == 2 and job["session_id"] == sid
+
+    client.cookies.clear()
+    assert client.get("/api/admin/background-activity").status_code in (401, 403)

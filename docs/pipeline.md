@@ -67,6 +67,8 @@ Untagged tracks are tagged automatically when they are recognised: right after a
 
    A run waits up to `JAM_IDENTIFY_WAIT_MINUTES` (30) while another recording is being processed or free memory is below `JAM_TRANSCRIBE_MIN_FREE_MB`, then skips transcribing if that hasn't cleared (recordings uploaded or re-detected together would otherwise lose their run: the first one's starts while the others are still being split). A deploy restarts the server, which kills the run in progress and forgets the queue; 90 seconds after startup the server starts a run again for every detected recording (`split_state = 'auto'`) that still has tracks without a transcript. Transcripts are saved per track, so nothing is redone. `GET /api/sessions/{id}` reports `tagging` (`running`/`queued`, tracks transcribed of total) and the recording page shows it. Tagged tracks are transcribed too: they are the reference takes. `JAM_IDENTIFY_HOUR=off` turns all automatic runs off.
 
+6. **Run log** — every run writes a row to `tagging_runs`: its counts and the tracks it tagged, cut or joined. Admin → Activity shows these next to the recordings that were processed (`GET /api/admin/background-activity`). A run killed by a restart leaves its row unfinished and shows as "cut short".
+
 Measured on 174 labeled takes with `small.en`: 103 recognised, of which 99 right; none of the instrumental jams. `base.en` is about 3x faster and needs ~0.5 GB but gets noticeably fewer right.
 
 Without the `transcribe` extra installed (`pip install -e ".[transcribe]"`; the Docker image has it) nothing is transcribed and nothing else changes.

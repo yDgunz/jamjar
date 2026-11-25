@@ -277,6 +277,19 @@ CREATE TABLE IF NOT EXISTS track_auto_tags (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Log of the automatic song-tagging runs (identify.py). summary is the run's counts
+-- (JSON), items a JSON list of what it changed: tracks tagged, cut or joined.
+-- finished_at stays NULL while a run is going, and for good when it was killed.
+CREATE TABLE IF NOT EXISTS tagging_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER,
+    summary TEXT NOT NULL DEFAULT '{}',
+    items TEXT NOT NULL DEFAULT '[]',
+    error TEXT,
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     token TEXT NOT NULL UNIQUE,
@@ -1563,6 +1576,76 @@ class Database:
         )
         self.conn.commit()
         return True
+
+    # --- Background activity (admin) ---
+
+    def start_tagging_run(self, session_id: int | None = None) -> int:
+        cur = self.conn.execute("INSERT INTO tagging_runs (session_id) VALUES (?)", (session_id,))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def finish_tagging_run(
+        self, run_id: int, summary: dict, items: list[dict], error: str | None = None
+    ) -> None:
+        self.conn.execute(
+            "UPDATE tagging_runs SET summary = ?, items = ?, error = ?,"
+            " finished_at = datetime('now') WHERE id = ?",
+            (json.dumps(summary), json.dumps(items), error, run_id),
+        )
+        self.conn.commit()
+
+    def list_tagging_runs(self, limit: int = 100) -> list[dict]:
+        rows = self.conn.execute(
+            """SELECT r.*, s.name AS session_name FROM tagging_runs r
+               LEFT JOIN sessions s ON s.id = r.session_id
+               ORDER BY r.id DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def describe_tracks(self, track_ids: list[int]) -> dict[int, dict]:
+        """Recording, track number and song of each track, for activity logs."""
+        out: dict[int, dict] = {}
+        for i in range(0, len(track_ids), 500):
+            chunk = track_ids[i : i + 500]
+            rows = self.conn.execute(
+                f"""SELECT t.id, t.track_number, t.session_id, s.name AS session_name,
+                           t.song_id, so.name AS song_name
+                    FROM tracks t JOIN sessions s ON s.id = t.session_id
+                    LEFT JOIN songs so ON so.id = t.song_id
+                    WHERE t.id IN ({",".join("?" * len(chunk))})""",
+                chunk,
+            ).fetchall()
+            out.update({r["id"]: dict(r) for r in rows})
+        return out
+
+    def list_auto_tags_before(self, before: str | None, limit: int = 500) -> list[dict]:
+        """Automatic tags set before ``before`` (all when None), newest first: what the
+        runs did before they were logged. ``kept`` is false once the tag was changed."""
+        rows = self.conn.execute(
+            """SELECT a.track_id, a.score, a.source, a.created_at, t.track_number,
+                      t.session_id, s.name AS session_name, a.song_id,
+                      so.name AS song_name, t.song_id IS a.song_id AS kept
+               FROM track_auto_tags a JOIN tracks t ON t.id = a.track_id
+               JOIN sessions s ON s.id = t.session_id JOIN songs so ON so.id = a.song_id
+               WHERE (? IS NULL OR a.created_at < ?)
+               ORDER BY a.created_at DESC, a.track_id LIMIT ?""",
+            (before, before, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def list_jobs(self, limit: int = 100) -> list[dict]:
+        """Processing jobs (uploads, imports, re-splits, merges), newest first."""
+        rows = self.conn.execute(
+            """SELECT j.*, s.name AS session_name, g.name AS group_name,
+                      (SELECT COUNT(*) FROM tracks t WHERE t.session_id = j.session_id)
+                        AS track_count
+               FROM jobs j LEFT JOIN sessions s ON s.id = j.session_id
+               LEFT JOIN groups g ON g.id = j.group_id
+               ORDER BY j.created_at DESC, j.rowid DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def get_auto_tagged_track_ids(self, session_id: int) -> set[int]:
         """Tracks of a recording that still carry the tag set automatically."""

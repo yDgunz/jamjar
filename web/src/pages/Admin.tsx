@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, isSuperAdmin } from "../api";
 import type { AdminUser, AdminGroup, Role, UsageStats, ServerHealth } from "../api";
+import BackgroundActivity from "../components/BackgroundActivity";
 import CurationHistory from "../components/CurationHistory";
 import StorageUsage from "../components/StorageUsage";
 import FetchError from "../components/FetchError";
@@ -46,7 +47,7 @@ function RoleHelp({ role }: { role: Role }) {
   );
 }
 
-type Tab = "users" | "groups" | "usage" | "library" | "storage" | "health";
+type Tab = "users" | "groups" | "usage" | "library" | "activity" | "storage" | "health";
 
 const EVENT_LABELS: Record<string, string> = {
   login: "Logins",
@@ -382,6 +383,7 @@ function AdminPanel() {
     { key: "groups", label: "Groups" },
     { key: "usage", label: "Usage" },
     { key: "library", label: "Library" },
+    { key: "activity", label: "Activity" },
     { key: "storage", label: "Storage" },
     { key: "health", label: "Server" },
   ];
@@ -677,6 +679,16 @@ function AdminPanel() {
             What the daily library routine added: new songs, how-to and backing-track videos, and About histories.
           </p>
           <CurationHistory />
+        </section>
+      )}
+
+      {/* === Background activity Tab === */}
+      {tab === "activity" && (
+        <section>
+          <p className="mb-3 text-xs text-gray-500">
+            What the server did in the background: recordings split into tracks, and the automatic song-tagging runs.
+          </p>
+          <BackgroundActivity />
         </section>
       )}
 

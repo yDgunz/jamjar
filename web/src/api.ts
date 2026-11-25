@@ -437,6 +437,72 @@ export interface CurationRun {
   created_at: string;
 }
 
+export interface ActivityItem {
+  action: "tagged" | "split" | "merged";
+  session_id: number;
+  session_name: string;
+  track_number?: number;
+  song_id?: number;
+  song_name?: string;
+  score?: number;
+  source?: "lyrics" | "takes";
+  /** backfilled tags only: false once someone changed or removed the tag */
+  kept?: boolean;
+  at_sec?: number;
+  count?: number;
+}
+
+export interface ProcessingActivity {
+  kind: "processing";
+  key: string;
+  at: string;
+  finished_at: string | null;
+  job_type: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  error: string | null;
+  session_id: number | null;
+  session_name: string | null;
+  group_name: string | null;
+  tracks: number | null;
+  duration_sec: number | null;
+}
+
+export interface TaggingActivity {
+  kind: "tagging";
+  key: string;
+  at: string;
+  finished_at: string | null;
+  status: "running" | "completed" | "failed" | "interrupted";
+  error: string | null;
+  /** the recording the run was for; null = a full (nightly) run */
+  session_id: number | null;
+  session_name: string | null;
+  skipped: string;
+  transcribed: number;
+  failed: number;
+  remaining: number;
+  splits: number;
+  merges: number;
+  tagged: number;
+  items: ActivityItem[];
+  /** tags from before runs were logged, grouped by day */
+  backfilled: boolean;
+}
+
+export interface BackgroundActivity {
+  tagging: {
+    available: boolean;
+    nightly_hour_utc: number | null;
+    running: boolean;
+    queued: number;
+    tracks: number;
+    untagged: number;
+    pending_transcripts: number;
+    auto_tagged: number;
+  };
+  entries: (ProcessingActivity | TaggingActivity)[];
+}
+
 export interface UsageStats {
   users: UsageStatsUser[];
   recent_activity: UsageStatsActivity[];
@@ -1131,6 +1197,12 @@ export const api = {
     fetchJson<StorageUsage>(`${BASE}/admin/storage${refresh ? "?refresh=true" : ""}`),
 
   adminGetCurationRuns: () => fetchJson<CurationRun[]>(`${BASE}/admin/curation-runs`),
+
+  adminGetBackgroundActivity: () =>
+    fetchJson<BackgroundActivity>(`${BASE}/admin/background-activity`),
+
+  adminRunSongIdentification: () =>
+    fetchJson<{ started: boolean }>(`${BASE}/admin/song-identification/run`, { method: "POST" }),
 
   adminGetServerHealth: () => fetchJson<ServerHealth>(`${BASE}/admin/server-health`),
 

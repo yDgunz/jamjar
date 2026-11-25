@@ -4166,6 +4166,126 @@ def admin_run_song_identification(request: Request, session_id: int | None = Non
     return {"started": True}
 
 
+def _job_activity(row: dict) -> dict:
+    try:
+        detail = json.loads(row["detail"]) if row["detail"] else {}
+    except ValueError:
+        detail = {}
+    segments = detail.get("segments")
+    return {
+        "kind": "processing",
+        "key": f"job-{row['id']}",
+        "at": row["created_at"],
+        "finished_at": row["updated_at"] if row["status"] in ("completed", "failed") else None,
+        "job_type": row["type"],
+        "status": row["status"],
+        "error": row["error"],
+        "session_id": row["session_id"],
+        "session_name": row["session_name"],
+        "group_name": row["group_name"],
+        "tracks": len(segments) if isinstance(segments, list) else None,
+        "duration_sec": detail.get("duration_sec"),
+    }
+
+
+_TAGGING_COUNTS = ("transcribed", "failed", "remaining", "splits", "merges", "tagged")
+
+
+def _tagging_activity(row: dict, running: bool) -> dict:
+    try:
+        summary = json.loads(row["summary"] or "{}")
+        items = json.loads(row["items"] or "[]")
+    except ValueError:
+        summary, items = {}, []
+    if row["finished_at"]:
+        status = "failed" if row["error"] else "completed"
+    else:
+        status = "running" if running else "interrupted"
+    return {
+        "kind": "tagging",
+        "key": f"run-{row['id']}",
+        "at": row["started_at"],
+        "finished_at": row["finished_at"],
+        "status": status,
+        "error": row["error"],
+        "session_id": row["session_id"],
+        "session_name": row["session_name"],
+        "skipped": summary.get("skipped") or "",
+        **{k: int(summary.get(k) or 0) for k in _TAGGING_COUNTS},
+        "items": items,
+        "backfilled": False,
+    }
+
+
+def _backfilled_tagging(db) -> list[dict]:
+    """Automatic tags from before runs were logged, as one entry per day."""
+    first = db.conn.execute("SELECT MIN(started_at) FROM tagging_runs").fetchone()[0]
+    days: dict[str, dict] = {}
+    for tag in db.list_auto_tags_before(first):
+        day = days.setdefault(
+            tag["created_at"][:10],
+            {
+                "kind": "tagging",
+                "key": f"tags-{tag['created_at'][:10]}",
+                "at": tag["created_at"],
+                "finished_at": tag["created_at"],
+                "status": "completed",
+                "error": None,
+                "session_id": None,
+                "session_name": None,
+                "skipped": "",
+                **{k: 0 for k in _TAGGING_COUNTS},
+                "items": [],
+                "backfilled": True,
+            },
+        )
+        day["tagged"] += 1
+        day["items"].append(
+            {
+                "action": "tagged",
+                "session_id": tag["session_id"],
+                "session_name": tag["session_name"],
+                "track_number": tag["track_number"],
+                "song_id": tag["song_id"],
+                "song_name": tag["song_name"],
+                "score": round(tag["score"], 3),
+                "source": tag["source"],
+                "kept": bool(tag["kept"]),
+            }
+        )
+    return list(days.values())
+
+
+@app.get("/api/admin/background-activity")
+def admin_background_activity(request: Request, limit: int = 100):
+    """What the server did in the background, newest first: recordings processed
+    (uploads, imports, re-splits, merges) and automatic song-tagging runs."""
+    _require_role(request, "superadmin")
+    from jam_session_processor import transcribe
+
+    limit = min(max(limit, 1), 500)
+    db = get_db()
+    with _identify_lock:
+        running, queued = _identify_running(), len(_identify_pending)
+    runs = db.list_tagging_runs(limit)
+    # Only the newest unfinished run can be the one that is going now
+    live = next((r["id"] for r in runs if not r["finished_at"]), None) if running else None
+    entries = [_job_activity(j) for j in db.list_jobs(limit)]
+    entries += [_tagging_activity(r, r["id"] == live) for r in runs]
+    entries += _backfilled_tagging(db)
+    entries.sort(key=lambda e: e["at"], reverse=True)
+    return {
+        "tagging": {
+            "available": transcribe.is_available(),
+            "nightly_hour_utc": _identify_hour(),
+            "running": running,
+            "queued": queued,
+            **db.get_identification_stats(),
+        },
+        "entries": entries[:limit],
+    }
+
+
 @app.get("/api/admin/curation-runs", response_model=list[CurationRunResponse])
 def admin_list_curation_runs(request: Request, limit: int = 50):
     _require_role(request, "superadmin")

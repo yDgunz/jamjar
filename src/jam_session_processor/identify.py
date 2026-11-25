@@ -134,8 +134,9 @@ def refine_splits(db: Database) -> dict:
 
     session_ids = db.sessions_to_refine()
     splits = merges = 0
+    items: list[dict] = []
     if not session_ids:
-        return {"splits": 0, "merges": 0}
+        return {"splits": 0, "merges": 0, "items": items}
     _, index, by_lyrics, by_takes, song_groups = _candidates(db)
     for session_id in session_ids:
         try:
@@ -164,16 +165,30 @@ def refine_splits(db: Database) -> dict:
                 splits += done["splits"]
                 merges += done["merges"]
                 logger.info("Recording %s: %s", session_id, done)
+                where = {"session_id": session_id, "session_name": session.name}
+                starts = {t.start for t in tracks}
+                for p in pieces:
+                    if p.was_cut and p.start not in starts:
+                        items.append({"action": "split", **where, "at_sec": round(p.start)})
+                    if len(p.track_ids) > 1:
+                        items.append(
+                            {
+                                "action": "merged",
+                                **where,
+                                "at_sec": round(p.start),
+                                "count": len(p.track_ids),
+                            }
+                        )
         except Exception:
             logger.exception("Could not refine the split of recording %s", session_id)
-    return {"splits": splits, "merges": merges}
+    return {"splits": splits, "merges": merges, "items": items}
 
 
 def tag_untagged(db: Database) -> dict:
     """Re-assess every untagged track that has a transcript; tag the recognised ones."""
     transcripts, _, by_lyrics, by_takes, song_groups = _candidates(db)
 
-    tagged = 0
+    tagged: dict[int, dict] = {}
     for t in transcripts:
         if t["song_id"] is not None:
             continue
@@ -186,8 +201,22 @@ def tag_untagged(db: Database) -> dict:
             allow_takes=lambda song, key, g=group_id: key == g and g in song_groups[song],
         )
         if found and db.auto_tag_track(t["track_id"], found.song_id, found.score, found.source):
-            tagged += 1
-    return {"tagged": tagged}
+            tagged[t["track_id"]] = {"score": round(found.score, 3), "source": found.source}
+    tracks = db.describe_tracks(list(tagged))
+    items = [
+        {
+            "action": "tagged",
+            "session_id": tracks[track_id]["session_id"],
+            "session_name": tracks[track_id]["session_name"],
+            "track_number": tracks[track_id]["track_number"],
+            "song_id": tracks[track_id]["song_id"],
+            "song_name": tracks[track_id]["song_name"],
+            **found,
+        }
+        for track_id, found in tagged.items()
+        if track_id in tracks
+    ]
+    return {"tagged": len(tagged), "items": items}
 
 
 def _busy(db: Database) -> str:
@@ -226,9 +255,30 @@ def run(
     ``session_id`` limits transcribing to one recording (the run after an upload).
     ``wait_minutes``: how long to wait for other processing to finish and memory to be
     free before skipping the transcribing (default ``JAM_IDENTIFY_WAIT_MINUTES``)."""
+    run_id = db.start_tagging_run(session_id)
+    summary: dict = {"transcribed": 0, "failed": 0, "remaining": 0, "skipped": ""}
+    items: list[dict] = []
+    try:
+        _run(db, summary, items, transcriber, max_minutes, session_id, wait_minutes)
+    except Exception as e:
+        db.finish_tagging_run(run_id, summary, items, error=str(e) or type(e).__name__)
+        raise
+    db.finish_tagging_run(run_id, summary, items)
+    logger.info("Song identification run: %s", summary)
+    return summary
+
+
+def log_match_only(db: Database) -> dict:
+    """``tag_untagged`` as a logged run of its own (``identify-songs --match-only``)."""
+    run_id = db.start_tagging_run()
+    summary = tag_untagged(db)
+    db.finish_tagging_run(run_id, summary, summary.pop("items"))
+    return summary
+
+
+def _run(db, summary, items, transcriber, max_minutes, session_id, wait_minutes) -> None:
     from jam_session_processor import transcribe
 
-    summary: dict = {"transcribed": 0, "failed": 0, "remaining": 0, "skipped": ""}
     if transcriber is None and not transcribe.is_available():
         summary["skipped"] = "speech-to-text is not installed"
     else:
@@ -244,7 +294,7 @@ def run(
             summary.update(transcribe_pending(db, transcriber, max_minutes * 60, session_id))
     if summary["skipped"]:
         logger.warning("Not transcribing this run: %s", summary["skipped"])
-    summary.update(refine_splits(db))
-    summary.update(tag_untagged(db))
-    logger.info("Song identification run: %s", summary)
-    return summary
+    for step in (refine_splits, tag_untagged):
+        done = step(db)
+        items.extend(done.pop("items"))
+        summary.update(done)
