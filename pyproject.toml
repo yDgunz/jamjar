@@ -9,7 +9,6 @@ description = "Split iPhone jam session recordings into individual songs"
 requires-python = ">=3.11"
 dependencies = [
     "click>=8.1",
-    "pydub>=0.25",
     "mutagen>=1.47",
     "fastapi>=0.165",
     "python-multipart>=0.0.34",
@@ -33,6 +32,8 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.4",
     "httpx>=0.27",
+    # Test fixtures build their synthetic audio with pydub
+    "pydub>=0.25",
 ]
 
 [project.scripts]

@@ -49,10 +49,13 @@ def create_jwt(user_id: int, email: str) -> str:
     cfg = get_config()
     if not cfg.jwt_secret:
         raise RuntimeError("JAM_JWT_SECRET is not set")
+    now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),
         "email": email,
-        "exp": datetime.now(timezone.utc) + timedelta(days=_TOKEN_EXPIRY_DAYS),
+        # Issue time: a login from before the password was last set is refused
+        "iat": int(now.timestamp()),
+        "exp": now + timedelta(days=_TOKEN_EXPIRY_DAYS),
     }
     return jwt.encode(payload, cfg.jwt_secret, algorithm=_ALGORITHM)
 

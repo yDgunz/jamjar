@@ -1,18 +1,5 @@
 const BASE = "/api";
 
-/** Format a YYYY-MM-DD date string as "Thu 2/13/26". Returns the input if unparseable. */
-export function formatDateTime(dateStr: string | null | undefined): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr + "Z");
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 /** Compact date for lists: "Feb 11" (this year) or "Feb 11, 2025". */
 export function formatShortDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "";
@@ -71,6 +58,33 @@ export function recordSongActivity(songId: number, event: SongActivityEvent) {
   }).catch(() => {});
 }
 
+/**
+ * Forget what this browser remembers about the signed-in person: the service
+ * worker's runtime caches (API responses; the precached app shell is kept) and
+ * the locally remembered song activity. Called on logout and when a different
+ * person signs in, so a shared device never shows the previous person's data.
+ * Never throws.
+ */
+export async function clearUserClientState(): Promise<void> {
+  try {
+    localStorage.removeItem(ACTIVITY_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+  try {
+    if ("caches" in window) {
+      const names = await caches.keys();
+      await Promise.all(
+        names
+          .filter((name) => !name.startsWith("workbox-precache"))
+          .map((name) => caches.delete(name).catch(() => false)),
+      );
+    }
+  } catch {
+    /* cache storage unavailable */
+  }
+}
+
 /** "just now", "5m ago", "3h ago", "2d ago", else "Feb 11" — for UTC "YYYY-MM-DD HH:MM:SS". */
 export function formatRelative(utc: string | null | undefined): string {
   if (!utc) return "";
@@ -95,37 +109,6 @@ export function formatDate(dateStr: string | null | undefined): string {
   return `${days[date.getDay()]} ${Number(m)}/${Number(d)}/${shortYear}`;
 }
 
-/**
- * Convert a local time (HH:MM) + date (YYYY-MM-DD) to UTC for storage.
- * Returns { date, time } in UTC.
- */
-export function localToUtc(
-  date: string,
-  time: string,
-): { date: string; time: string } {
-  const local = new Date(`${date}T${time}:00`);
-  const utcDate = local.toISOString().slice(0, 10);
-  const utcTime = local.toISOString().slice(11, 16);
-  return { date: utcDate, time: utcTime };
-}
-
-/**
- * Convert a UTC time (HH:MM) + date (YYYY-MM-DD) to local for display.
- * Returns { date, time } in local timezone.
- */
-export function utcToLocal(
-  date: string,
-  time: string,
-): { date: string; time: string } {
-  const utc = new Date(`${date}T${time}:00Z`);
-  const y = utc.getFullYear();
-  const m = String(utc.getMonth() + 1).padStart(2, "0");
-  const d = String(utc.getDate()).padStart(2, "0");
-  const h = String(utc.getHours()).padStart(2, "0");
-  const min = String(utc.getMinutes()).padStart(2, "0");
-  return { date: `${y}-${m}-${d}`, time: `${h}:${min}` };
-}
-
 /** Format a UTC HH:MM time for display in local timezone, e.g. "7:00 PM" */
 export function formatTime(
   date: string,
@@ -143,15 +126,6 @@ export interface AuthGroup {
   id: number;
   name: string;
   features: string[];
-}
-
-/** Check if any of the user's groups have a given feature enabled */
-export function hasFeature(
-  user: AuthUser | null,
-  feature: string,
-): boolean {
-  if (!user) return false;
-  return user.groups.some((g) => g.features.includes(feature));
 }
 
 export type Role = "superadmin" | "admin" | "editor" | "readonly";
@@ -868,13 +842,6 @@ export const api = {
       body: JSON.stringify({ name }),
     }),
 
-  updateSongGroup: (songId: number, groupId: number) =>
-    fetchJson<Song>(`${BASE}/songs/${songId}/group`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ group_id: groupId }),
-    }),
-
   linkSongGroup: (songId: number, groupId: number) =>
     fetchJson<Song>(`${BASE}/songs/${songId}/groups`, {
       method: "POST",
@@ -1216,13 +1183,6 @@ export const api = {
   adminDeleteGroup: (groupId: number) =>
     fetchJson<{ ok: boolean }>(`${BASE}/admin/groups/${groupId}`, {
       method: "DELETE",
-    }),
-
-  adminUpdateGroupFeatures: (groupId: number, features: string[]) =>
-    fetchJson<AdminGroup>(`${BASE}/admin/groups/${groupId}/features`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ features }),
     }),
 
   adminResendInvite: (userId: number) =>

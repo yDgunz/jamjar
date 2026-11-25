@@ -208,3 +208,52 @@ JOIN sessions s ON s.id = t.session_id
 WHERE t.song_id IS NULL
 ORDER BY s.date DESC;
 ```
+
+## Backups and restoring the database
+
+**What is backed up.** `scripts/backup-db.sh` makes a consistent copy of the SQLite
+database with `sqlite3 .backup`, gzips it into `/data/backups` (the 30 newest are
+kept) and uploads it to R2. It runs before every deploy and nightly at 03:00 from the
+server's crontab (installed by the deploy); nightly output goes to
+`/var/log/jam-backup.log`. Audio is not part of it: with R2 on, audio lives in the
+bucket; without R2 it lives only on the server's disk.
+
+**Where the offsite copy goes.** Set `JAM_R2_BACKUP_BUCKET` in the server's `.env` to a
+bucket that has no public domain. Without it the copy goes under `backups/` in the
+audio bucket with a long random name, because that bucket is public when
+`JAM_R2_CUSTOM_DOMAIN` is set. A backup contains every e-mail address, password hash
+and share link.
+
+**Restoring.** This replaces the live database, so everything since the backup is
+lost. The steps below have not been rehearsed against production yet; try them on a
+copy first.
+
+```bash
+cd /opt/jamjar
+
+# 1. Pick a backup (local copies; or download one from the backup bucket)
+docker compose exec -T app ls -1t /data/backups | head
+
+# 2. Keep the current database, in case the restore is the wrong call
+docker compose exec -T app /app/scripts/backup-db.sh
+
+# 3. Stop the app so nothing writes during the swap
+docker compose stop app
+
+# 4. Put the backup in place (the -wal and -shm files belong to the old database)
+docker compose run --rm --no-deps -T app sh -c '
+  set -e
+  cd /data
+  gunzip -c backups/jam_sessions_YYYYMMDD-HHMMSS.db.gz > jam_sessions.db.restored
+  sqlite3 jam_sessions.db.restored "PRAGMA integrity_check;"
+  rm -f jam_sessions.db-wal jam_sessions.db-shm
+  mv jam_sessions.db.restored jam_sessions.db
+'
+
+# 5. Start again and check
+docker compose up -d --no-build
+curl -sf http://127.0.0.1:8000/health
+```
+
+Tracks cut and recordings uploaded after the backup still have their files in storage
+but no rows in the restored database; Admin → Storage lists them as unreferenced.

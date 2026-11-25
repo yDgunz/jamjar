@@ -71,14 +71,14 @@ def merge_tracks(
     song_id = t1.song_id
     notes = t1.notes
 
-    # Remove old audio files
-    storage.delete(t1.audio_path)
-    storage.delete(t2.audio_path)
+    # Store the new file first: if that fails, the old tracks are still intact
+    new_rel_path = cfg.make_relative(new_path)
+    if storage.is_remote:
+        storage.put(new_rel_path, new_path)
 
     # Delete both old tracks, create merged track
     db.delete_track(t1.id)
     db.delete_track(t2.id)
-    new_rel_path = cfg.make_relative(new_path)
     new_track_id = db.create_track(
         session_id=session.id,
         track_number=t1.track_number,
@@ -87,15 +87,16 @@ def merge_tracks(
         audio_path=new_rel_path,
     )
 
-    # Upload new file to remote storage
-    if storage.is_remote:
-        storage.put(new_rel_path, new_path)
-
     # Restore tag and notes
     if song_id:
         db.update_track(new_track_id, song_id=song_id)
     if notes:
         db.update_track_notes(new_track_id, notes)
+
+    # Remove the old audio last, once nothing points at it any more
+    for old_path in (t1.audio_path, t2.audio_path):
+        if old_path != new_rel_path:
+            storage.delete(old_path)
 
     # Renumber all tracks in the session
     _renumber_tracks(db, session.id, output_dir, audio_format=audio_format)
@@ -162,12 +163,16 @@ def split_track(
     song_id = track.song_id
     notes = track.notes
 
-    # Remove old audio file and DB row
-    storage.delete(track.audio_path)
+    # Store both new files first: if that fails, the old track is still intact
+    rel_path_1 = cfg.make_relative(path_1)
+    rel_path_2 = cfg.make_relative(path_2)
+    if storage.is_remote:
+        storage.put(rel_path_1, path_1)
+        storage.put(rel_path_2, path_2)
+
     db.delete_track(track.id)
 
     # Create first half (keeps metadata)
-    rel_path_1 = cfg.make_relative(path_1)
     first_id = db.create_track(
         session_id=session.id,
         track_number=track.track_number,
@@ -175,8 +180,6 @@ def split_track(
         end_sec=absolute_split,
         audio_path=rel_path_1,
     )
-    if storage.is_remote:
-        storage.put(rel_path_1, path_1)
 
     if song_id:
         db.update_track(first_id, song_id=song_id)
@@ -184,7 +187,6 @@ def split_track(
         db.update_track_notes(first_id, notes)
 
     # Create second half (blank)
-    rel_path_2 = cfg.make_relative(path_2)
     db.create_track(
         session_id=session.id,
         track_number=track.track_number + 1,
@@ -192,8 +194,10 @@ def split_track(
         end_sec=track.end_sec,
         audio_path=rel_path_2,
     )
-    if storage.is_remote:
-        storage.put(rel_path_2, path_2)
+
+    # Remove the old audio last, once nothing points at it any more
+    if track.audio_path not in (rel_path_1, rel_path_2):
+        storage.delete(track.audio_path)
 
     # Renumber all tracks in the session
     _renumber_tracks(db, session.id, output_dir, audio_format=audio_format)

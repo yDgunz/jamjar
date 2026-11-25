@@ -8,6 +8,13 @@ set -euo pipefail
 
 BRANCH="$1"
 
+# The name becomes a directory, a Compose project and a subdomain: accept only a
+# DNS label, so nothing else can reach the rm -rf and Caddy config below
+if [[ ! "$BRANCH" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+    echo "ERROR: '$BRANCH' is not a valid QA environment name (lowercase letters, digits, hyphens)."
+    exit 1
+fi
+
 QA_BASE="/opt/jamjar-qa"
 WORKSPACE="${QA_BASE}/${BRANCH}"
 PROJECT_NAME="jamjar-qa-${BRANCH}"

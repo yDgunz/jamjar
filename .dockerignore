@@ -3,6 +3,12 @@ node_modules/
 web/node_modules/
 input/
 output/
+recordings/
+tracks/
+scores/
+backups/
+.env
+pid
 references/
 .git/
 jam_sessions.db

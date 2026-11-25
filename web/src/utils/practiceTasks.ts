@@ -640,5 +640,3 @@ export function randomTask(category?: Category): PracticeTask {
   }
   throw new Error("unreachable");
 }
-
-export const TEMPLATE_COUNT = Object.values(TEMPLATES).reduce((n, ts) => n + ts.length, 0);

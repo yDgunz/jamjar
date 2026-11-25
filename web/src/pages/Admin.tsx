@@ -143,6 +143,12 @@ export default function Admin() {
     );
   }
 
+  // The hooks (and the admin API calls their effects make) live in AdminPanel,
+  // which is only mounted for superadmins.
+  return <AdminPanel />;
+}
+
+function AdminPanel() {
   const [tab, setTab] = useState<Tab>("users");
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [groups, setGroups] = useState<AdminGroup[]>([]);
