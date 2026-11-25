@@ -40,6 +40,7 @@ from jam_session_processor.auth import (
 from jam_session_processor.config import get_config
 from jam_session_processor.db import Database, share_expired
 from jam_session_processor.email import send_access_request_email as _send_access_request_email
+from jam_session_processor.tab_clean import clean_tab
 
 logger = logging.getLogger(__name__)
 
@@ -845,6 +846,11 @@ class SongResponse(BaseModel):
     # Guitar tablature (intros, riffs, solos), separate from the chords/lyrics chart
     tab: str = ""
     has_tab: bool = False
+    # Where the tab came from: a URL, or text like "Ultimate Guitar, 186 votes, 4.8★"
+    tab_source: str = ""
+    # Reason of the open "marked as bad" flag on the tab, if any. With a tab still
+    # there, it is waiting to be cleaned up; without one, to be replaced.
+    tab_flag: str | None = None
     # Notated sheet music (an uploaded MusicXML file): "mxl" | "musicxml", or null.
     # `score_version` is the file's content hash and changes when it is replaced.
     score_format: str | None = None
@@ -1109,7 +1115,10 @@ def _track_response(track, auto_tagged: set[int] | None = None) -> TrackResponse
 
 
 def _song_response(
-    song, request: Request | None = None, activity: dict[int, dict] | None = None
+    song,
+    request: Request | None = None,
+    activity: dict[int, dict] | None = None,
+    tab_flags: dict[int, str] | None = None,
 ) -> SongResponse:
     db = get_db()
     if activity is None and request is not None and request.state.user:
@@ -1135,6 +1144,11 @@ def _song_response(
     )
     d["has_sheet"] = bool((song.sheet or "").strip())
     d["has_tab"] = bool((song.tab or "").strip())
+    if tab_flags is not None:
+        d["tab_flag"] = tab_flags.get(song.id)
+    else:
+        flag = db.open_tab_flag(song.id)
+        d["tab_flag"] = flag["reason"] if flag else None
     score_path = d.pop("score_path", None)
     d["score_format"] = Path(score_path).suffix.lstrip(".") if score_path else None
     d["score_version"] = Path(score_path).stem.rpartition("-")[2] if score_path else None
@@ -2654,6 +2668,7 @@ def _public_song(song) -> dict:
         "artist": song.artist,
         "sheet": song.sheet,
         "tab": song.tab,
+        "tab_source": song.tab_source,
         "background": background,
         "links": [
             {"id": link["id"], "kind": link["kind"], "url": link["url"], "title": link["title"]}
@@ -2770,8 +2785,9 @@ def list_songs(request: Request, group_id: int | None = None, summary: bool = Fa
         group_ids = [group_id]
     activity = db.get_song_activity(request.state.user.id) if request.state.user else {}
     out = []
+    tab_flags = db.open_tab_flag_reasons()
     for s in db.list_songs(group_ids):
-        r = _song_response(s, request, activity)
+        r = _song_response(s, request, activity, tab_flags)
         if summary:
             r.sheet = ""
             r.tab = ""
@@ -3093,6 +3109,8 @@ def flag_song_link(song_id: int, link_id: int, req: FlagSongLinkRequest, request
 
 class SetSongTabRequest(BaseModel):
     tab: SheetStr
+    # Where the tab came from (a URL, ideally). Left out: the stored source is kept.
+    source: Annotated[str, Field(max_length=500)] | None = None
 
 
 @app.put("/api/songs/{song_id}/tab", response_model=SongResponse)
@@ -3101,8 +3119,70 @@ def set_song_tab(song_id: int, req: SetSongTabRequest, request: Request):
     db = get_db()
     _get_song_with_access(db, song_id, request)
     _require_role(request, "editor")
+    tab = req.tab.strip("\n")
+    source = req.source.strip() if req.source is not None else None
+    by_person = request.state.auth_type != "api_key"
+    if not by_person and tab.strip() and source and db.is_tab_source_flagged(song_id, source):
+        # The curation routine must not bring back a version someone marked as bad
+        raise HTTPException(
+            status_code=409, detail="This version of the tab was marked as bad for this song"
+        )
     user_id = request.state.user.id if request.state.user else None
-    db.set_song_tab(song_id, req.tab.strip("\n"), updated_by=user_id)
+    db.set_song_tab(song_id, tab, updated_by=user_id, source=source)
+    if by_person:
+        # Someone fixed or replaced it by hand: nothing left for the routine to do
+        db.resolve_tab_flags(song_id)
+    return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
+
+
+TabFlagReason = Literal["wrong_song", "inaccurate", "messy", "other"]
+
+
+class FlagSongTabRequest(BaseModel):
+    reason: TabFlagReason = "other"
+
+
+@app.post("/api/songs/{song_id}/tab/flag", response_model=SongResponse)
+def flag_song_tab(song_id: int, req: FlagSongTabRequest, request: Request):
+    """Mark a song's tab as bad. A messy one gets the mechanical cleanup now and
+    stays until the library-curation routine has gone over it; any other reason
+    removes it at once and the routine looks for a different version."""
+    db = get_db()
+    song = _get_song_with_access(db, song_id, request)
+    _require_role(request, "editor")
+    if not (song.tab or "").strip():
+        raise HTTPException(status_code=404, detail="This song has no tab")
+    user_id = request.state.user.id if request.state.user else None
+    messy = req.reason == "messy"
+    db.flag_song_tab(song_id, req.reason, remove=not messy, flagged_by=user_id)
+    if messy:
+        _clean_song_tab(db, song, user_id)
+    return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
+
+
+def _clean_song_tab(db: Database, song, user_id: int | None) -> bool:
+    """Run the mechanical cleanup over a song's tab; True when it changed anything."""
+    cleaned = clean_tab(song.tab, song.name, song.artist, song.sheet)
+    source = cleaned.source if cleaned.source and not song.tab_source else None
+    if not cleaned.text.strip() or (cleaned.text == song.tab and source is None):
+        return False  # never clean a tab away entirely
+    db.set_song_tab(song.id, cleaned.text, updated_by=user_id, source=source)
+    return True
+
+
+@app.post("/api/songs/{song_id}/tab/clean", response_model=SongResponse)
+def clean_song_tab(song_id: int, request: Request):
+    """Strip site clutter from a song's tab (title block, credits, e-mail
+    addresses, symbol legend, chord diagrams, and chords-over-lyrics the chart
+    already has) and move its source line into `tab_source`. Staff lines are
+    never edited. Safe to call again: a clean tab comes back unchanged."""
+    db = get_db()
+    song = _get_song_with_access(db, song_id, request)
+    _require_role(request, "editor")
+    if not (song.tab or "").strip():
+        raise HTTPException(status_code=404, detail="This song has no tab")
+    user_id = request.state.user.id if request.state.user else None
+    _clean_song_tab(db, song, user_id)
     return _song_response(db.get_song(song_id, _get_group_ids(request)), request)
 
 
@@ -3925,6 +4005,41 @@ def admin_resolve_video_flag(flag_id: int, request: Request):
     if not db.get_video_flag(flag_id):
         raise HTTPException(status_code=404, detail="Flag not found")
     db.resolve_video_flag(flag_id)
+
+
+class TabFlagResponse(BaseModel):
+    id: int
+    song_id: int
+    song_name: str
+    song_artist: str
+    reason: str
+    # True: the tab was taken off the song and needs a different version.
+    # False (messy): it is still on the song and needs cleaning up.
+    removed: bool
+    # The tab and its source as they were when it was flagged
+    tab: str
+    source: str
+    flagged_by_name: str | None
+    created_at: str
+    resolved_at: str | None
+
+
+@app.get("/api/admin/tab-flags", response_model=list[TabFlagResponse])
+def admin_list_tab_flags(request: Request, include_resolved: bool = False):
+    """Tabs marked as bad, oldest first: the ones still waiting for the
+    library-curation routine, or all of them with `include_resolved`."""
+    _require_role(request, "superadmin")
+    return get_db().list_tab_flags(include_resolved)
+
+
+@app.post("/api/admin/tab-flags/{flag_id}/resolve", status_code=204)
+def admin_resolve_tab_flag(flag_id: int, request: Request):
+    """The routine is done with a flagged tab (cleaned, replaced, or nothing better found)."""
+    _require_role(request, "superadmin")
+    db = get_db()
+    if not db.get_tab_flag(flag_id):
+        raise HTTPException(status_code=404, detail="Flag not found")
+    db.resolve_tab_flag(flag_id)
 
 
 class VideoMiss(BaseModel):
