@@ -152,9 +152,6 @@ const ICONS = {
   setlists: (
     <path fillRule="evenodd" d="M6 4.75A.75.75 0 016.75 4h10.5a.75.75 0 010 1.5H6.75A.75.75 0 016 4.75zM6 10a.75.75 0 01.75-.75h10.5a.75.75 0 010 1.5H6.75A.75.75 0 016 10zm0 5.25a.75.75 0 01.75-.75h10.5a.75.75 0 010 1.5H6.75a.75.75 0 01-.75-.75zM1.99 4.75a1 1 0 011-1h.01a1 1 0 010 2h-.01a1 1 0 01-1-1zM1.99 10a1 1 0 011-1h.01a1 1 0 110 2h-.01a1 1 0 01-1-1zM1.99 15.25a1 1 0 011-1h.01a1 1 0 110 2h-.01a1 1 0 01-1-1z" clipRule="evenodd" />
   ),
-  more: (
-    <path d="M3 10a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM8.5 10a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM15.5 8.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" />
-  ),
 };
 
 const NAV_ITEMS: { to: string; label: string; icon: keyof typeof ICONS }[] = [
@@ -171,7 +168,21 @@ function NavIcon({ name, className = "h-6 w-6" }: { name: keyof typeof ICONS; cl
   );
 }
 
-/** Menu contents shared by the desktop dropdown and the mobile "More" sheet. */
+/** Round badge with the person's first initial, like account buttons elsewhere. */
+function Avatar({ active, className = "" }: { active: boolean; className?: string }) {
+  const { user } = useAuth();
+  const initial = (user?.name || user?.email || "?").trim().charAt(0).toUpperCase() || "?";
+  return (
+    <span
+      aria-hidden
+      className={`flex select-none items-center justify-center rounded-full bg-accent-600 font-semibold text-white transition ${active ? "ring-2 ring-accent-300 ring-offset-2 ring-offset-gray-950" : ""} ${className}`}
+    >
+      {initial}
+    </span>
+  );
+}
+
+/** Menu contents shared by the desktop dropdown and the mobile account sheet. */
 function MoreMenu({ onChangePassword }: { onChangePassword: () => void }) {
   const { user, logout } = useAuth();
   const row = "flex w-full items-center px-4 py-3 text-left text-[17px] text-gray-100 transition active:bg-white/5 sm:py-2 sm:text-sm sm:hover:bg-white/5";
@@ -250,9 +261,11 @@ function Layout({ children }: { children: React.ReactNode }) {
             <div className="relative" ref={desktopMoreRef}>
               <button
                 onClick={() => setMoreOpen(!moreOpen)}
-                className={`rounded-full px-3 py-1.5 text-sm transition ${moreActive || moreOpen ? "bg-white/10 text-white" : "text-gray-400 hover:text-white"}`}
+                aria-label="Account and tools"
+                aria-expanded={moreOpen}
+                className="flex rounded-full transition hover:opacity-90"
               >
-                More
+                <Avatar active={moreActive || moreOpen} className="h-8 w-8 text-sm" />
               </button>
               {moreOpen && (
                 <div className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-xl border border-white/10 bg-gray-900 pb-1 shadow-2xl">
@@ -300,15 +313,16 @@ function Layout({ children }: { children: React.ReactNode }) {
           ))}
           <button
             onClick={() => setMoreOpen(true)}
+            aria-label="Account and tools"
             className={`flex flex-1 flex-col items-center gap-0.5 pb-1.5 pt-2 ${moreActive ? "text-accent-400" : "text-gray-500"}`}
           >
-            <NavIcon name="more" />
-            <span className="text-[11px] font-medium">More</span>
+            <Avatar active={moreActive} className="h-6 w-6 text-xs" />
+            <span className="text-[11px] font-medium">You</span>
           </button>
         </div>
       </nav>
 
-      {/* Mobile "More" bottom sheet */}
+      {/* Mobile account/tools bottom sheet */}
       {moreOpen && (
         <div className="fixed inset-0 z-50 sm:hidden">
           <div className="absolute inset-0 bg-black/60" onClick={() => setMoreOpen(false)} />
