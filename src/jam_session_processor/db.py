@@ -113,6 +113,25 @@ CREATE TABLE IF NOT EXISTS video_flags (
 
 CREATE INDEX IF NOT EXISTS idx_video_flags_song ON video_flags(song_id);
 
+-- Tabs someone marked as bad. `tab` / `source` are the tab as it was then.
+-- `removed` = 1: the tab was taken off the song at once (wrong song, inaccurate…)
+-- and the library-curation routine looks for another version; 0 (messy): it
+-- stays until the routine has cleaned it. Rows are kept so the routine can't
+-- put the same version (by `source`) back on that song.
+CREATE TABLE IF NOT EXISTS tab_flags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+    tab TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT '',
+    reason TEXT NOT NULL DEFAULT 'other',
+    removed INTEGER NOT NULL DEFAULT 1,
+    flagged_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_tab_flags_song ON tab_flags(song_id);
+
 -- Kinds of video the library-curation routine looked for and couldn't get for a
 -- song, so it doesn't search again every night. 'not_found' counts for
 -- VIDEO_MISS_DAYS; 'not_applicable' (e.g. a backing track for a solo piano
@@ -363,6 +382,7 @@ class Song:
     background_sources: str = ""  # JSON list of {title, url}
     created_at: str | None = None
     tab: str = ""
+    tab_source: str = ""  # where the tab came from (a URL or "Ultimate Guitar, 186 votes, 4.8★")
     score_path: str | None = None  # storage key of the notated score (MusicXML), if any
 
 
@@ -621,6 +641,10 @@ class Database:
             # Guitar tablature (intros, riffs, solos), kept apart from the chords/lyrics chart
             self.conn.execute("ALTER TABLE songs ADD COLUMN tab TEXT NOT NULL DEFAULT ''")
             self.conn.commit()
+        if "tab_source" not in song_cols:
+            # Where a tab came from, kept out of the tab's text
+            self.conn.execute("ALTER TABLE songs ADD COLUMN tab_source TEXT NOT NULL DEFAULT ''")
+            self.conn.commit()
         if "score_path" not in song_cols:
             # Notated sheet music: storage key of an uploaded MusicXML file
             self.conn.execute("ALTER TABLE songs ADD COLUMN score_path TEXT")
@@ -663,6 +687,7 @@ class Database:
             DROP TABLE IF EXISTS activity_log;
             DROP TABLE IF EXISTS song_activity;
             DROP TABLE IF EXISTS video_flags;
+            DROP TABLE IF EXISTS tab_flags;
             DROP TABLE IF EXISTS video_misses;
             DROP TABLE IF EXISTS song_links;
             DROP TABLE IF EXISTS group_songs;
@@ -1927,7 +1952,8 @@ class Database:
                       COUNT(t.id) as take_count,
                       MIN(ses.date) as first_date, MAX(ses.date) as last_date,
                       s.created_by, s.updated_by, s.updated_at,
-                      s.background, s.background_sources, s.created_at, s.tab, s.score_path
+                      s.background, s.background_sources, s.created_at, s.tab, s.tab_source,
+                      s.score_path
                FROM songs s
                LEFT JOIN tracks t ON t.song_id = s.id{take_filter}
                LEFT JOIN sessions ses ON t.session_id = ses.id
@@ -2023,12 +2049,118 @@ class Database:
         )
         self.conn.commit()
 
-    def set_song_tab(self, song_id: int, tab: str, updated_by: int | None = None):
+    def set_song_tab(
+        self,
+        song_id: int,
+        tab: str,
+        updated_by: int | None = None,
+        source: str | None = None,
+    ):
+        """Set a song's tab. `source` (where it came from) is left as it is when
+        None, and always cleared with the tab."""
+        if not tab.strip():
+            source = ""
         self.conn.execute(
-            "UPDATE songs SET tab = ?, updated_by = ?, updated_at = datetime('now') WHERE id = ?",
-            (tab, updated_by, song_id),
+            """UPDATE songs SET tab = ?, tab_source = COALESCE(?, tab_source),
+                      updated_by = ?, updated_at = datetime('now') WHERE id = ?""",
+            (tab, source, updated_by, song_id),
         )
         self.conn.commit()
+
+    # --- Tabs marked as bad ---
+
+    @staticmethod
+    def tab_source_key(source: str) -> str:
+        """A tab source reduced to what identifies it: a URL without scheme,
+        query or trailing slash; otherwise the text, lower-cased."""
+        s = source.strip().lower()
+        s = re.sub(r"^https?://(www\.)?", "", s)
+        return re.sub(r"\s+", " ", s.split("?")[0].split("#")[0].rstrip("/"))
+
+    def flag_song_tab(
+        self, song_id: int, reason: str, remove: bool, flagged_by: int | None = None
+    ) -> int:
+        """Record a song's tab as bad; with `remove`, take it off the song.
+        An open flag that left the tab in place is replaced."""
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM tab_flags WHERE song_id = ? AND resolved_at IS NULL AND removed = 0",
+                (song_id,),
+            )
+            cur = self.conn.execute(
+                """INSERT INTO tab_flags (song_id, tab, source, reason, removed, flagged_by)
+                   SELECT id, tab, tab_source, ?, ?, ? FROM songs WHERE id = ?""",
+                (reason, int(remove), flagged_by, song_id),
+            )
+            if remove:
+                self.conn.execute(
+                    """UPDATE songs SET tab = '', tab_source = '', updated_by = ?,
+                              updated_at = datetime('now') WHERE id = ?""",
+                    (flagged_by, song_id),
+                )
+        return cur.lastrowid
+
+    def list_tab_flags(self, include_resolved: bool = False) -> list[dict]:
+        """Flagged tabs with their song, oldest first; open ones only by default."""
+        rows = self.conn.execute(
+            f"""SELECT f.id, f.song_id, s.name AS song_name, s.artist AS song_artist,
+                       f.reason, f.removed, f.tab, f.source, f.created_at, f.resolved_at,
+                       u.name AS flagged_by_name
+                FROM tab_flags f
+                JOIN songs s ON s.id = f.song_id
+                LEFT JOIN users u ON u.id = f.flagged_by
+                {"" if include_resolved else "WHERE f.resolved_at IS NULL"}
+                ORDER BY f.id"""
+        ).fetchall()
+        return [{**dict(r), "removed": bool(r["removed"])} for r in rows]
+
+    def get_tab_flag(self, flag_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM tab_flags WHERE id = ?", (flag_id,)).fetchone()
+        return dict(row) if row else None
+
+    def open_tab_flag(self, song_id: int) -> dict | None:
+        """The newest flag on a song's tab that the routine hasn't handled yet."""
+        row = self.conn.execute(
+            """SELECT * FROM tab_flags WHERE song_id = ? AND resolved_at IS NULL
+               ORDER BY id DESC LIMIT 1""",
+            (song_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def open_tab_flag_reasons(self) -> dict[int, str]:
+        """song_id -> reason of its open flag, for every song that has one."""
+        rows = self.conn.execute(
+            "SELECT song_id, reason FROM tab_flags WHERE resolved_at IS NULL ORDER BY id"
+        ).fetchall()
+        return {r["song_id"]: r["reason"] for r in rows}
+
+    def resolve_tab_flag(self, flag_id: int):
+        self.conn.execute(
+            """UPDATE tab_flags SET resolved_at = datetime('now')
+               WHERE id = ? AND resolved_at IS NULL""",
+            (flag_id,),
+        )
+        self.conn.commit()
+
+    def resolve_tab_flags(self, song_id: int):
+        """Close every open flag on a song's tab (someone replaced or fixed it by hand)."""
+        self.conn.execute(
+            """UPDATE tab_flags SET resolved_at = datetime('now')
+               WHERE song_id = ? AND resolved_at IS NULL""",
+            (song_id,),
+        )
+        self.conn.commit()
+
+    def is_tab_source_flagged(self, song_id: int, source: str) -> bool:
+        """Was a tab from this source taken off this song as bad?"""
+        key = self.tab_source_key(source)
+        if not key:
+            return False
+        rows = self.conn.execute(
+            "SELECT source FROM tab_flags WHERE song_id = ? AND removed = 1 AND source != ''",
+            (song_id,),
+        ).fetchall()
+        return any(self.tab_source_key(r["source"]) == key for r in rows)
 
     def set_song_score(self, song_id: int, score_path: str | None, updated_by: int | None = None):
         """Set (or clear, with None) the storage key of a song's notated score."""
@@ -2149,6 +2281,9 @@ class Database:
             self.conn.execute(
                 "UPDATE video_flags SET song_id = ? WHERE song_id = ?", (keep_id, merge_id)
             )
+            self.conn.execute(
+                "UPDATE tab_flags SET song_id = ? WHERE song_id = ?", (keep_id, merge_id)
+            )
             # Song share links follow the song (a band's link to the kept song wins)
             self.conn.execute(
                 "UPDATE OR IGNORE share_links SET song_id = ? WHERE song_id = ?",
@@ -2194,6 +2329,7 @@ class Database:
                 """UPDATE songs SET
                        artist = CASE WHEN artist = '' THEN ? ELSE artist END,
                        sheet = CASE WHEN sheet = '' THEN ? ELSE sheet END,
+                       tab_source = CASE WHEN tab = '' THEN ? ELSE tab_source END,
                        tab = CASE WHEN tab = '' THEN ? ELSE tab END,
                        score_path = COALESCE(score_path, ?),
                        background_sources = CASE WHEN background = ''
@@ -2204,6 +2340,7 @@ class Database:
                 (
                     merge["artist"],
                     merge["sheet"],
+                    merge["tab_source"],
                     merge["tab"],
                     merge["score_path"],
                     merge["background_sources"],

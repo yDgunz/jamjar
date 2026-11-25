@@ -241,6 +241,9 @@ export type SongLinkKind = "lesson" | "backing_track" | "other";
 /** Why a video was marked as bad (the nightly routine looks for a replacement) */
 export type VideoFlagReason = "wrong_song" | "wrong_instrument" | "poor_quality" | "unavailable" | "other";
 
+/** Why a tab was marked as bad: "messy" is cleaned up in place, the others are replaced */
+export type TabFlagReason = "wrong_song" | "inaccurate" | "messy" | "other";
+
 export interface SongLink {
   id: number;
   kind: SongLinkKind;
@@ -281,6 +284,10 @@ export interface Song {
   /** Guitar tab (intros, riffs, solos), separate from the chart; empty in list responses */
   tab: string;
   has_tab: boolean;
+  /** Where the tab came from: a URL, or text like "Ultimate Guitar, 186 votes, 4.8★" */
+  tab_source: string;
+  /** Reason the tab is marked as bad and still waiting for the nightly routine, if it is */
+  tab_flag: TabFlagReason | null;
   /** Notated sheet music (an uploaded MusicXML file), drawn by ScoreViewer */
   score_format: "mxl" | "musicxml" | null;
   score_version: string | null;
@@ -828,6 +835,14 @@ export const api = {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tab }),
+    }),
+
+  /** Mark a tab as bad: a messy one is tidied now and stays; any other is removed and replaced overnight */
+  flagSongTab: (songId: number, reason: TabFlagReason) =>
+    fetchJson<Song>(`${BASE}/songs/${songId}/tab/flag`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
     }),
 
   songScoreUrl: (songId: number) => `${BASE}/songs/${songId}/score`,
