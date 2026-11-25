@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { api, formatRelative, formatShortDate, canEdit, localSongActivity } from "../api";
 import type { Song } from "../api";
 import ArtistPicker from "../components/ArtistPicker";
@@ -15,9 +15,9 @@ import { ListSkeleton } from "../components/PageLoadingSkeleton";
 import SearchInput from "../components/SearchInput";
 import { useAuth } from "../context/AuthContext";
 import { useFetch } from "../hooks/useFetch";
-import { NO_ARTIST, countArtists } from "../utils/artists";
+import { NO_ARTIST, countArtists, groupByArtist, sortName } from "../utils/artists";
 
-type SortKey = "opened" | "performed" | "recorded" | "added" | "takes";
+type SortKey = "opened" | "performed" | "recorded" | "added" | "takes" | "name";
 
 const SORT_OPTIONS: { key: SortKey; label: string; short: string }[] = [
   { key: "opened", label: "Recently opened", short: "Opened" },
@@ -25,9 +25,13 @@ const SORT_OPTIONS: { key: SortKey; label: string; short: string }[] = [
   { key: "recorded", label: "Recently recorded", short: "Recorded" },
   { key: "added", label: "Recently added", short: "Added" },
   { key: "takes", label: "Most recorded", short: "Most takes" },
+  { key: "name", label: "Name (A–Z)", short: "A–Z" },
 ];
 
 const SORT_KEYS = SORT_OPTIONS.map((o) => o.key) as string[];
+
+type ArtistSort = "count" | "name";
+const ARTISTS_PATH = "/songs?view=artists";
 
 const HAS_ITEMS: HasItem<HasKey>[] = [
   { key: "chart", label: "Chart", yes: "Chart", no: "No chart" },
@@ -74,6 +78,15 @@ function storedHas(): HasFilter {
 }
 const PAGE = 50;
 
+function stored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const v = localStorage.getItem(key);
+    return v && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 /** Newest of the server timestamp and the locally remembered one. */
 function latest(a: string | null | undefined, b: string | undefined): string | null {
   if (!a) return b ?? null;
@@ -103,7 +116,6 @@ export default function SongCatalog() {
     () => api.listSongs(),
     [],
   );
-  const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortKey>(() => {
     const stored = localStorage.getItem("song-catalog-sort");
     return stored && SORT_KEYS.includes(stored) ? (stored as SortKey) : "opened";
@@ -113,7 +125,21 @@ export default function SongCatalog() {
     if (stored) { const n = Number(stored); if (!isNaN(n)) return n; }
     return null;
   });
-  const [artistFilter, setArtistFilter] = useState<string>(() => localStorage.getItem("song-artist-filter") ?? "");
+  // /songs?view=artists lists the artists; /songs?artist=<name> is one artist's
+  // songs, opened from that list (the artist in the address wins over the chip's
+  // remembered one and isn't remembered itself)
+  const [params] = useSearchParams();
+  // An empty ?artist= stands for the songs that have no artist
+  const urlArtist = params.get("artist") === "" ? NO_ARTIST : params.get("artist");
+  const view: "songs" | "artists" = urlArtist === null && params.get("view") === "artists" ? "artists" : "songs";
+  const [artistSort, setArtistSort] = useState<ArtistSort>(() => stored("song-artists-sort", ["count", "name"] as const, "count"));
+  const [storedArtist, setStoredArtist] = useState<string>(() => localStorage.getItem("song-artist-filter") ?? "");
+  const artistFilter = urlArtist ?? storedArtist;
+  // What is typed belongs to the list it was typed in: it starts empty in another view
+  const searchKey = urlArtist !== null ? `artist:${urlArtist}` : view;
+  const [search, setSearch] = useState({ key: searchKey, text: "" });
+  const query = search.key === searchKey ? search.text : "";
+  const setQuery = (text: string) => setSearch({ key: searchKey, text });
   const [hasFilter, setHasFilter] = useState<HasFilter>(storedHas);
   const [shown, setShown] = useState(PAGE);
   const [lyricHits, setLyricHits] = useState<Map<number, string>>(new Map());
@@ -133,11 +159,12 @@ export default function SongCatalog() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("song-artist-filter", artistFilter);
+      localStorage.setItem("song-artist-filter", storedArtist);
       localStorage.setItem("song-has-filter", JSON.stringify(hasFilter));
       for (const k of ["song-recorded-filter", "song-activity-filter", "song-content-filter"]) localStorage.removeItem(k);
+      localStorage.setItem("song-artists-sort", artistSort);
     } catch { /* storage unavailable */ }
-  }, [artistFilter, hasFilter]);
+  }, [storedArtist, hasFilter, artistSort]);
 
   const q = query.trim().toLowerCase();
 
@@ -161,6 +188,18 @@ export default function SongCatalog() {
     [songs, groupFilter],
   );
   const { artists, none: noArtistCount } = useMemo(() => countArtists(inBand), [inBand]);
+
+  // The Artists view: one row per artist, narrowed by what is typed
+  const artistGroups = useMemo(() => {
+    if (view !== "artists") return [];
+    let groups = groupByArtist(inBand);
+    if (q) groups = groups.filter((g) => (g.name || "no artist").toLowerCase().includes(q));
+    if (artistSort === "name") {
+      groups = [...groups].sort((a, b) =>
+        Number(a.name === "") - Number(b.name === "") || sortName(a.name).localeCompare(sortName(b.name)));
+    }
+    return groups;
+  }, [view, inBand, q, artistSort]);
 
   const results = useMemo(() => {
     const local = localSongActivity();
@@ -188,6 +227,7 @@ export default function SongCatalog() {
       recorded: (a, b) => byRecent(a.last_date, b.last_date, a.name, b.name),
       added: (a, b) => byRecent(a.created_at, b.created_at, a.name, b.name),
       takes: (a, b) => b.take_count - a.take_count || a.name.localeCompare(b.name),
+      name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true }),
     };
     // When searching, title/artist matches come before lyric-only matches
     return list.sort((a, b) =>
@@ -208,7 +248,7 @@ export default function SongCatalog() {
     return () => io.disconnect();
   }, [results.length, shown]);
 
-  const filtersOn = Boolean(artistFilter) || HAS_ITEMS.some((i) => hasFilter[i.key] !== "any");
+  const filtersOn = Boolean(storedArtist && urlArtist === null) || HAS_ITEMS.some((i) => hasFilter[i.key] !== "any");
 
   const defaultGroupId = user && user.groups.length === 1 ? user.groups[0].id : null;
 
@@ -238,8 +278,27 @@ export default function SongCatalog() {
 
   return (
     <div>
+      {urlArtist !== null && (
+        <Link to={ARTISTS_PATH} className="inline-flex items-center gap-0.5 text-sm text-accent-400 hover:text-accent-300">
+          <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+            <path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
+          </svg>
+          Artists
+        </Link>
+      )}
       <PageHeader
-        title="Songs"
+        title={urlArtist !== null ? (
+          urlArtist === NO_ARTIST ? "No artist" : urlArtist
+        ) : (
+          <span className="flex items-baseline gap-4">
+            <Link to="/songs" aria-current={view === "songs" ? "page" : undefined} className={view === "songs" ? "" : "text-gray-600 hover:text-gray-400"}>
+              Songs
+            </Link>
+            <Link to={ARTISTS_PATH} aria-current={view === "artists" ? "page" : undefined} className={view === "artists" ? "" : "text-gray-600 hover:text-gray-400"}>
+              Artists
+            </Link>
+          </span>
+        )}
         actions={canEdit(user) && (
           <HeaderIconButton label="New song" onClick={() => openCreate()}>
             <PlusIcon />
@@ -247,12 +306,27 @@ export default function SongCatalog() {
         )}
       />
 
-      <SearchInput value={query} onChange={setQuery} placeholder="Search songs, artists, lyrics" />
+      <SearchInput
+        value={query}
+        onChange={setQuery}
+        placeholder={view === "artists" ? "Search artists" : "Search songs, artists, lyrics"}
+      />
 
       <div className="mt-3">
+      {view === "artists" ? (
+        <FilterBar onClear={groupFilter !== null ? () => setGroupFilter(null) : undefined}>
+          <SortChip
+            value={artistSort}
+            options={[{ value: "count", label: "Most songs" }, { value: "name", label: "A–Z" }]}
+            onChange={setArtistSort}
+            ariaLabel="Sort artists"
+          />
+          <BandChip groups={user?.groups ?? []} value={groupFilter} onChange={setGroupFilter} />
+        </FilterBar>
+      ) : (
       <FilterBar
         onClear={filtersOn || groupFilter !== null
-          ? () => { setArtistFilter(""); setHasFilter(NO_HAS); setGroupFilter(null); }
+          ? () => { if (urlArtist === null) setStoredArtist(""); setHasFilter(NO_HAS); setGroupFilter(null); }
           : undefined}
       >
         <SortChip
@@ -262,15 +336,18 @@ export default function SongCatalog() {
           ariaLabel="Sort songs"
         />
         <BandChip groups={user?.groups ?? []} value={groupFilter} onChange={setGroupFilter} />
-        <ArtistPicker
-          value={artistFilter}
-          artists={artists}
-          noArtistCount={noArtistCount}
-          total={inBand.length}
-          onChange={setArtistFilter}
-        />
+        {urlArtist === null && (
+          <ArtistPicker
+            value={storedArtist}
+            artists={artists}
+            noArtistCount={noArtistCount}
+            total={inBand.length}
+            onChange={setStoredArtist}
+          />
+        )}
         <HasPicker items={HAS_ITEMS} value={hasFilter} onChange={setHasFilter} />
       </FilterBar>
+      )}
       </div>
 
       <FormModal
@@ -313,6 +390,33 @@ export default function SongCatalog() {
           No songs yet. Add one with <span className="text-white">+</span>, or tag tracks from a{" "}
           <Link to="/sessions" className="text-accent-400 hover:text-accent-300">recording</Link>.
         </p>
+      ) : view === "artists" ? (
+        artistGroups.length === 0 ? (
+          <p className="mt-8 text-center text-gray-400">No artist matches “{query.trim()}”.</p>
+        ) : (
+          <div className="mt-1">
+            <ListRows>
+              {artistGroups.map((g) => {
+                // An artist with one song opens that song; more open the artist's songs
+                const only = g.songs.length === 1 ? g.songs[0] : null;
+                const names = g.songs.slice(0, 4).map((s) => s.name).join(", ");
+                return (
+                  <ListItemCard
+                    key={g.name}
+                    to={only ? `/songs/${only.id}` : `/songs?${new URLSearchParams({ artist: g.name })}`}
+                    state={only ? { from: { to: ARTISTS_PATH, label: "Artists" } } : undefined}
+                    title={g.name || <span className="text-gray-400">No artist</span>}
+                    right={<span className="tabular-nums">{g.songs.length}</span>}
+                  >
+                    <div className="mt-0.5 truncate text-sm text-gray-400">
+                      {names}{g.songs.length > 4 ? ", …" : ""}
+                    </div>
+                  </ListItemCard>
+                );
+              })}
+            </ListRows>
+          </div>
+        )
       ) : results.length === 0 ? (
         <div className="mt-8 text-center">
           <p className="text-gray-400">
@@ -337,7 +441,7 @@ export default function SongCatalog() {
                 : sortBy === "added" ? (song.created_at ? `added ${formatRelative(song.created_at)}` : null)
                 : song.last_date ? `recorded ${formatShortDate(song.last_date)}` : null;
               const meta = [
-                song.artist,
+                urlArtist === null ? song.artist : null,
                 when,
                 multiGroup && !groupFilter ? (song.groups?.length ? song.groups.map((g) => g.name).join(", ") : song.group_name) : null,
               ].filter(Boolean).join(" · ");
