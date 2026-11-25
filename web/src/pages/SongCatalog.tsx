@@ -29,6 +29,25 @@ const SORT_KEYS = SORT_OPTIONS.map((o) => o.key) as string[];
 
 type RecordedFilter = "any" | "yes" | "no";
 type ActivityFilter = "any" | "yes" | "no";
+
+const CONTENT_OPTIONS = [
+  { value: "any", label: "Any content", short: "" },
+  { value: "chart", label: "Has a chart", short: "Chart" },
+  { value: "tab", label: "Has a guitar tab", short: "Tab" },
+  { value: "score", label: "Has sheet music", short: "Sheet music" },
+  { value: "no-chart", label: "No chart", short: "No chart" },
+  { value: "no-tab", label: "No guitar tab", short: "No tab" },
+  { value: "no-score", label: "No sheet music", short: "No sheet music" },
+] as const;
+type ContentFilter = (typeof CONTENT_OPTIONS)[number]["value"];
+
+/** Whether a song has the chart / tab / score the content filter asks about. */
+function hasContent(song: Song, f: ContentFilter): boolean {
+  if (f === "any") return true;
+  const kind = f.replace("no-", "");
+  const has = kind === "chart" ? song.has_sheet : kind === "tab" ? song.has_tab : Boolean(song.score_format);
+  return f.startsWith("no-") ? !has : Boolean(has);
+}
 const PAGE = 50;
 
 function stored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
@@ -86,6 +105,9 @@ export default function SongCatalog() {
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>(() =>
     stored("song-activity-filter", ["any", "yes", "no"] as const, "any"),
   );
+  const [contentFilter, setContentFilter] = useState<ContentFilter>(() =>
+    stored("song-content-filter", CONTENT_OPTIONS.map((o) => o.value), "any"),
+  );
   const [shown, setShown] = useState(PAGE);
   const [lyricHits, setLyricHits] = useState<Map<number, string>>(new Map());
   const sentinel = useRef<HTMLDivElement>(null);
@@ -107,8 +129,9 @@ export default function SongCatalog() {
       localStorage.setItem("song-artist-filter", artistFilter);
       localStorage.setItem("song-recorded-filter", recordedFilter);
       localStorage.setItem("song-activity-filter", activityFilter);
+      localStorage.setItem("song-content-filter", contentFilter);
     } catch { /* storage unavailable */ }
-  }, [artistFilter, recordedFilter, activityFilter]);
+  }, [artistFilter, recordedFilter, activityFilter, contentFilter]);
 
   const q = query.trim().toLowerCase();
 
@@ -151,6 +174,7 @@ export default function SongCatalog() {
         (r) => Boolean(r.song.last_opened_at || r.song.last_performed_at) === (activityFilter === "yes"),
       );
     }
+    if (contentFilter !== "any") list = list.filter((r) => hasContent(r.song, contentFilter));
     if (groupFilter !== null) {
       list = list.filter((r) => (r.song.groups ?? []).some((g) => g.id === groupFilter) || r.song.group_id === groupFilter);
     }
@@ -166,10 +190,10 @@ export default function SongCatalog() {
     return list.sort((a, b) =>
       (q ? Number(a.hit === "lyrics") - Number(b.hit === "lyrics") : 0) || cmp[sortBy](a.song, b.song),
     );
-  }, [songs, sortBy, groupFilter, q, lyricHits, artistFilter, recordedFilter, activityFilter]);
+  }, [songs, sortBy, groupFilter, q, lyricHits, artistFilter, recordedFilter, activityFilter, contentFilter]);
 
   // Show the list a page at a time; load more as the bottom comes into view
-  useEffect(() => { setShown(PAGE); }, [sortBy, groupFilter, q, artistFilter, recordedFilter, activityFilter]);
+  useEffect(() => { setShown(PAGE); }, [sortBy, groupFilter, q, artistFilter, recordedFilter, activityFilter, contentFilter]);
   useEffect(() => {
     const el = sentinel.current;
     if (!el) return;
@@ -181,7 +205,7 @@ export default function SongCatalog() {
     return () => io.disconnect();
   }, [results.length, shown]);
 
-  const filtersOn = Boolean(artistFilter) || recordedFilter !== "any" || activityFilter !== "any";
+  const filtersOn = Boolean(artistFilter) || recordedFilter !== "any" || activityFilter !== "any" || contentFilter !== "any";
 
   const defaultGroupId = user && user.groups.length === 1 ? user.groups[0].id : null;
 
@@ -225,7 +249,7 @@ export default function SongCatalog() {
       <div className="mt-3">
       <FilterBar
         onClear={filtersOn || groupFilter !== null
-          ? () => { setArtistFilter(""); setRecordedFilter("any"); setActivityFilter("any"); setGroupFilter(null); }
+          ? () => { setArtistFilter(""); setRecordedFilter("any"); setActivityFilter("any"); setContentFilter("any"); setGroupFilter(null); }
           : undefined}
       >
         <SortChip
@@ -265,6 +289,15 @@ export default function SongCatalog() {
           ariaLabel="Filter by whether you've opened the song"
           defaultValue="any"
           placeholder="Activity"
+        />
+        <FilterChip
+          value={contentFilter}
+          options={CONTENT_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+          onChange={setContentFilter}
+          ariaLabel="Filter by chart, tab or sheet music"
+          defaultValue="any"
+          placeholder="Has"
+          display={(v) => CONTENT_OPTIONS.find((o) => o.value === v)?.short ?? ""}
         />
       </FilterBar>
       </div>
