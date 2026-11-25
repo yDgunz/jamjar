@@ -32,18 +32,10 @@ export default function FilterChip<T extends string>({
   const current = options.find((o) => o.value === value)?.label ?? "";
   const label = !active && placeholder ? placeholder : display ? display(value) : current;
   return (
-    <span
-      className={`relative inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-sm transition-colors ${
-        active
-          ? "border-accent-500/50 bg-accent-500/15 text-accent-300"
-          : "border-white/10 bg-white/[0.04] text-gray-300 hover:bg-white/[0.08]"
-      }`}
-    >
+    <span className={chipClass(active)}>
       {icon}
       <span className="max-w-[12rem] truncate">{label}</span>
-      <svg className="h-3.5 w-3.5 shrink-0 opacity-70" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-        <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
-      </svg>
+      <ChipChevron />
       <select
         value={value}
         onChange={(e) => onChange(e.target.value as T)}
@@ -55,6 +47,47 @@ export default function FilterChip<T extends string>({
         ))}
       </select>
     </span>
+  );
+}
+
+/** The pill look shared by every chip in a filter bar; highlighted when its filter is set. */
+function chipClass(active: boolean): string {
+  return `relative inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-sm transition-colors ${
+    active
+      ? "border-accent-500/50 bg-accent-500/15 text-accent-300"
+      : "border-white/10 bg-white/[0.04] text-gray-300 hover:bg-white/[0.08]"
+  }`;
+}
+
+/**
+ * A chip that opens something of its own (a picker panel) instead of the
+ * native dropdown. Looks the same as a FilterChip.
+ */
+export function ChipButton({
+  label,
+  active,
+  onClick,
+  ariaLabel,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  ariaLabel: string;
+}) {
+  return (
+    <button type="button" onClick={onClick} aria-label={ariaLabel} aria-haspopup="dialog" className={chipClass(active)}>
+      <span className="max-w-[12rem] truncate">{label}</span>
+      <ChipChevron />
+    </button>
+  );
+}
+
+/** The small down arrow at the end of a chip. */
+function ChipChevron() {
+  return (
+    <svg className="h-3.5 w-3.5 shrink-0 opacity-70" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+      <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+    </svg>
   );
 }
 
