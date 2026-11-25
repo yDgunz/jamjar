@@ -32,48 +32,78 @@ export default defineConfig({
         // The sheet-music engraver (Verovio, ~8 MB) is fetched the first time a
         // score is opened; keep it out of the precache every visitor downloads.
         globIgnores: ['**/verovio.worker-*.js'],
-        // No navigateFallback — use NetworkFirst for navigations instead,
-        // so the browser always fetches fresh index.html from the server.
-        // Hashed JS/CSS bundles are still precached and served instantly.
+        // Navigations: vite-plugin-pwa registers a NavigationRoute that answers
+        // them with the precached index.html (that is what lets the installed
+        // app open offline); a new deploy replaces it through autoUpdate.
+        // Public share pages and API URLs are excluded, so they always go to
+        // the server, which answers share pages with real 404/410 statuses and
+        // link-preview tags.
+        navigateFallbackDenylist: [/^\/share\//, /^\/api\//],
+        // Workbox tests a RegExp urlPattern against the full URL
+        // (https://host/api/...), so the API rules match on url.pathname in
+        // functions instead. The functions are serialised into sw.js: each one
+        // must be self-contained (no outer variables). Only GET is handled.
         runtimeCaching: [
           {
-            // SPA navigations — always try network first for fresh index.html,
-            // fall back to cache only when offline
-            urlPattern: ({request}) => request.mode === 'navigate',
+            // Navigations the precached index.html doesn't answer (share
+            // pages) — network first, cached copy only when offline
+            urlPattern: ({ request, url }) => request.mode === 'navigate' && !url.pathname.startsWith('/api/'),
             handler: 'NetworkFirst',
             options: { cacheName: 'navigation', expiration: { maxEntries: 5, maxAgeSeconds: 24 * 60 * 60 } },
           },
           {
-            // Song list — show cached, refresh in background
-            urlPattern: /^\/api\/songs(\?.*)?$/,
-            handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'songs-list', expiration: { maxEntries: 10, maxAgeSeconds: 7 * 24 * 60 * 60 } },
+            // Song list — fresh while online (an edit is never followed by a
+            // stale read), cached copy when offline or the network is slow
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname === '/api/songs',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'songs-list',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 10, maxAgeSeconds: 7 * 24 * 60 * 60 },
+            },
           },
           {
-            // Individual songs — cache chart/lyrics for offline perform mode
-            urlPattern: /^\/api\/songs\/\d+$/,
-            handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'songs-detail', expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 60 * 60 } },
+            // Individual songs — chart/lyrics kept for offline Perform mode
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/api\/songs\/\d+$/.test(url.pathname),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'songs-detail',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 60 * 60 },
+            },
           },
           {
             // Auth — never cache
-            urlPattern: /^\/api\/auth\//,
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith('/api/auth/'),
             handler: 'NetworkOnly',
           },
           {
             // Audio — never cache
-            urlPattern: /^\/api\/(tracks|sessions)\/\d+\/audio/,
+            urlPattern: ({ url, sameOrigin }) =>
+              sameOrigin && /^\/api\/(tracks|sessions)\/\d+\/audio/.test(url.pathname),
             handler: 'NetworkOnly',
           },
           {
             // Public share links (data and audio) — never cache, so a revoked or
             // expired link stops working at once
-            urlPattern: /^\/api\/share\//,
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith('/api/share/'),
+            handler: 'NetworkOnly',
+          },
+          {
+            // Sheet-music files, admin data, job progress and the share-link
+            // list — never cache
+            urlPattern: ({ url, sameOrigin }) =>
+              sameOrigin &&
+              (/^\/api\/songs\/\d+\/score$/.test(url.pathname) ||
+                url.pathname.startsWith('/api/admin/') ||
+                url.pathname.startsWith('/api/jobs/') ||
+                url.pathname === '/api/shares' ||
+                url.pathname.startsWith('/api/shares/')),
             handler: 'NetworkOnly',
           },
           {
             // All other API — try network first, fall back to cache
-            urlPattern: /^\/api\//,
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith('/api/'),
             handler: 'NetworkFirst',
             options: { cacheName: 'api-general', expiration: { maxEntries: 50, maxAgeSeconds: 24 * 60 * 60 } },
           },

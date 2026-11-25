@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { SongLink, VideoFlagReason } from "../api";
-import { LINK_KIND_LABEL, youTubeId, youTubeStart } from "../utils/youtube";
+import { hostname, LINK_KIND_LABEL, youTubeId, youTubeStart } from "../utils/youtube";
 
 /**
  * Horizontal strip of reference videos for a song. Tapping a YouTube video
@@ -97,7 +97,7 @@ export default function SongVideos({
                 )}
               </div>
               <div className="mt-1.5 line-clamp-2 text-[13px] leading-snug text-gray-300">
-                {link.title || new URL(link.url).hostname}
+                {link.title || hostname(link.url)}
               </div>
             </>
           );

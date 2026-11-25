@@ -1,3 +1,12 @@
+/** A URL's host without "www." for display; the input itself when it isn't a valid URL. */
+export function hostname(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
 /** Extract a YouTube video id from the common URL shapes, or null. */
 export function youTubeId(url: string): string | null {
   let u: URL;
