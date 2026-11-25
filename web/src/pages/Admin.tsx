@@ -76,6 +76,28 @@ function eventLabel(type: string): string {
   return EVENT_LABELS[type] ?? type;
 }
 
+function formatDay(iso: string): string {
+  const d = new Date(iso.length > 10 ? iso.replace(" ", "T") + "Z" : iso + "T00:00:00");
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+}
+
+function formatHours(totalSeconds: number): string {
+  const mins = Math.round(totalSeconds / 60);
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+function GroupStat({ label, value, note }: { label: string; value: number | string; note?: string }) {
+  return (
+    <div>
+      <dt className="text-xs text-gray-500">{label}</dt>
+      <dd className="text-base font-medium tabular-nums text-white">{value}</dd>
+      {note && <dd className="text-xs text-gray-500">{note}</dd>}
+    </div>
+  );
+}
+
 function formatDuration(totalSeconds: number): string {
   const days = Math.floor(totalSeconds / 86400);
   const hours = Math.floor((totalSeconds % 86400) / 3600);
@@ -531,36 +553,53 @@ export default function Admin() {
               Add Group
             </button>
           </div>
-          <div className="overflow-x-auto rounded-lg border border-gray-800">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-800 bg-gray-900 text-left text-xs text-gray-400">
-                  <th className="px-3 py-2 font-medium">Name</th>
-                  <th className="px-3 py-2 font-medium">Members</th>
-                  <th className="px-3 py-2 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800/50">
-                {groups.map((group) => (
-                  <tr key={group.id} className="hover:bg-gray-900/50">
-                    <td className="px-3 py-2 text-white">{group.name}</td>
-                    <td className="px-3 py-2 text-gray-300">
-                      {group.member_count} member{group.member_count !== 1 ? "s" : ""}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <button
-                        onClick={() => setDeleteModal({ type: "group", id: group.id, name: group.name })}
-                        className="rounded px-2 py-1 text-xs text-red-400 transition hover:bg-red-950 hover:text-red-300"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-3">
+            {groups.map((group) => {
+              const taggedPct = group.track_count
+                ? Math.round((group.tagged_track_count / group.track_count) * 100)
+                : null;
+              return (
+                <div key={group.id} className="rounded-lg border border-gray-800 p-3 sm:p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-medium text-white">{group.name}</h3>
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        {group.created_at ? `Created ${formatDay(group.created_at)}` : ""}
+                        {group.created_at && " · "}
+                        {group.last_session_date
+                          ? `Last recording ${formatDay(group.last_session_date)}`
+                          : "No recordings yet"}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setDeleteModal({ type: "group", id: group.id, name: group.name })}
+                      className="shrink-0 rounded px-2 py-1 text-xs text-red-400 transition hover:bg-red-950 hover:text-red-300"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-3 sm:grid-cols-6">
+                    <GroupStat label="Members" value={group.member_count} />
+                    <GroupStat label="Songs" value={group.song_count} />
+                    <GroupStat label="Setlists" value={group.setlist_count} />
+                    <GroupStat label="Recordings" value={group.session_count} />
+                    <GroupStat label="Recorded" value={formatHours(group.recorded_sec)} />
+                    <GroupStat
+                      label="Tracks"
+                      value={group.track_count}
+                      note={taggedPct === null ? undefined : `${taggedPct}% tagged`}
+                    />
+                  </dl>
+                  <p className="mt-3 text-xs text-gray-400">
+                    {group.members.length === 0
+                      ? <span className="text-gray-600">No members</span>
+                      : group.members.join(", ")}
+                  </p>
+                </div>
+              );
+            })}
             {groups.length === 0 && (
-              <p className="px-3 py-4 text-center text-sm text-gray-500">No groups yet.</p>
+              <p className="rounded-lg border border-gray-800 px-3 py-4 text-center text-sm text-gray-500">No groups yet.</p>
             )}
           </div>
         </section>
