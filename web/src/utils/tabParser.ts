@@ -205,3 +205,90 @@ export function symbolsUsed(blocks: TabBlock[]): [string, string][] {
     sym === "<>" ? /<\d+>/.test(body) : sym === "( )" ? /\(\d+\)/.test(body) : body.includes(sym),
   );
 }
+
+/** What to draw for one string of a staff. Positions are character columns. */
+export type StaffMark =
+  /** The string itself, from one column to another */
+  | { kind: "line"; from: number; to: number }
+  | { kind: "bar"; col: number }
+  /** A fret number; `target` is the pitch a bend reaches, not a fretted note */
+  | { kind: "fret"; col: number; text: string; target: boolean }
+  /** Hammer-on or pull-off: an arc between the middles of two fret numbers */
+  | { kind: "slur"; from: number; to: number }
+  | { kind: "slide"; col: number; up: boolean }
+  | { kind: "bend"; col: number; release: boolean }
+  | { kind: "vibrato"; from: number; to: number }
+  | { kind: "mute"; col: number }
+  /** Anything else, written as it is */
+  | { kind: "text"; col: number; text: string };
+
+/**
+ * Turn one line of tablature into things to draw: the string as a line with
+ * gaps for its notes, bar lines, and playing techniques as marks (an arc for
+ * "5h7", a slanted stroke for "5/7", an arrow for "7b9"). Whatever isn't
+ * recognised stays as text in its own column, so nothing is lost.
+ */
+export function layoutStaffLine(line: string): { name: string; marks: StaffMark[] } {
+  const at = line.search(/[|:]/) + 1;
+  const marks: StaffMark[] = [];
+  if (at > 0) marks.push({ kind: "bar", col: at - 1 });
+  // The string ends at its last dash or bar; what follows ("x2") is a remark
+  const end = Math.max(line.lastIndexOf("-"), line.lastIndexOf("|")) + 1;
+
+  type Token = { col: number; text: string };
+  const tokens: Token[] = [];
+  const re = /-+|\|+|\d+|\s+|[^-|\d\s]+/g;
+  re.lastIndex = at;
+  for (let m = re.exec(line); m; m = re.exec(line)) tokens.push({ col: m.index, text: m[0] });
+
+  const isFret = (t?: Token) => !!t && /^\d/.test(t.text);
+  const mid = (t: Token) => t.col + t.text.length / 2;
+  // Starts in the middle of the opening bar; stops a little short of each note
+  let lineFrom = Math.max(at - 0.5, 0);
+  const GAP = 0.15;
+  const lineTo = (col: number) => {
+    if (col > lineFrom) marks.push({ kind: "line", from: lineFrom, to: col });
+  };
+
+  tokens.forEach((t, k) => {
+    const [prev, next] = [tokens[k - 1], tokens[k + 1]];
+    const c = t.text[0];
+    if (t.col >= end) {
+      if (t.text.trim()) marks.push({ kind: "text", col: t.col, text: t.text });
+    } else if (c === "-") {
+      // part of the string
+    } else if (c === "|") {
+      for (let j = 0; j < t.text.length; j++) marks.push({ kind: "bar", col: t.col + j });
+    } else if (isFret(t)) {
+      lineTo(t.col - GAP);
+      lineFrom = t.col + t.text.length + GAP;
+      const before = prev?.text.toLowerCase();
+      marks.push({ kind: "fret", col: t.col, text: t.text, target: before === "b" && isFret(tokens[k - 2]) });
+    } else if (/^[hp]$/i.test(t.text) && isFret(prev) && isFret(next)) {
+      marks.push({ kind: "slur", from: mid(prev), to: mid(next) });
+    } else if (/^[/\\s]$/i.test(t.text) && (isFret(prev) || isFret(next))) {
+      const up = c === "/" || (c !== "\\" && (!isFret(prev) || !isFret(next) || +next.text >= +prev.text));
+      lineTo(t.col - GAP);
+      lineFrom = t.col + 1 + GAP;
+      marks.push({ kind: "slide", col: t.col, up });
+    } else if (/^[br]$/i.test(t.text) && isFret(prev)) {
+      lineTo(t.col - GAP);
+      lineFrom = t.col + 1 + GAP;
+      marks.push({ kind: "bend", col: t.col, release: c.toLowerCase() === "r" });
+    } else if (/^~+$/.test(t.text)) {
+      lineTo(t.col - GAP);
+      lineFrom = t.col + t.text.length + GAP;
+      marks.push({ kind: "vibrato", from: t.col, to: t.col + t.text.length });
+    } else if (/^x+$/i.test(t.text)) {
+      lineTo(t.col - GAP);
+      lineFrom = t.col + t.text.length + GAP;
+      for (let j = 0; j < t.text.length; j++) marks.push({ kind: "mute", col: t.col + j });
+    } else if (t.text.trim()) {
+      lineTo(t.col - GAP);
+      lineFrom = t.col + t.text.length + GAP;
+      marks.push({ kind: "text", col: t.col, text: t.text });
+    }
+  });
+  lineTo(line[end - 1] === "|" ? end - 0.5 : end);
+  return { name: at > 0 ? line.slice(0, at - 1) : "", marks };
+}

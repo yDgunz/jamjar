@@ -1,12 +1,13 @@
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ChordSheet from "./ChordSheet";
-import { parseTab, symbolsUsed, wrapStaff } from "../utils/tabParser";
-import type { TabBlock } from "../utils/tabParser";
+import { layoutStaffLine, parseTab, symbolsUsed, wrapStaff } from "../utils/tabParser";
+import type { StaffMark, TabBlock } from "../utils/tabParser";
 
 /**
  * A guitar tab, drawn for reading while you play: each staff is one block with
- * its chord names lined up over it, fret numbers stand out from the string
- * lines, and a staff too wide for the screen wraps at a bar line instead of
+ * its chord names lined up over it, the strings are drawn as thin lines with
+ * the fret numbers sitting on them and techniques as marks (see `StaffRows`),
+ * and a staff too wide for the screen wraps at a bar line instead of
  * scrolling sideways. Sections get a heading and, when there are several, a
  * row of chips to jump between them.
  */
@@ -15,7 +16,7 @@ export default function TabSheet({ text, source }: { text: string; source?: stri
   const symbols = useMemo(() => symbolsUsed(blocks), [blocks]);
   const rootRef = useRef<HTMLDivElement>(null);
   const probeRef = useRef<HTMLSpanElement>(null);
-  const [cols, setCols] = useState(0);
+  const [grid, setGrid] = useState<Grid>({ cols: 0, ch: 0, font: 0 });
 
   // How many monospace characters fit across a staff block
   useLayoutEffect(() => {
@@ -24,7 +25,13 @@ export default function TabSheet({ text, source }: { text: string; source?: stri
     if (!root || !probe) return;
     const measure = () => {
       const ch = probe.getBoundingClientRect().width / 20;
-      if (ch > 0) setCols(Math.floor((root.clientWidth - STAFF_PAD_PX) / ch));
+      if (ch <= 0) return;
+      const next = {
+        cols: Math.floor((root.clientWidth - STAFF_PAD_PX) / ch),
+        ch,
+        font: parseFloat(getComputedStyle(probe).fontSize) || 13,
+      };
+      setGrid((g) => (g.cols === next.cols && g.ch === next.ch && g.font === next.font ? g : next));
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -57,7 +64,7 @@ export default function TabSheet({ text, source }: { text: string; source?: stri
       )}
 
       {blocks.map((b, i) => (
-        <Block key={i} block={b} index={i} cols={cols} first={i === 0} />
+        <Block key={i} block={b} index={i} grid={grid} first={i === 0} />
       ))}
 
       {(symbols.length > 0 || source) && (
@@ -68,7 +75,7 @@ export default function TabSheet({ text, source }: { text: string; source?: stri
               <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 sm:grid-cols-[auto_1fr_auto_1fr]">
                 {symbols.map(([sym, name]) => (
                   <Fragment key={sym}>
-                    <dt className="font-mono font-semibold text-accent-400">{sym}</dt>
+                    <dt className="font-mono font-semibold text-accent-400">{SYMBOL_DRAWN[sym] ?? sym}</dt>
                     <dd className="text-gray-400">{name}</dd>
                   </Fragment>
                 ))}
@@ -86,7 +93,17 @@ const STAFF_FONT = "font-mono text-[13px] leading-[1.3] sm:text-[14px]";
 /** Horizontal padding of a staff block (px-2.5 on both sides) */
 const STAFF_PAD_PX = 20;
 
-function Block({ block, index, cols, first }: { block: TabBlock; index: number; cols: number; first: boolean }) {
+/** The width of the staff blocks in characters, and the size of one character */
+interface Grid {
+  cols: number;
+  ch: number;
+  font: number;
+}
+
+/** How the staff draws the symbols a tab is typed with, for the Symbols list */
+const SYMBOL_DRAWN: Record<string, string> = { h: "⌒", p: "⌒", b: "⤴", r: "⤵", s: "/", x: "×" };
+
+function Block({ block, index, grid, first }: { block: TabBlock; index: number; grid: Grid; first: boolean }) {
   switch (block.type) {
     case "section":
       return (
@@ -99,7 +116,7 @@ function Block({ block, index, cols, first }: { block: TabBlock; index: number; 
         </h3>
       );
     case "staff":
-      return <Staff block={block} cols={cols} />;
+      return <Staff block={block} grid={grid} />;
     case "chords":
       return <div className="my-1 whitespace-pre-wrap font-mono text-[14px] font-semibold text-accent-400">{block.text}</div>;
     case "note":
@@ -113,9 +130,9 @@ function Block({ block, index, cols, first }: { block: TabBlock; index: number; 
   }
 }
 
-function Staff({ block, cols }: { block: Extract<TabBlock, { type: "staff" }>; cols: number }) {
+function Staff({ block, grid }: { block: Extract<TabBlock, { type: "staff" }>; grid: Grid }) {
   // Until the width is known, don't wrap (the block scrolls sideways)
-  const chunks = useMemo(() => (cols > 0 ? wrapStaff(block, cols) : [block]), [block, cols]);
+  const chunks = useMemo(() => (grid.cols > 0 ? wrapStaff(block, grid.cols) : [block]), [block, grid.cols]);
   return (
     <div className={`${STAFF_FONT} my-2 overflow-x-auto rounded-lg bg-white/[0.04] px-2.5 py-2`}>
       {chunks.map((c, k) => (
@@ -123,9 +140,7 @@ function Staff({ block, cols }: { block: Extract<TabBlock, { type: "staff" }>; c
           {c.labels.map((l, j) => (
             <div key={`l${j}`} className="font-semibold text-accent-400">{l || " "}</div>
           ))}
-          {c.lines.map((l, j) => (
-            <StaffLine key={j} line={l} />
-          ))}
+          {grid.ch > 0 ? <StaffRows lines={c.lines} grid={grid} /> : c.lines.map((l, j) => <StaffLine key={j} line={l} />)}
           {c.beats.map((l, j) => (
             <div key={`b${j}`} className="text-gray-500">{l}</div>
           ))}
@@ -135,7 +150,100 @@ function Staff({ block, cols }: { block: Extract<TabBlock, { type: "staff" }>; c
   );
 }
 
-/** One string: its name and the dashes recede, the notes stand out. */
+/**
+ * The strings of one staff, drawn: a thin line per string that stops either
+ * side of each fret number, bar lines joined from the top string to the
+ * bottom one, and techniques as marks. Everything sits on the same character
+ * grid as the text around it, so chord names and beat counts still line up.
+ */
+function StaffRows({ lines, grid }: { lines: string[]; grid: Grid }) {
+  const { ch, font } = grid;
+  const rowH = Math.round(font * 1.25);
+  const rows = useMemo(() => lines.map(layoutStaffLine), [lines]);
+  const width = Math.max(...lines.map((l) => l.length)) * ch;
+  const last = rows.length - 1;
+  return (
+    <svg
+      role="img"
+      aria-label={lines.join("\n")}
+      width={width}
+      height={rowH * rows.length}
+      className="block font-mono"
+      fontSize={font}
+      fill="currentColor"
+      stroke="none"
+    >
+      {rows.map((row, r) => {
+        const y = rowH * (r + 0.5);
+        const base = y + font * 0.36;
+        return (
+          <g key={r}>
+            <text x={0} y={base} className="text-gray-500" xmlSpace="preserve">{row.name}</text>
+            {row.marks.map((m, i) => (
+              <Mark key={i} m={m} y={y} base={base} ch={ch} top={r === 0 ? y : y - rowH / 2} bottom={r === last ? y : y + rowH / 2} />
+            ))}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function Mark({ m, y, base, ch, top, bottom }: { m: StaffMark; y: number; base: number; ch: number; top: number; bottom: number }) {
+  const accent = { className: "text-accent-400", stroke: "currentColor", fill: "none", strokeWidth: 1.5, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  switch (m.kind) {
+    case "line":
+      return <line x1={m.from * ch} x2={m.to * ch} y1={y} y2={y} className="text-gray-600" stroke="currentColor" strokeWidth={1} />;
+    case "bar": {
+      const x = (m.col + 0.5) * ch;
+      return <line x1={x} x2={x} y1={top} y2={bottom} className="text-gray-500" stroke="currentColor" strokeWidth={1} />;
+    }
+    case "fret":
+      return (
+        <text x={m.col * ch} y={base} fontWeight={600} className={m.target ? "text-accent-400" : "text-white"}>
+          {m.text}
+        </text>
+      );
+    case "slur": {
+      const [x1, x2] = [m.from * ch, m.to * ch];
+      const up = y - ch * 0.75;
+      return <path d={`M${x1} ${up} Q${(x1 + x2) / 2} ${up - ch * 0.9} ${x2} ${up}`} {...accent} strokeWidth={1.25} />;
+    }
+    case "slide": {
+      const [x1, x2] = [(m.col + 0.1) * ch, (m.col + 0.9) * ch];
+      const d = ch * 0.5 * (m.up ? 1 : -1);
+      return <line x1={x1} x2={x2} y1={y + d} y2={y - d} {...accent} />;
+    }
+    case "bend": {
+      const [x1, x2] = [(m.col + 0.05) * ch, (m.col + 0.6) * ch];
+      const [from, to] = m.release ? [y - ch * 0.7, y + ch * 0.35] : [y + ch * 0.35, y - ch * 0.7];
+      const head = ch * 0.32 * (m.release ? -1 : 1);
+      return (
+        <path
+          d={`M${x1} ${from} Q${x2} ${from} ${x2} ${to} M${x2 - Math.abs(head)} ${to + head} L${x2} ${to} L${x2 + Math.abs(head)} ${to + head}`}
+          {...accent}
+          strokeWidth={1.25}
+        />
+      );
+    }
+    case "vibrato": {
+      let d = `M${m.from * ch} ${y}`;
+      const half = ch / 2;
+      for (let x = m.from * ch, k = 0; x < m.to * ch - 0.01; x += half, k++) {
+        d += ` Q${x + half / 2} ${y + (k % 2 ? 1 : -1) * ch * 0.55} ${x + half} ${y}`;
+      }
+      return <path d={d} {...accent} strokeWidth={1.25} />;
+    }
+    case "mute": {
+      const [x, d] = [(m.col + 0.5) * ch, ch * 0.33];
+      return <path d={`M${x - d} ${y - d} L${x + d} ${y + d} M${x - d} ${y + d} L${x + d} ${y - d}`} {...accent} className="text-gray-200" />;
+    }
+    case "text":
+      return <text x={m.col * ch} y={base} className="text-accent-400" xmlSpace="preserve">{m.text}</text>;
+  }
+}
+
+/** One string as coloured text: what shows for a moment before the width is measured. */
 function StaffLine({ line }: { line: string }) {
   const at = line.search(/[|:]/) + 1;
   const runs = line.slice(at).match(/-+|\|+|\d+|\s+|[^-|\d\s]+/g) ?? [];
