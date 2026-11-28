@@ -10,6 +10,8 @@ The text below the line is that scheduled task's prompt. The task holds its own 
 
 You are curating the song library of JamJar (https://jam-jar.app), a band practice app owned by Eric (user id 1). Run unattended: make reasonable choices, don't ask questions, and finish by logging the run.
 
+Do every step from 1 to 8, in order, on every run. The number in a step's heading is a target to reach, not an upper bound you may stop well short of: Steps 5, 6 and 7 are as much part of the run as adding songs and videos. Stop short of a target only when there is nothing left to do in that step, and say so in the summary.
+
 ## API access
 - Call the production API with curl at https://jam-jar.app/api/... . The X-API-Key header is injected automatically by this environment's network proxy; never add it yourself.
 - Send JSON bodies through stdin (`--data-binary @-`), because charts can be too long for a command-line argument. A Python helper that shells out to curl works well for batches. Retry a few times if a call fails briefly (a deploy may be restarting the server).
@@ -100,7 +102,7 @@ Every song with an artist should end up with three videos: the original recordin
   - `other`: pick a different well-regarded video.
 - Never use the flagged video again, or any other video flagged for that song (check `?include_resolved=true`). The server answers 409 if you try.
 - When the replacement is added, resolve the flag and log `replaced_video`.
-- If three differently worded searches turn up nothing suitable, leave the flag open so the next run tries again. If the flag is more than 7 days old, resolve it and log `removed_video`. Flagged videos are searched for even when the song and kind are on the video-misses list.
+- If three differently worded searches turn up nothing suitable, give up on it: resolve the flag, log `removed_video`, and record the song and kind as `not_found` in video-misses so later runs don't search for it again for 30 days. Flagged videos are searched for even when the song and kind are on the video-misses list, but only on the one run that handles the flag.
 
 **Part B: the songs you added in Step 2 of this run.** Finish all of them before moving on.
 
@@ -151,7 +153,7 @@ Get `GET /api/admin/tab-flags` (if it returns 404, skip this step). Handle every
 - If no other version qualifies, leave the flag open so the next run tries again. If the flag is more than 7 days old, resolve it and log `removed_tab`.
 
 ## Step 5: tabs and histories in activity order
-Work through songs that have an artist, most active first, including the songs you just added. Fill in only what's missing, and stop after about 10 additions in this step.
+Work through songs that have an artist, most active first, including the songs you just added. Fill in only what's missing. Make about 10 additions in this step, and at least 4 of them should be About histories as long as songs still lack one; don't spend the whole step on tabs.
 - **Tab (`added_tab`):** if the song has a signature guitar part (a riff, solo or fingerpicked part) and its `tab` is empty or only holds a few snippets split out of the chart, set it from the most-voted Ultimate Guitar "Tabs" version with ≥ 20 votes and rating ≥ 4.3.
   - Skip a song whose `tab_flag` is set: Step 4 handles it.
   - Send the version's `tab_url` as `source`. On a 409, that version was marked as bad: use the next qualifying version, or skip the song.
@@ -162,14 +164,14 @@ Work through songs that have an artist, most active first, including the songs y
   - Leave out anything sources disagree on. If you can't find 2 reliable sources, skip the history.
 
 ## Step 6: improve thin charts (up to ~5 per run, `updated_chart`)
-Only for songs that belong to Solo alone.
+Only for songs that belong to Solo alone. Upgrade about 5 thin charts every run while there are any with a usable Ultimate Guitar version.
 - A chart counts as "thin" if it has no chord lines sitting over lyric lines: shorthand-only, a list of chords, a tuning line, or a riff description.
 - Replace a thin chart with the Ultimate Guitar Chords version when one has ≥ 50 votes, splitting tab blocks into the tab as above.
 - Keep the existing notes and add the chart-source line.
 - Start with the most active songs, then the newest additions.
 
 ## Step 7: clean up charts, tabs and labels (up to ~10 fixes per run)
-Go through songs, most active first, then the rest of Solo. Make only clear-cut fixes, and when in doubt, leave it.
+Go through songs, most active first, then the rest of Solo. Make only clear-cut fixes, and when in doubt, leave it. Look through at least 20 songs and make about 10 fixes every run while there is anything clear-cut to fix.
 
 **Metadata clutter in charts (`cleaned_chart`)**
 - Remove repeated information from the top or bottom of `sheet`:
@@ -226,6 +228,8 @@ POST one curation run with:
   - the videos you newly gave up on this run (not ones already on the video-misses list);
   - how many songs in parts B–D still lack a video that is worth searching for;
 - one item per change.
+
+The summary must give a count for each of Steps 2–7 (songs, videos, tab flags, tabs, histories, thin charts, cleanups). For any step that made no change, say why (for example "no thin charts left with a usable version").
 
 Always log the run, even if little changed, and say why in the summary.
 
