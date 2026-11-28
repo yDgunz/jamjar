@@ -2,6 +2,8 @@
 
 The song library is curated by a scheduled Claude session ("JamJar daily library curation", daily at 10:17 UTC). It is not part of the server: it works through the REST API, and its only state is in the database (`curation_runs`, `video_flags`, `video_misses`, `tab_flags`).
 
+The task runs on Sonnet 5.5 and its per-run limits are kept small so it fits a Pro plan's usage limits.
+
 The text below the line is that scheduled task's prompt. The task holds its own copy, so when you change one, change the other in the same piece of work.
 
 ---
@@ -73,7 +75,7 @@ Rules for editing:
 ## Step 1: rank activity
 Score each song by its most recent of `last_opened_at`, `last_performed_at` and `last_date`. Build a taste profile from the ~30 most active songs (artists, eras, genres) plus the overall catalog mix.
 
-## Step 2: add about 10 new songs to Solo (group 2)
+## Step 2: add about 5 new songs to Solo (group 2)
 - Pick songs that fit the taste profile, weighted toward whatever has been most active lately. For example, a lot of recent 90s alternative means more 90s alternative. Mix well-known staples with a few deeper cuts. Favor songs that are playable by a small band or solo.
 - Skip anything already in the library, matching names case-insensitively and ignoring punctuation like apostrophes and "The".
 - For each song:
@@ -81,8 +83,8 @@ Score each song by its most recent of `last_opened_at`, `last_performed_at` and 
   2. Set the chart from the Ultimate Guitar Chords version, as described above.
   3. If Ultimate Guitar has no usable chart, write a shorthand chart from web search results (`Verse: G | D | Em | C` lines, plus a `Capo N` line if needed) and call fetch-lyrics.
 
-## Step 3: videos (about 60 per run)
-Every song with an artist should end up with three videos: the original recording (`other`), a how-to (`lesson`) and a backing track (`backing_track`). Videos have their own budget of about 60 added per run, separate from the limits in the other steps. Don't stop short of it while songs in parts A–D still lack videos. Work through the parts in order and stop when the budget is spent.
+## Step 3: videos (about 20 per run)
+Every song with an artist should end up with three videos: the original recording (`other`), a how-to (`lesson`) and a backing track (`backing_track`). Videos have their own budget of about 20 added per run, separate from the limits in the other steps. Don't stop short of it while songs in parts A–D still lack videos. Work through the parts in order and stop when the budget is spent.
 
 **What to skip.** Before searching, get `GET /api/admin/video-misses` (treat a 404 as an empty list). A `(song_id, kind)` on that list is not missing: don't search for it and don't count it as lacking. Also skip:
 - songs with no artist that are a band's own songs (they have no videos to find). If a song with no artist is an unambiguous well-known song, set the artist first (`fixed_label`) and then treat it normally;
@@ -149,7 +151,7 @@ Get `GET /api/admin/tab-flags` (if it returns 404, skip this step). Handle every
 - If no other version qualifies, leave the flag open so the next run tries again. If the flag is more than 7 days old, resolve it and log `removed_tab`.
 
 ## Step 5: tabs and histories in activity order
-Work through songs that have an artist, most active first, including the songs you just added. Fill in only what's missing, and stop after about 30 additions in this step.
+Work through songs that have an artist, most active first, including the songs you just added. Fill in only what's missing, and stop after about 10 additions in this step.
 - **Tab (`added_tab`):** if the song has a signature guitar part (a riff, solo or fingerpicked part) and its `tab` is empty or only holds a few snippets split out of the chart, set it from the most-voted Ultimate Guitar "Tabs" version with ≥ 20 votes and rating ≥ 4.3.
   - Skip a song whose `tab_flag` is set: Step 4 handles it.
   - Send the version's `tab_url` as `source`. On a 409, that version was marked as bad: use the next qualifying version, or skip the song.
@@ -159,14 +161,14 @@ Work through songs that have an artist, most active first, including the songs y
   - Cite with [1], [2] markers numbered in order of first use. Every sentence needs a marker and every source must be cited. Use 2–4 sources of `{title, url}`, with real https URLs from your results.
   - Leave out anything sources disagree on. If you can't find 2 reliable sources, skip the history.
 
-## Step 6: improve thin charts (up to ~15 per run, `updated_chart`)
+## Step 6: improve thin charts (up to ~5 per run, `updated_chart`)
 Only for songs that belong to Solo alone.
 - A chart counts as "thin" if it has no chord lines sitting over lyric lines: shorthand-only, a list of chords, a tuning line, or a riff description.
 - Replace a thin chart with the Ultimate Guitar Chords version when one has ≥ 50 votes, splitting tab blocks into the tab as above.
 - Keep the existing notes and add the chart-source line.
 - Start with the most active songs, then the newest additions.
 
-## Step 7: clean up charts, tabs and labels (up to ~30 fixes per run)
+## Step 7: clean up charts, tabs and labels (up to ~10 fixes per run)
 Go through songs, most active first, then the rest of Solo. Make only clear-cut fixes, and when in doubt, leave it.
 
 **Metadata clutter in charts (`cleaned_chart`)**
@@ -217,7 +219,7 @@ Collapse chord-only lines that just repeat a pattern.
 
 ## Step 8: log the run
 POST one curation run with:
-- a one-sentence `summary`, e.g. "Added 10 songs leaning 90s alternative; replaced 2 bad videos and 1 bad tab, 58 videos, 6 tabs, 6 histories, upgraded 10 thin charts", plus:
+- a one-sentence `summary`, e.g. "Added 5 songs leaning 90s alternative; replaced 2 bad videos and 1 bad tab, 20 videos, 4 tabs, 4 histories, upgraded 3 thin charts", plus:
   - any charts or tabs flagged as possibly being the wrong song;
   - any bad videos or bad tabs you couldn't replace;
   - any tabs you left alone because you couldn't tell what to keep;
